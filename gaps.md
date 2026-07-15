@@ -6,7 +6,7 @@
 |-------|--------|
 | Versão de código | **0.4.0** (`Cargo.toml`) |
 | Data | **2026-07-15** |
-| Escopo | Fechamento total AUD-SCP-2026-07-15 + SCP-023b + IO-008 + residual re-audit + **auditoria docs raiz + pasta docs/ + pasta skills/ 0.4.0** |
+| Escopo | Fechamento total AUD-SCP-2026-07-15 + SCP-023b + IO-008 + residual re-audit + **auditoria docs raiz + pasta docs/ + pasta skills/ + CLAUDE.md 0.4.0** |
 | Status deste inventário | **Fechado (0 Abertos)** |
 | Suite de regressão | `gaps_v038` + `gaps_v039` + `gaps_v040` + e2e E01–E14 |
 | Supply-chain | **russh 0.62.2**; `yanked=deny`; `ignore=[]` |
@@ -44,6 +44,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | GAP-SSH-DOC-004b | Raiz: SECURITY 0.3.x current + INTEGRATIONS 0.4.0=0.3.9 + llms schema omit + CONTRIBUTING sem v040 | **Resolvido (0.4.0)** | `gap_doc_004_root_security_integrations_honest` |
 | GAP-SSH-DOC-004c | Pasta `docs/`: AGENTS/HOW_TO/COOKBOOK/MIGRATION/TESTING/RELEASE/CROSS + schemas sem contratos SCP/tunnel 0.4.0 | **Resolvido (0.4.0)** | `gap_doc_004c_docs_folder_scp_tunnel_honest` |
 | GAP-SSH-DOC-004d | Pasta `skills/`: SKILL EN/PT + evals sem contratos SCP/tunnel 0.4.0 (file-only, scp-transfer, partial, 32KiB, preserve, tunnel_listening) | **Resolvido (0.4.0)** | `gap_doc_004d_skills_scp_tunnel_honest` |
+| GAP-SSH-DOC-004e | `CLAUDE.md` bloco produto: alvo `0.3.9+`, suite só v039, SCP/tunnel sem file-only/partial/32KiB/scp-transfer/`tunnel_listening` | **Resolvido (0.4.0)** | bloco `# ssh-cli` consolidado 0.4.0 |
 | GAP-SSH-TEST-004 | Integração scp só surface | **Resolvido (0.4.0)** | `gaps_v040` |
 | GAP-SSH-IO-007 | Sucesso scp sem JSON | **Resolvido (0.4.0)** | `imprimir_transferencia_json` |
 | GAP-SSH-IO-007b | `scp --json` sem envelope erro | **Resolvido (0.4.0)** | `definir_json_erros` + `gap_io_007b_*` |
@@ -80,7 +81,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | Métrica | Valor |
 |---------|--------|
 | Gaps abertos de produto | **0** |
-| Gaps AUD-SCP + pós-auditoria resolvidos | **28** (inclui DOC-004b raiz + DOC-004c docs/ + DOC-004d skills/) |
+| Gaps AUD-SCP + pós-auditoria resolvidos | **29** (inclui DOC-004b raiz + DOC-004c docs/ + DOC-004d skills/ + DOC-004e CLAUDE.md) |
 | russh | **0.62.2** |
 | Telemetria | Ausente |
 | E2E | E01–E14 |
