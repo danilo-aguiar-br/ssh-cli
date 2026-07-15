@@ -9,9 +9,60 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-07-15
+
+### Corrigido
+- Gaps residuais pós-auditoria 0.3.7 (IO-006, EXIT-002, VAL-004, TEST-004, DOC-001, REL-001/002, DENY-001, PROC-001, E2E-001)
+- Banners do tunnel não poluem stdout de agentes (IO-006)
+- Sem VPS ativa retorna exit 66 tipado (EXIT-002)
+- Parse OpenSSH de key_path no write-path (VAL-004)
+- Suite `gaps_v038_integration` 1:1 (TEST-004)
+- Version string com `-dirty` se tree suja (REL-002)
+- Inventário `gaps.md` versionado; checklist `docs/RELEASE_CHECKLIST.md`
+
+### Segurança
+- Upgrade **russh 0.62.2** (piso ≥0.60.3); remove pins COMPAT RC (DEP-002)
+- `cargo deny` sem waivers CVE/yanked; remove license morta Unicode-DFS-2016
+- Gate install exige russh patched; permite primefield estável
+- crossbeam-epoch ≥0.9.20 (RUSTSEC-2026-0204)
+
+### Alterado
+- Versão 0.3.7 → 0.3.8
+- Política de `verify_install_resolve.sh` invertida
+
+### Notas
+- Sem telemetria
+- Fixes de produto 0.3.7 não commitados entram neste commit de release
+
+
 ### Adicionado
 - Framework completo de documentação bilíngue (README, CONTRIBUTING, SECURITY, INTEGRATIONS, guias docs, schemas, skills)
 - Arquivos de licença dual `LICENSE-MIT` e `LICENSE-APACHE` com MIT OR Apache-2.0
+
+## [0.3.7] - 2026-07-15
+
+### Corrigido
+- Todos os 23 gaps de `gaps.md` (VAL/IO/TUN/SCP/STATE/PERM/CLI/TEST/EXIT/SEC/DEP/IMP)
+- Write-path de domínio: `validar_e_normalizar`, porta 1..=65535, chave existente (VAL-001..003)
+- I/O: `--output-format` no CRUD VPS, `health-check --json`, envelope JSON de erro, `--quiet` silencia sucesso humano, `println!` só em `output` (IO-001..005)
+- Tunnel: `--timeout-ms` cobre connect + loop (TUN-001)
+- SCP valida arquivo local antes do connect (SCP-001)
+- `vps remove` limpa `active` órfão; lock `0o600` (STATE-001, PERM-001)
+- `su-exec --password-stdin`; conflitos clap password/*_stdin; completions EPIPE seguro (CLI-001..003)
+- Testes de sinais `#[serial]`; snapshot help; assert real de abort (TEST-001..003)
+- Falha de comando remoto → exit do processo `1` (não o código remoto) (EXIT-001)
+- Senha sudo/su no stdin do canal, não na argv; máscara sempre `***` (SEC-001, SEC-002)
+- Import redacted com UX + `--allow-incomplete` (IMP-001)
+- `cargo deny` verde com política de pins datada (DEP-001)
+
+### Alterado
+- Versão 0.3.6 → 0.3.7
+- **Quebra de contrato (agentes):** senhas longas não expõem 12+4; exit remoto ≠0 vira processo `1` com `remote_exit_code` no envelope
+- `SSH_CLI_FORCE_TEXT=1` força formato texto
+
+### Segurança
+- Sem senha sudo/su em `ps` remoto
+- Sem vazamento de prefixo de senha em list/show
 
 ## [0.3.6] - 2026-07-15
 

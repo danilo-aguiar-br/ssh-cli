@@ -12,6 +12,10 @@
     "message": {
       "type": "string",
       "description": "Human error text on stderr when not using structured success JSON"
+    },
+    "remote_exit_code": {
+      "type": "integer",
+      "description": "Optional remote shell exit when process exit is EX_GENERAL (1) after non-zero remote command"
     }
   },
   "required": [

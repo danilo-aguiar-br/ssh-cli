@@ -95,6 +95,10 @@ pub enum ErroSshCli {
     #[error("VPS '{0}' não encontrada no registro")]
     VpsNaoEncontrada(String),
 
+    /// Nenhuma VPS ativa (arquivo `active` ausente) — GAP-SSH-EXIT-002.
+    #[error("Nenhuma VPS ativa. Use 'ssh-cli connect <NOME>' primeiro.")]
+    NenhumaVpsAtiva,
+
     /// VPS com nome duplicado no registro.
     #[error("VPS '{0}' já existe no registro")]
     VpsDuplicada(String),
@@ -172,8 +176,11 @@ impl ErroSshCli {
             Self::SenhaSuAusente => exit_codes::EX_USAGE,
             Self::CanalFalhou(_) => exit_codes::EX_IOERR,
             Self::TimeoutSsh(_) => exit_codes::EX_IOERR,
-            Self::ComandoFalhou { exit_code, .. } => *exit_code,
+            // GAP-SSH-EXIT-001: não colidir sysexits com exit remoto (ex.: 64).
+            // O código remoto fica na mensagem / envelope JSON (`remote_exit_code`).
+            Self::ComandoFalhou { .. } => exit_codes::EX_GENERAL,
             Self::VpsNaoEncontrada(_) => exit_codes::EX_NOINPUT,
+            Self::NenhumaVpsAtiva => exit_codes::EX_NOINPUT,
             Self::VpsDuplicada(_) => exit_codes::EX_USAGE,
             Self::ArquivoNaoEncontrado(_) => exit_codes::EX_NOINPUT,
             Self::ArgumentoInvalido(_) => exit_codes::EX_USAGE,
@@ -253,12 +260,25 @@ mod testes {
     }
 
     #[test]
-    fn exit_code_comando_falhou_propaga_exit_code_remoto() {
+    fn exit_code_nenhuma_vps_ativa_retorna_noinput() {
+        assert_eq!(
+            ErroSshCli::NenhumaVpsAtiva.exit_code(),
+            exit_codes::EX_NOINPUT
+        );
+    }
+
+    #[test]
+    fn exit_code_comando_falhou_usa_ex_general_nao_remoto() {
         let e = ErroSshCli::ComandoFalhou {
             exit_code: 127,
             stderr: "not found".to_string(),
         };
-        assert_eq!(e.exit_code(), 127);
+        assert_eq!(e.exit_code(), exit_codes::EX_GENERAL);
+        let e64 = ErroSshCli::ComandoFalhou {
+            exit_code: 64,
+            stderr: "usage".to_string(),
+        };
+        assert_eq!(e64.exit_code(), exit_codes::EX_GENERAL);
     }
 
     #[test]

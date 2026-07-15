@@ -9,9 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-07-15
+
+### Fixed
+- Residual gaps post-0.3.7 audit (IO-006, EXIT-002, VAL-004, TEST-004, DOC-001, REL-001/002, DENY-001, PROC-001, E2E-001)
+- Tunnel human banners no longer pollute agent stdout (JSON/non-TTY/quiet) (IO-006)
+- No active VPS returns sysexits 66 via typed `ErroSshCli::NenhumaVpsAtiva` (EXIT-002)
+- OpenSSH private key parse on VPS write-path after `is_file` (VAL-004)
+- Full named regression suite `tests/gaps_v038_integration.rs` (TEST-004)
+- Version string reports `-dirty` when working tree is dirty (REL-002)
+- Inventory `gaps.md` versioned (DOC-001); release checklist `docs/RELEASE_CHECKLIST.md` (PROC-001)
+
+### Security
+- Upgrade **russh 0.62.2** (security floor ≥0.60.3); remove crypto COMPAT RC pins (DEP-002)
+- `cargo deny`: `yanked=deny`, empty ignore list; drop dead `Unicode-DFS-2016` allow (DENY-001)
+- Install resolve gate requires patched russh; allows stable primefield
+- crossbeam-epoch ≥0.9.20 (RUSTSEC-2026-0204 / criterion dev)
+
+### Changed
+- Version 0.3.7 → 0.3.8
+- `scripts/verify_install_resolve.sh` policy inverted (stable crypto allowed; patched russh required)
+
+### Notes
+- No telemetry (doctor reports `telemetry: false` only)
+- Product fixes from uncommitted 0.3.7 ship in this release commit
+
+
 ### Added
 - Full bilingual documentation framework (README, CONTRIBUTING, SECURITY, INTEGRATIONS, docs guides, schemas, skills)
 - Dual license files `LICENSE-MIT` and `LICENSE-APACHE` with MIT OR Apache-2.0
+
+## [0.3.7] - 2026-07-15
+
+### Fixed
+- All 23 gaps from `gaps.md` (VAL/IO/TUN/SCP/STATE/PERM/CLI/TEST/EXIT/SEC/DEP/IMP)
+- Domain write-path: `validar_e_normalizar`, port 1..=65535, key file exists (VAL-001..003)
+- I/O: global `--output-format` on VPS CRUD, `health-check --json`, JSON error envelope, `--quiet` silences human success, `println!` only in `output` (IO-001..005)
+- Tunnel `--timeout-ms` covers SSH connect + loop (TUN-001)
+- SCP validates local file before connect (SCP-001)
+- `vps remove` clears orphan `active`; lock file `0o600` (STATE-001, PERM-001)
+- `su-exec --password-stdin`; clap conflicts for password/*_stdin; completions broken-pipe safe (CLI-001..003)
+- Signals tests `#[serial]`; help snapshot; non-tautological abort pattern test (TEST-001..003)
+- Remote command failure uses process exit `EX_GENERAL` (not remote code) (EXIT-001)
+- sudo/su password on channel stdin, not remote argv; mask always `***` (SEC-001, SEC-002)
+- Import redacted UX + `--allow-incomplete` (IMP-001)
+- `cargo deny` green with dated russh/crypto pin policy (DEP-001)
+
+### Changed
+- Version 0.3.6 → 0.3.7
+- **Breaking (agent contracts):** long secrets no longer show 12+4 chars (always `***`); remote non-zero exit maps to process exit `1` with `remote_exit_code` in JSON error envelope
+- `SSH_CLI_FORCE_TEXT=1` forces text output format (test/scripts)
+
+### Security
+- No sudo/su password in remote process list (`ps`)
+- No password prefix leak in `vps list`/`show`
 
 ## [0.3.6] - 2026-07-15
 
@@ -104,7 +155,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.7...HEAD
+[0.3.7]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.3...v0.3.4

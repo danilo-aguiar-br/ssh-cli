@@ -37,12 +37,33 @@ fn main() {
             if ssh_cli::signals::cancelado() {
                 std::process::exit(ssh_cli::erros::exit_codes::EX_SIGINT);
             }
+            let quer_json = ssh_cli::output::quer_json_erros();
             if let Some(erro_ssh) = e.downcast_ref::<ssh_cli::erros::ErroSshCli>() {
-                eprintln!("{erro_ssh}");
-                std::process::exit(erro_ssh.exit_code());
+                let code = erro_ssh.exit_code();
+                let remote = match erro_ssh {
+                    ssh_cli::erros::ErroSshCli::ComandoFalhou { exit_code, .. } => {
+                        Some(*exit_code)
+                    }
+                    _ => None,
+                };
+                if quer_json {
+                    let _ = ssh_cli::output::imprimir_erro_envelope(
+                        code,
+                        &erro_ssh.to_string(),
+                        remote,
+                    );
+                } else {
+                    eprintln!("{erro_ssh}");
+                }
+                std::process::exit(code);
             }
-            eprintln!("{e}");
-            std::process::exit(ssh_cli::erros::exit_codes::EX_GENERAL);
+            let code = ssh_cli::erros::exit_codes::EX_GENERAL;
+            if quer_json {
+                let _ = ssh_cli::output::imprimir_erro_envelope(code, &e.to_string(), None);
+            } else {
+                eprintln!("{e}");
+            }
+            std::process::exit(code);
         }
     }
 }

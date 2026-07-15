@@ -151,12 +151,87 @@ pub fn salvar(caminho: &Path, arquivo: &ArquivoConfig) -> ResultadoSshCli<()> {
         .read(true)
         .write(true)
         .open(&lock_path)?;
+    // GAP-SSH-PERM-001: lock com 0o600 (não 0644 do umask).
+    aplicar_permissoes_600(&lock_path)?;
     fs2::FileExt::lock_exclusive(&lock_file)?;
 
     escrever_atomico(caminho, texto.as_bytes())?;
 
     let _ = fs2::FileExt::unlock(&lock_file);
     Ok(())
+}
+
+/// Expande `~` no início do path (home do usuário).
+fn expandir_tilde(path: &str) -> PathBuf {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = home {
+            return home.join(rest);
+        }
+    }
+    if path == "~" {
+        if let Some(home) = home {
+            return home;
+        }
+    }
+    PathBuf::from(path)
+}
+
+/// Valida que `key_path` aponta para um arquivo local existente (VAL-003)
+/// e, com `ssh-real`, que o conteúdo é uma chave OpenSSH parseável (VAL-004).
+///
+/// Chaves cifradas sem passphrase no cadastro: se o parse indicar necessidade
+/// de senha, o arquivo é aceito (formato válido). Lixo de formato → 64.
+fn validar_key_path_existe(key_path: &str) -> Result<(), ErroSshCli> {
+    validar_key_path_existe_com_passphrase(key_path, None)
+}
+
+/// Como [`validar_key_path_existe`], com passphrase opcional do add/edit.
+fn validar_key_path_existe_com_passphrase(
+    key_path: &str,
+    passphrase: Option<&str>,
+) -> Result<(), ErroSshCli> {
+    let p = expandir_tilde(key_path);
+    if !p.is_file() {
+        return Err(ErroSshCli::ArquivoNaoEncontrado(format!(
+            "chave privada não encontrada: {}",
+            p.display()
+        )));
+    }
+    #[cfg(feature = "ssh-real")]
+    {
+        match russh::keys::load_secret_key(&p, passphrase) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let msg = e.to_string().to_lowercase();
+                // Key cifrada válida sem passphrase no write-path.
+                if msg.contains("password")
+                    || msg.contains("passphrase")
+                    || msg.contains("encrypted")
+                    || msg.contains("decrypt")
+                {
+                    return Ok(());
+                }
+                Err(ErroSshCli::ArgumentoInvalido(format!(
+                    "chave privada OpenSSH inválida em {}: {e}",
+                    p.display()
+                )))
+            }
+        }
+    }
+    #[cfg(not(feature = "ssh-real"))]
+    {
+        let _ = passphrase;
+        Ok(())
+    }
+}
+
+/// JSON efetivo a partir de flag local e formato global (IO-001/002).
+#[must_use]
+pub fn usar_json(json_local: bool, formato: FormatoSaida) -> bool {
+    json_local || formato == FormatoSaida::Json
 }
 
 #[cfg(unix)]
@@ -229,7 +304,7 @@ fn validar_comando_tamanho(comando: &str, max_command_chars: usize) -> Resultado
 pub async fn executar_comando_vps(
     acao: AcaoVps,
     config_override: Option<PathBuf>,
-    _formato: FormatoSaida,
+    formato: FormatoSaida,
 ) -> Result<()> {
     let caminho = resolver_caminho_config(config_override.clone())?;
 
@@ -254,7 +329,10 @@ pub async fn executar_comando_vps(
             disable_sudo,
             check,
         } => {
-            let name = crate::paths::normalizar_nfc(&name);
+            // GAP-SSH-VAL-001: validar na fronteira de escrita.
+            let name = crate::paths::validar_e_normalizar(&name).map_err(|e| {
+                ErroSshCli::ArgumentoInvalido(format!("nome de VPS inválido: {e}"))
+            })?;
             let mut arquivo = carregar(&caminho)?;
             if arquivo.hosts.contains_key(&name) {
                 return Err(ErroSshCli::VpsDuplicada(name).into());
@@ -280,6 +358,9 @@ pub async fn executar_comando_vps(
             } else {
                 su_password.map(SecretString::from)
             };
+            if let Some(ref k) = key {
+                validar_key_path_existe(k)?;
+            }
             // max_chars legado → command se max_command não veio explicitamente
             let max_cmd = max_command_chars
                 .as_deref()
@@ -305,22 +386,30 @@ pub async fn executar_comando_vps(
                 su_s,
                 disable_sudo,
             );
+            // GAP-SSH-VAL-002 / VAL-003: domínio completo no write-path.
             registro
-                .validar_credenciais()
+                .validar()
                 .map_err(ErroSshCli::ArgumentoInvalido)?;
             arquivo.hosts.insert(name.clone(), registro);
             arquivo.schema_version = modelo::SCHEMA_VERSION_ATUAL;
             salvar(&caminho, &arquivo)?;
             crate::output::imprimir_sucesso(&format!("VPS '{name}' adicionada ao registro"));
             if check {
-                executar_health_check(Some(&name), config_override, FormatoSaida::Text, None)
-                    .await?;
+                executar_health_check(
+                    Some(&name),
+                    config_override,
+                    formato,
+                    false,
+                    None,
+                )
+                .await?;
             }
         }
         AcaoVps::List { json } => {
             let arquivo = carregar(&caminho)?;
             let registros: Vec<_> = arquivo.hosts.values().cloned().collect();
-            if json {
+            // GAP-SSH-IO-001: respeitar formato global.
+            if usar_json(json, formato) {
                 crate::output::imprimir_lista_json(&registros);
             } else {
                 crate::output::imprimir_lista_texto(&registros);
@@ -332,6 +421,8 @@ pub async fn executar_comando_vps(
                 return Err(ErroSshCli::VpsNaoEncontrada(nome).into());
             }
             salvar(&caminho, &arquivo)?;
+            // GAP-SSH-STATE-001: limpar active órfão.
+            limpar_active_se_nome(&caminho, &nome)?;
             crate::output::imprimir_sucesso(&format!("VPS '{nome}' removida"));
         }
         AcaoVps::Edit {
@@ -373,6 +464,7 @@ pub async fn executar_comando_vps(
                 registro.senha = SecretString::from(pw);
             }
             if let Some(k) = key {
+                validar_key_path_existe(&k)?;
                 registro.key_path = Some(k);
             }
             if let Some(kp) = key_passphrase {
@@ -401,7 +493,7 @@ pub async fn executar_comando_vps(
                 registro.disable_sudo = d;
             }
             registro
-                .validar_credenciais()
+                .validar()
                 .map_err(ErroSshCli::ArgumentoInvalido)?;
             salvar(&caminho, &arquivo)?;
             crate::output::imprimir_sucesso(&format!("VPS '{nome}' editada"));
@@ -412,7 +504,7 @@ pub async fn executar_comando_vps(
                 .hosts
                 .get(&nome)
                 .ok_or_else(|| ErroSshCli::VpsNaoEncontrada(nome.clone()))?;
-            if json {
+            if usar_json(json, formato) {
                 crate::output::imprimir_detalhes_json(registro);
             } else {
                 crate::output::imprimir_detalhes_texto(registro);
@@ -422,7 +514,7 @@ pub async fn executar_comando_vps(
             crate::output::escrever_linha(&caminho.display().to_string())?;
         }
         AcaoVps::Doctor { json } => {
-            executar_doctor(config_override, json)?;
+            executar_doctor(config_override, usar_json(json, formato))?;
         }
         AcaoVps::Export {
             include_secrets,
@@ -430,9 +522,28 @@ pub async fn executar_comando_vps(
         } => {
             executar_export(&caminho, include_secrets, output.as_deref())?;
         }
-        AcaoVps::Import { file } => {
-            executar_import(&caminho, &file)?;
+        AcaoVps::Import {
+            file,
+            allow_incomplete,
+        } => {
+            executar_import(&caminho, &file, allow_incomplete)?;
         }
+    }
+    Ok(())
+}
+
+/// Remove o arquivo `active` se o conteúdo for o nome removido (STATE-001).
+fn limpar_active_se_nome(caminho_config: &Path, nome: &str) -> Result<()> {
+    let active = caminho_config
+        .parent()
+        .map(|p| p.join("active"))
+        .unwrap_or_else(|| PathBuf::from("active"));
+    if !active.exists() {
+        return Ok(());
+    }
+    let conteudo = std::fs::read_to_string(&active).unwrap_or_default();
+    if conteudo.trim() == nome {
+        let _ = std::fs::remove_file(&active);
     }
     Ok(())
 }
@@ -481,31 +592,31 @@ fn executar_doctor(config_override: Option<PathBuf>, json: bool) -> Result<()> {
             "secrets_plaintext_opt_out": seg.plaintext_opt_out,
             "telemetry": false,
         });
-        println!("{}", serde_json::to_string_pretty(&v)?);
+        // GAP-SSH-IO-005: println só em output.
+        crate::output::imprimir_json_value(&v)?;
     } else {
-        println!("Camada vencedora: {}", camada.nome);
-        println!("Config path:      {}", caminho.display());
-        println!("Existe:           {existe}");
-        println!("Permissões:       {perms}");
-        println!("Schema:           {}", arquivo.schema_version);
-        println!("Hosts:            {}", arquivo.hosts.len());
-        println!("known_hosts:      {}", kh.display());
-        println!("active file:      {}", active.display());
-        println!(
-            "Secrets at-rest:  {} (key source: {})",
+        let config_path_s = caminho.display().to_string();
+        let kh_s = kh.display().to_string();
+        let active_s = active.display().to_string();
+        let key_file_s = seg.key_file_path.display().to_string();
+        crate::output::imprimir_doctor_texto(
+            camada.nome,
+            &config_path_s,
+            existe,
+            &perms,
+            arquivo.schema_version,
+            arquivo.hosts.len(),
+            &kh_s,
+            &active_s,
             if seg.cifragem_ativa {
                 "encrypted"
             } else {
                 "plaintext"
             },
-            seg.fonte.as_str()
+            seg.fonte.as_str(),
+            &key_file_s,
+            seg.plaintext_opt_out,
         );
-        println!("Secrets key file: {}", seg.key_file_path.display());
-        println!(
-            "Plaintext opt-out: {}",
-            if seg.plaintext_opt_out { "yes" } else { "no" }
-        );
-        println!("Telemetria:       desabilitada");
     }
     Ok(())
 }
@@ -535,14 +646,47 @@ fn executar_export(caminho: &PathBuf, include_secrets: bool, output: Option<&str
     Ok(())
 }
 
-fn executar_import(caminho: &PathBuf, file: &Path) -> Result<()> {
+fn executar_import(caminho: &PathBuf, file: &Path, allow_incomplete: bool) -> Result<()> {
     let texto = std::fs::read_to_string(file)?;
     let importado: ArquivoConfig = toml::from_str(&texto)?;
     let mut atual = carregar(caminho)?;
-    for (k, v) in importado.hosts {
-        v.validar_credenciais()
-            .map_err(ErroSshCli::ArgumentoInvalido)?;
-        atual.hosts.insert(k, v);
+    for (k, mut v) in importado.hosts {
+        // VAL-001 no import.
+        let nome = crate::paths::validar_e_normalizar(&k).map_err(|e| {
+            ErroSshCli::ArgumentoInvalido(format!("nome de VPS inválido no import '{k}': {e}"))
+        })?;
+        v.nome = nome.clone();
+        if let Some(ref key) = v.key_path {
+            if !key.trim().is_empty() {
+                validar_key_path_existe(key)?;
+            }
+        }
+        match v.validar() {
+            Ok(()) => {
+                atual.hosts.insert(nome, v);
+            }
+            Err(msg) if allow_incomplete => {
+                // GAP-SSH-IMP-001: esqueleto incompleto permitido.
+                tracing::warn!(host = %nome, %msg, "import incomplete permitido");
+                atual.hosts.insert(nome, v);
+            }
+            Err(msg) => {
+                // Detectar export redacted.
+                let redacted = !v.tem_senha() && !v.tem_chave();
+                if redacted {
+                    return Err(ErroSshCli::ArgumentoInvalido(format!(
+                        "host '{nome}' parece export redacted (sem password/key). \
+                         Use `vps export --include-secrets`, complete com `vps edit`, \
+                         ou `vps import --allow-incomplete`. Detalhe: {msg}"
+                    ))
+                    .into());
+                }
+                return Err(ErroSshCli::ArgumentoInvalido(format!(
+                    "host '{nome}' inválido no import: {msg}"
+                ))
+                .into());
+            }
+        }
     }
     atual.schema_version = modelo::SCHEMA_VERSION_ATUAL;
     salvar(caminho, &atual)?;
@@ -570,9 +714,9 @@ pub async fn executar_comando_secrets(
                     "plaintext_opt_out": seg.plaintext_opt_out,
                     "at_rest": if seg.cifragem_ativa { "encrypted" } else { "plaintext" },
                 });
-                println!("{}", serde_json::to_string_pretty(&v)?);
+                crate::output::imprimir_json_value(&v)?;
             } else {
-                println!(
+                crate::output::imprimir_sucesso(&format!(
                     "at-rest: {} | source: {} | key_file: {} | plaintext_opt_out: {}",
                     if seg.cifragem_ativa {
                         "encrypted"
@@ -582,7 +726,7 @@ pub async fn executar_comando_secrets(
                     seg.fonte.as_str(),
                     seg.key_file_path.display(),
                     seg.plaintext_opt_out
-                );
+                ));
             }
             Ok(())
         }
@@ -775,7 +919,7 @@ pub async fn executar_exec_with_client(
         )));
     }
     let max_out = limite_efetivo(vps.max_output_chars);
-    let saida = cliente.executar_comando(comando, max_out).await?;
+    let saida = cliente.executar_comando(comando, max_out, None).await?;
     cliente.desconectar().await?;
     if formato == FormatoSaida::Json || json {
         output::imprimir_saida_execucao_json(&saida);
@@ -851,9 +995,11 @@ pub async fn executar_sudo_exec_with_client(
     if vps.disable_sudo {
         return Err(ErroSshCli::SudoDesabilitado.into());
     }
-    let sudo_cmd = empacotar_sudo(comando, vps.senha_sudo.as_ref());
+    let pack = empacotar_sudo(comando, vps.senha_sudo.as_ref());
     let max_out = limite_efetivo(vps.max_output_chars);
-    let saida = cliente.executar_comando(&sudo_cmd, max_out).await?;
+    let saida = cliente
+        .executar_comando(&pack.comando, max_out, pack.stdin)
+        .await?;
     cliente.desconectar().await?;
     if formato == FormatoSaida::Json || json {
         output::imprimir_saida_execucao_json(&saida);
@@ -909,12 +1055,14 @@ pub async fn executar_su_exec(
     let senha_su = vps.senha_su.clone().ok_or(ErroSshCli::SenhaSuAusente)?;
     let cmd = anexar_description(comando, opts.description.as_deref());
     validar_comando_tamanho(&cmd, vps.max_command_chars)?;
-    let su_cmd = empacotar_su(&cmd, &senha_su);
+    let pack = empacotar_su(&cmd, &senha_su);
     let cfg = construir_configuracao(&vps, Some(&caminho), opts.replace_host_key);
     let mut cliente: Box<dyn ClienteSshTrait> =
         <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
     let max_out = limite_efetivo(vps.max_output_chars);
-    let saida = cliente.executar_comando(&su_cmd, max_out).await?;
+    let saida = cliente
+        .executar_comando(&pack.comando, max_out, pack.stdin)
+        .await?;
     cliente.desconectar().await?;
     if formato == FormatoSaida::Json || json {
         output::imprimir_saida_execucao_json(&saida);
@@ -938,8 +1086,10 @@ pub async fn executar_health_check(
     vps_nome: Option<&str>,
     config_override: Option<PathBuf>,
     formato: FormatoSaida,
+    json_local: bool,
     password_override: Option<String>,
 ) -> Result<()> {
+    let _ = json_local; // merged below with formato
     if crate::signals::cancelado() || crate::signals::terminado() {
         return Err(anyhow::anyhow!(crate::i18n::t(
             crate::i18n::Mensagem::OperacaoCancelada
@@ -948,10 +1098,9 @@ pub async fn executar_health_check(
     let nome_resolvido: String = match vps_nome {
         Some(n) => n.to_string(),
         None => {
+            // GAP-SSH-EXIT-002: tipado → exit 66 (não anyhow string → exit 1).
             let ativa = ler_vps_ativa(config_override.clone())?;
-            ativa.ok_or_else(|| {
-                anyhow::anyhow!(crate::i18n::t(crate::i18n::Mensagem::HealthCheckSemVps))
-            })?
+            ativa.ok_or(ErroSshCli::NenhumaVpsAtiva)?
         }
     };
     let caminho = resolver_caminho_config(config_override)?;
@@ -969,7 +1118,7 @@ pub async fn executar_health_check(
     let latencia_ms = u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);
     cliente.desconectar().await?;
 
-    if formato == FormatoSaida::Json {
+    if usar_json(json_local, formato) {
         output::imprimir_health_check_json(&nome_resolvido, latencia_ms);
     } else {
         output::imprimir_health_check(&nome_resolvido, latencia_ms);
@@ -1030,8 +1179,13 @@ mod testes {
     }
 
     #[test]
+    #[serial_test::serial]
     fn salvar_atomico_roundtrip() {
         let tmp = TempDir::new().unwrap();
+        crate::secrets::definir_diretorio_config(Some(tmp.path().to_path_buf()));
+        unsafe {
+            std::env::set_var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS", "1");
+        }
         let path = tmp.path().join("config.toml");
         let mut arq = ArquivoConfig {
             schema_version: 2,
@@ -1047,7 +1201,16 @@ mod testes {
             use std::os::unix::fs::PermissionsExt;
             let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
+            let lock = path.with_extension("toml.lock");
+            if lock.exists() {
+                let lm = std::fs::metadata(&lock).unwrap().permissions().mode() & 0o777;
+                assert_eq!(lm, 0o600);
+            }
         }
+        unsafe {
+            std::env::remove_var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS");
+        }
+        crate::secrets::definir_diretorio_config(None);
     }
 
     #[test]
@@ -1067,8 +1230,9 @@ mod testes {
 
     #[test]
     fn empacotar_sudo_integrado() {
-        let cmd = empacotar_sudo("ls -la", None);
-        assert_eq!(cmd, "sudo -n sh -c 'ls -la'");
+        let pack = empacotar_sudo("ls -la", None);
+        assert_eq!(pack.comando, "sudo -n sh -c 'ls -la'");
+        assert!(pack.stdin.is_none());
     }
 
     #[test]
@@ -1092,12 +1256,11 @@ mod testes {
     async fn executar_sudo_exec_with_client_ok() {
         use crate::ssh::cliente::mocks::MockClienteSsh;
         use crate::ssh::cliente::SaidaExecucao;
-        use mockall::predicate::*;
-
         let mut mock = MockClienteSsh::new();
         mock.expect_executar_comando()
-            .with(function(|c: &str| c.contains("sudo -n sh -c")), always())
-            .returning(|_, _| {
+            .returning(|c, _, stdin| {
+                assert!(c.contains("sudo -n sh -c"));
+                assert!(stdin.is_none());
                 Ok(SaidaExecucao {
                     stdout: "ok".into(),
                     stderr: String::new(),

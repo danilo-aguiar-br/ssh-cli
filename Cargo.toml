@@ -1,6 +1,6 @@
 [package]
 name = "ssh-cli"
-version = "0.3.6"
+version = "0.3.8"
 edition = "2021"
 rust-version = "1.85.0"
 default-run = "ssh-cli"
@@ -95,26 +95,13 @@ chrono = { version = "0.4", features = ["serde", "clock"] }
 # Async traits para permitir mocks em testes.
 async-trait = "0.1"
 
-# SSH real via russh (iteração 2).
+# SSH real via russh (GAP-SSH-DEP-002 / 0.3.8).
 # `default-features = false` evita puxar `rsa` 0.9.x (RUSTSEC-2023-0071 Marvin Attack).
-# Ativamos apenas `aws-lc-rs` (crypto backend) e `flate2` (compressão zlib).
-# `russh` 0.60.x inclui `russh_keys` no módulo `russh::keys`.
-# MSRV 1.85 é requerido por russh >= 0.55.
-# Pin exato: 0.60.1+ quebra com pkcs5 0.8.1 (API renomeada) no re-resolve de install.
-russh = { version = "=0.60.0", default-features = false, features = ["aws-lc-rs", "flate2"], optional = true }
-
-# COMPAT PINS (GAP-014 / R-PINS freeze 0.3.6): `cargo install` re-resolve sem
-# Cargo.lock quebra se primefield sobe 0.14.0-rc.8 → 0.14.0 estável (trait PrimeField
-# diverge: rustcrypto-ff vs ff). Manter pins RC alinhados ao lock até russh migrar
-# crypto estável. NÃO remover sem rodar scripts/verify_install_resolve.sh.
-# elliptic-curve: p256/p384/p521 0.14.0-rc.8 não implementam MulVartime de rc.31+.
-# pkcs5: estável 0.8.1 remove `pbkdf2_sha256_aes256cbc` usado por russh 0.60.0.
-# Pin freeze: russh =0.60.0 (0.60.1+ quebra com pkcs5 0.8.1 no re-resolve).
-elliptic-curve = "=0.14.0-rc.30"
-primefield = "=0.14.0-rc.8"
-primeorder = "=0.14.0-rc.8"
-ecdsa = "=0.17.0-rc.16"
-pkcs5 = "=0.8.0-rc.13"
+# `aws-lc-rs` (crypto backend) + `flate2` (compressão zlib).
+# Keys em `russh::keys`. MSRV 1.85 (russh >= 0.55).
+# Piso segurança: russh >= 0.60.3 (RUSTSEC-2026-0153/0154 / CVE-2026-46673).
+# Alvo: 0.62.x (latest patched; sem pins COMPAT RC — resolve estável no install).
+russh = { version = "0.62", default-features = false, features = ["aws-lc-rs", "flate2"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"

@@ -3,8 +3,8 @@ source: tests/snapshot_tests.rs
 assertion_line: 32
 expression: stdout
 ---
-ssh-cli: binário leve one-shot (nascer→executar→morrer). Multi-host em storage XDG sem .env.
-Substitui o MCP Node persistente. Auth por senha ou chave. Sem telemetria.
+ssh-cli: binário leve one-shot (nascer→executar→morrer). Multi-host em storage XDG sem .env. Auth
+por senha ou chave. Sem telemetria.
 
 Usage: ssh-cli [OPTIONS] <COMMAND>
 
@@ -45,7 +45,7 @@ Options:
           - json: JSON estruturado
 
       --disable-sudo
-          Desabilita sudo-exec/su-exec nesta invocação (paridade MCP --disableSudo)
+          Desabilita sudo-exec/su-exec nesta invocação (alias --disableSudo)
 
       --replace-host-key
           Substitui host key divergente no known_hosts TOFU

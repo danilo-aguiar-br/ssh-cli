@@ -147,10 +147,14 @@ pub trait ClienteSshTrait: Send + Sync + 'static {
         Self: Sized;
 
     /// Executa um comando shell remoto e retorna a saída capturada.
+    ///
+    /// `stdin_data`, se presente, é escrito no canal após o `exec` e antes do loop
+    /// de leitura (GAP-SSH-SEC-001: senha sudo/su fora da argv remota).
     async fn executar_comando(
         &mut self,
         cmd: &str,
         max_chars: usize,
+        stdin_data: Option<Vec<u8>>,
     ) -> Result<SaidaExecucao, ErroSshCli>;
 
     /// Faz upload de um arquivo local para o servidor remoto via SCP.
@@ -192,7 +196,7 @@ pub mod mocks {
     #[async_trait]
     impl crate::ssh::cliente::ClienteSshTrait for ClienteSsh {
             async fn conectar(cfg: ConfiguracaoConexao) -> Result<Box<Self>, ErroSshCli>;
-            async fn executar_comando(&mut self, cmd: &str, max_chars: usize) -> Result<SaidaExecucao, ErroSshCli>;
+            async fn executar_comando(&mut self, cmd: &str, max_chars: usize, stdin_data: Option<Vec<u8>>) -> Result<SaidaExecucao, ErroSshCli>;
             async fn upload(&mut self, local: &Path, remote: &Path) -> Result<TransferenciaResultado, ErroSshCli>;
             async fn download(&mut self, remote: &Path, local: &Path) -> Result<TransferenciaResultado, ErroSshCli>;
             async fn abrir_canal_tunel(
@@ -517,8 +521,9 @@ mod real {
             &mut self,
             comando: &str,
             max_chars: usize,
+            stdin_data: Option<Vec<u8>>,
         ) -> ResultadoSshCli<SaidaExecucao> {
-            self.executar_comando_interno(comando, max_chars, true)
+            self.executar_comando_interno(comando, max_chars, true, stdin_data)
                 .await
         }
 
@@ -527,6 +532,7 @@ mod real {
             comando: &str,
             max_chars: usize,
             abort_em_timeout: bool,
+            stdin_data: Option<Vec<u8>>,
         ) -> ResultadoSshCli<SaidaExecucao> {
             let inicio = Instant::now();
             let timeout = Duration::from_millis(self.cfg.timeout_ms);
@@ -542,6 +548,18 @@ mod real {
                     .exec(true, comando)
                     .await
                     .map_err(|e| ErroSshCli::CanalFalhou(format!("exec: {e}")))?;
+
+                // Senha sudo/su no stdin do canal — nunca na cmdline remota (SEC-001).
+                if let Some(bytes) = stdin_data.as_ref() {
+                    canal
+                        .data(&bytes[..])
+                        .await
+                        .map_err(|e| ErroSshCli::CanalFalhou(format!("stdin canal: {e}")))?;
+                    canal
+                        .eof()
+                        .await
+                        .map_err(|e| ErroSshCli::CanalFalhou(format!("eof canal: {e}")))?;
+                }
 
                 let mut stdout_bytes: Vec<u8> = Vec::new();
                 let mut stderr_bytes: Vec<u8> = Vec::new();
@@ -907,8 +925,9 @@ mod real {
             &mut self,
             cmd: &str,
             max_chars: usize,
+            stdin_data: Option<Vec<u8>>,
         ) -> Result<SaidaExecucao, ErroSshCli> {
-            Self::executar_comando(self, cmd, max_chars).await
+            Self::executar_comando(self, cmd, max_chars, stdin_data).await
         }
 
         async fn upload(
@@ -1137,6 +1156,7 @@ mod stub {
             &mut self,
             _cmd: &str,
             _max_chars: usize,
+            _stdin_data: Option<Vec<u8>>,
         ) -> Result<SaidaExecucao, ErroSshCli> {
             Err(ErroSshCli::CanalFalhou(
                 "stub sem russh: feature `ssh-real` desabilitada".into(),

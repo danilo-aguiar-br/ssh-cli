@@ -94,8 +94,10 @@ pub fn obter_flag_sigterm() -> Arc<AtomicBool> {
 #[cfg(test)]
 mod testes {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn cancelado_retorna_false_antes_de_sinal() {
         // A flag não deve estar marcada em estado inicial
         // (a menos que outro teste tenha ativado, mas cada test usa a mesma OnceLock)
@@ -104,6 +106,7 @@ mod testes {
     }
 
     #[test]
+    #[serial]
     fn obter_flag_retorna_mesmo_arc() {
         let flag_a = obter_flag();
         let flag_b = obter_flag();
@@ -112,6 +115,7 @@ mod testes {
     }
 
     #[test]
+    #[serial]
     fn flag_pode_ser_marcada_e_lida() {
         let flag = obter_flag();
         // Apenas verificamos que o AtomicBool funciona corretamente
@@ -121,15 +125,16 @@ mod testes {
     }
 
     #[test]
+    #[serial]
     fn terminado_false_por_padrao() {
-        // OnceLock pode já estar setado por outros testes
-        // Se não setado, retorna false. Se setado, o valor padrão é false.
+        // GAP-SSH-TEST-001: serial + reset explícito evita race com testes paralelos.
         let flag = obter_flag_sigterm();
         flag.store(false, Ordering::SeqCst);
         assert!(!terminado());
     }
 
     #[test]
+    #[serial]
     fn obter_flag_sigterm_retorna_mesmo_arc() {
         let a = obter_flag_sigterm();
         let b = obter_flag_sigterm();
@@ -137,6 +142,7 @@ mod testes {
     }
 
     #[test]
+    #[serial]
     fn terminado_verdadeiro_apos_set() {
         let flag = obter_flag_sigterm();
         flag.store(true, Ordering::SeqCst);
@@ -145,6 +151,7 @@ mod testes {
     }
 
     #[test]
+    #[serial]
     fn cancelado_false_apos_reset() {
         let flag = obter_flag();
         flag.store(true, Ordering::SeqCst);

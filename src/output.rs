@@ -10,8 +10,40 @@ use crate::vps::modelo::VpsRegistro;
 use secrecy::ExposeSecret;
 use serde_json::json;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Flag global de `--quiet` (suprime mensagens humanas em stdout).
+static QUIET: AtomicBool = AtomicBool::new(false);
+
+/// Quando true, erros em `main` usam envelope JSON em stderr (IO-003).
+static JSON_ERROS: AtomicBool = AtomicBool::new(false);
+
+/// Define se a CLI está em modo quiet (GAP-SSH-IO-004).
+pub fn definir_quiet(quiet: bool) {
+    QUIET.store(quiet, Ordering::SeqCst);
+}
+
+/// Define se erros devem sair como envelope JSON em stderr.
+pub fn definir_json_erros(json: bool) {
+    JSON_ERROS.store(json, Ordering::SeqCst);
+}
+
+/// Retorna se quiet está ativo.
+#[must_use]
+pub fn esta_quiet() -> bool {
+    QUIET.load(Ordering::SeqCst)
+}
+
+/// Retorna se erros devem ser envelope JSON.
+#[must_use]
+pub fn quer_json_erros() -> bool {
+    JSON_ERROS.load(Ordering::SeqCst)
+}
 
 /// Escreve uma linha em stdout garantindo LF puro (nunca CRLF).
+///
+/// Em quiet, ainda escreve (dados/paths são API). Preferir `imprimir_sucesso`
+/// para mensagens humanas.
 ///
 /// # Erros
 /// Retorna erro se o I/O em stdout falhar.
@@ -24,8 +56,27 @@ pub fn escrever_linha(conteudo: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// Imprime mensagem de sucesso em texto para humanos.
+/// Imprime mensagem de sucesso em texto para humanos (silenciada com `--quiet`).
 pub fn imprimir_sucesso(mensagem: &str) {
+    if esta_quiet() {
+        return;
+    }
+    println!("{mensagem}");
+}
+
+/// Banner humano (tunnel etc.): só Text+TTY+!quiet+!JSON erros (GAP-SSH-IO-006).
+///
+/// Em pipes/agentes, progresso vai para `tracing` (stderr), nunca para stdout.
+pub fn imprimir_banner_humano(mensagem: &str) {
+    if esta_quiet() || quer_json_erros() {
+        return;
+    }
+    if !std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+        return;
+    }
+    if std::env::var_os("SSH_CLI_FORCE_TEXT").is_none() {
+        // Sem FORCE_TEXT, non-TTY já retornou; TTY humano ok.
+    }
     println!("{mensagem}");
 }
 
@@ -34,8 +85,76 @@ pub fn imprimir_erro(mensagem: &str) {
     eprintln!("{mensagem}");
 }
 
+/// Emite envelope JSON de erro em stderr (GAP-SSH-IO-003).
+pub fn imprimir_erro_envelope(
+    exit_code: i32,
+    message: &str,
+    remote_exit_code: Option<i32>,
+) -> io::Result<()> {
+    let mut v = json!({
+        "exit_code": exit_code,
+        "message": message,
+    });
+    if let Some(r) = remote_exit_code {
+        v["remote_exit_code"] = json!(r);
+    }
+    let s = serde_json::to_string(&v).unwrap_or_else(|_| {
+        format!(r#"{{"exit_code":{exit_code},"message":"erro de serialização"}}"#)
+    });
+    let mut err = io::stderr().lock();
+    err.write_all(s.as_bytes())?;
+    err.write_all(b"\n")?;
+    err.flush()?;
+    Ok(())
+}
+
+/// Imprime valor JSON pretty em stdout (dados de API; respeita quiet=false sempre).
+pub fn imprimir_json_value(v: &serde_json::Value) -> io::Result<()> {
+    let s = serde_json::to_string_pretty(v).map_err(io::Error::other)?;
+    escrever_linha(&s)
+}
+
+/// Imprime relatório doctor em texto (GAP-SSH-IO-005).
+#[allow(clippy::too_many_arguments)]
+pub fn imprimir_doctor_texto(
+    camada: &str,
+    config_path: &str,
+    existe: bool,
+    perms: &str,
+    schema_version: u32,
+    hosts: usize,
+    known_hosts: &str,
+    active_file: &str,
+    secrets_at_rest: &str,
+    secrets_key_source: &str,
+    secrets_key_file: &str,
+    plaintext_opt_out: bool,
+) {
+    if esta_quiet() {
+        return;
+    }
+    println!("Camada vencedora: {camada}");
+    println!("Config path:      {config_path}");
+    println!("Existe:           {existe}");
+    println!("Permissões:       {perms}");
+    println!("Schema:           {schema_version}");
+    println!("Hosts:            {hosts}");
+    println!("known_hosts:      {known_hosts}");
+    println!("active file:      {active_file}");
+    println!("Secrets at-rest:  {secrets_at_rest} (key source: {secrets_key_source})");
+    println!("Secrets key file: {secrets_key_file}");
+    println!(
+        "Plaintext opt-out: {}",
+        if plaintext_opt_out { "yes" } else { "no" }
+    );
+    println!("Telemetria:       desabilitada");
+}
+
 /// Imprime lista de VPS em formato texto (mascarado).
 pub fn imprimir_lista_texto(registros: &[VpsRegistro]) {
+    if esta_quiet() {
+        return;
+    }
     if registros.is_empty() {
         println!(
             "{}",
@@ -71,6 +190,9 @@ pub fn imprimir_lista_json(registros: &[VpsRegistro]) {
 
 /// Imprime detalhes de UMA VPS em texto (mascarado).
 pub fn imprimir_detalhes_texto(r: &VpsRegistro) {
+    if esta_quiet() {
+        return;
+    }
     println!("Nome:           {}", r.nome);
     println!("Host:           {}", r.host);
     println!("Porta:          {}", r.porta);
@@ -183,6 +305,9 @@ pub fn imprimir_saida_execucao_json(saida: &SaidaExecucao) {
 
 /// Imprime resultado de health-check em formato texto.
 pub fn imprimir_health_check(nome: &str, latencia_ms: u64) {
+    if esta_quiet() {
+        return;
+    }
     println!(
         "{}",
         crate::i18n::t(crate::i18n::Mensagem::HealthCheckOk {
@@ -238,8 +363,8 @@ mod testes {
         assert_eq!(json["host"], "1.2.3.4");
         assert_eq!(json["port"], 22);
         assert_eq!(json["user"], "root");
-        assert!(json["password"].as_str().unwrap().contains("..."));
-        assert!(json["sudo_password"].as_str().unwrap().contains("..."));
+        assert_eq!(json["password"].as_str().unwrap(), "***");
+        assert_eq!(json["sudo_password"].as_str().unwrap(), "***");
         assert!(json["su_password"].is_null());
         assert_eq!(json["timeout_ms"], 5000);
         assert_eq!(json["max_command_chars"], 1000);
@@ -260,7 +385,7 @@ mod testes {
         let mut r = registro_teste();
         r.senha_su = Some(SecretString::from("senha-su-muito-longa-aqui".to_string()));
         let json = registro_para_json_mascarado(&r);
-        assert!(json["su_password"].as_str().unwrap().contains("..."));
+        assert_eq!(json["su_password"].as_str().unwrap(), "***");
     }
 
     #[test]
@@ -397,8 +522,8 @@ mod testes {
         let json = registro_para_json_mascarado(&r);
         assert!(!json["sudo_password"].is_null());
         assert!(!json["su_password"].is_null());
-        assert!(json["sudo_password"].as_str().unwrap().contains("..."));
-        assert!(json["su_password"].as_str().unwrap().contains("..."));
+        assert_eq!(json["sudo_password"].as_str().unwrap(), "***");
+        assert_eq!(json["su_password"].as_str().unwrap(), "***");
     }
 
     #[test]

@@ -28,6 +28,11 @@ pub async fn executar_scp(
             remote,
             ..
         } => {
+            // GAP-SSH-SCP-001: validar arquivo local antes do connect SSH.
+            if !local.is_file() {
+                return Err(ErroSshCli::ArquivoNaoEncontrado(local.display().to_string()).into());
+            }
+
             let mut registro = vps::buscar_por_nome(config_override.clone(), &vps_nome)?
                 .ok_or_else(|| ErroSshCli::VpsNaoEncontrada(vps_nome.clone()))?;
 
@@ -133,6 +138,7 @@ mod testes {
             &mut self,
             _cmd: &str,
             _max_chars: usize,
+            _stdin_data: Option<Vec<u8>>,
         ) -> Result<SaidaExecucao, ErroSshCli> {
             Err(ErroSshCli::CanalFalhou(
                 "não implementado em teste".to_string(),

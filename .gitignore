@@ -25,7 +25,7 @@ known_hosts
 docs_prd/
 docs_rules/
 projeto_ssh-cli.md
-/gaps.md
+# gaps.md versionado (GAP-SSH-DOC-001 / 0.3.8)
 .cursor/
 
 # GraphRAG / filas de enriquecimento (artefatos locais)
@@ -56,5 +56,5 @@ ralph-loop.local.md
 
 # Privado de desenvolvimento
 /AGENTS.md
-deny.toml
+# deny.toml versionado com o projeto (supply-chain 0.3.8)
 Cross.toml

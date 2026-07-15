@@ -135,8 +135,8 @@ fn testa_vps_list_mascara_senhas() {
         .stdout(predicate::str::contains("alfa"))
         // Senha NÃO pode aparecer inteira
         .stdout(predicate::str::contains("senha-muito-longa-para-mascarar-123").not())
-        // Deve aparecer com "..." do mascaramento
-        .stdout(predicate::str::contains("..."));
+        // GAP-SSH-SEC-002: mask agent-safe sempre "***"
+        .stdout(predicate::str::contains("***"));
 }
 
 #[test]
@@ -271,7 +271,7 @@ fn testa_vps_show_retorna_dados_mascarados() {
         .success()
         .stdout(predicate::str::contains("mostrar"))
         .stdout(predicate::str::contains("senha-longa-para-mascaramento-total").not())
-        .stdout(predicate::str::contains("..."));
+        .stdout(predicate::str::contains("***"));
 }
 
 #[test]

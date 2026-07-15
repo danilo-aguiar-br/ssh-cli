@@ -74,12 +74,12 @@ fn doctor_reporta_camada_e_secrets_plaintext() {
 fn add_com_key_path_sem_password() {
     let tmp = TempDir::new().unwrap();
     let key = tmp.path().join("id_test_ed25519");
-    // Arquivo vazio — só valida persistência de path (não é chave real utilizável).
-    std::fs::write(
-        &key,
-        b"-----BEGIN OPENSSH PRIVATE KEY-----\nFAKE\n-----END OPENSSH PRIVATE KEY-----\n",
-    )
-    .unwrap();
+    // GAP-SSH-VAL-004: precisa ser OpenSSH real parseável (não FAKE).
+    let status = std::process::Command::new("ssh-keygen")
+        .args(["-t", "ed25519", "-f", key.to_str().unwrap(), "-N", "", "-q"])
+        .status()
+        .expect("ssh-keygen");
+    assert!(status.success(), "ssh-keygen failed");
     cmd(&tmp)
         .args([
             "vps",

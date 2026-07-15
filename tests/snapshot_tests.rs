@@ -19,7 +19,10 @@ fn cmd(tmp: &TempDir) -> Command {
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
+    // Snapshots de prosa humana: force text em pipe (senão auto-JSON).
+    c.env("SSH_CLI_FORCE_TEXT", "1");
     c.arg("--config-dir").arg(tmp.path());
+    c.arg("--output-format").arg("text");
     c
 }
 

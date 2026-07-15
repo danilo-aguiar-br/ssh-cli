@@ -1,6 +1,6 @@
 ---
 source: tests/snapshot_tests.rs
-assertion_line: 71
 expression: redacted
 ---
-ssh-cli 0.3.6 (HASH)
+ssh-cli 0.3.8 (HASH)
+

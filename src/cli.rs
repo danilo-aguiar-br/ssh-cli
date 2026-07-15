@@ -96,7 +96,7 @@ pub enum Comando {
         #[arg(long)]
         json: bool,
         /// Override de senha SSH.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
         /// Lê senha SSH de stdin.
         #[arg(long)]
@@ -105,7 +105,7 @@ pub enum Comando {
         #[arg(long)]
         key: Option<String>,
         /// Passphrase da chave (runtime).
-        #[arg(long)]
+        #[arg(long, conflicts_with = "key_passphrase_stdin")]
         key_passphrase: Option<String>,
         /// Lê passphrase da chave de stdin.
         #[arg(long)]
@@ -128,13 +128,13 @@ pub enum Comando {
         #[arg(long)]
         json: bool,
         /// Override de senha SSH.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
         /// Lê senha SSH de stdin.
         #[arg(long)]
         password_stdin: bool,
         /// Override de senha sudo.
-        #[arg(long, alias = "sudoPassword", alias = "sudo_password")]
+        #[arg(long, alias = "sudoPassword", alias = "sudo_password", conflicts_with = "sudo_password_stdin")]
         sudo_password: Option<String>,
         /// Lê senha sudo de stdin.
         #[arg(long)]
@@ -143,7 +143,7 @@ pub enum Comando {
         #[arg(long)]
         key: Option<String>,
         /// Passphrase da chave (runtime).
-        #[arg(long)]
+        #[arg(long, conflicts_with = "key_passphrase_stdin")]
         key_passphrase: Option<String>,
         /// Lê passphrase da chave de stdin.
         #[arg(long)]
@@ -166,10 +166,13 @@ pub enum Comando {
         #[arg(long)]
         json: bool,
         /// Override de senha SSH.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
+        /// Lê senha SSH de stdin (GAP-SSH-CLI-001).
+        #[arg(long)]
+        password_stdin: bool,
         /// Override de senha su.
-        #[arg(long, alias = "suPassword", alias = "su_password")]
+        #[arg(long, alias = "suPassword", alias = "su_password", conflicts_with = "su_password_stdin")]
         su_password: Option<String>,
         /// Lê senha su de stdin.
         #[arg(long)]
@@ -178,7 +181,7 @@ pub enum Comando {
         #[arg(long)]
         key: Option<String>,
         /// Passphrase da chave (runtime).
-        #[arg(long)]
+        #[arg(long, conflicts_with = "key_passphrase_stdin")]
         key_passphrase: Option<String>,
         /// Lê passphrase da chave de stdin.
         #[arg(long)]
@@ -223,6 +226,9 @@ pub enum Comando {
     HealthCheck {
         /// Nome da VPS (usa ativa se omitido).
         vps_nome: Option<String>,
+        /// Saída em JSON (GAP-SSH-IO-002).
+        #[arg(long)]
+        json: bool,
         /// Override de senha SSH.
         #[arg(long)]
         password: Option<String>,
@@ -261,7 +267,7 @@ pub enum AcaoVps {
         #[arg(long)]
         user: String,
         /// Senha SSH.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
         /// Lê senha de stdin.
         #[arg(long)]
@@ -285,13 +291,13 @@ pub enum AcaoVps {
         #[arg(long, alias = "maxChars")]
         max_chars: Option<String>,
         /// Senha para `sudo`.
-        #[arg(long, alias = "sudoPassword", alias = "sudo_password")]
+        #[arg(long, alias = "sudoPassword", alias = "sudo_password", conflicts_with = "sudo_password_stdin")]
         sudo_password: Option<String>,
         /// Lê senha sudo de stdin.
         #[arg(long)]
         sudo_password_stdin: bool,
         /// Senha para `su -`.
-        #[arg(long, alias = "suPassword", alias = "su_password")]
+        #[arg(long, alias = "suPassword", alias = "su_password", conflicts_with = "su_password_stdin")]
         su_password: Option<String>,
         /// Lê senha su de stdin.
         #[arg(long)]
@@ -331,7 +337,7 @@ pub enum AcaoVps {
         #[arg(long)]
         user: Option<String>,
         /// Nova senha.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
         /// Lê senha de stdin.
         #[arg(long)]
@@ -355,13 +361,13 @@ pub enum AcaoVps {
         #[arg(long, alias = "maxChars")]
         max_chars: Option<String>,
         /// Nova senha sudo.
-        #[arg(long, alias = "sudoPassword", alias = "sudo_password")]
+        #[arg(long, alias = "sudoPassword", alias = "sudo_password", conflicts_with = "sudo_password_stdin")]
         sudo_password: Option<String>,
         /// Lê senha sudo de stdin.
         #[arg(long)]
         sudo_password_stdin: bool,
         /// Nova senha su.
-        #[arg(long, alias = "suPassword", alias = "su_password")]
+        #[arg(long, alias = "suPassword", alias = "su_password", conflicts_with = "su_password_stdin")]
         su_password: Option<String>,
         /// Lê senha su de stdin.
         #[arg(long)]
@@ -405,6 +411,9 @@ pub enum AcaoVps {
         /// Arquivo de origem.
         #[arg(long)]
         file: PathBuf,
+        /// Permite hosts sem auth completa (export redacted / esqueleto) — GAP-SSH-IMP-001.
+        #[arg(long)]
+        allow_incomplete: bool,
     },
 }
 
@@ -489,10 +498,22 @@ pub fn inicializar_logs(args: &Argumentos) {
 }
 
 /// Gera completions de shell para stdout.
+///
+/// GAP-SSH-CLI-003: broken pipe (EPIPE) não panic — comportamento Unix de pipe.
 pub fn gerar_completions(shell: Shell) {
     use clap::CommandFactory;
+    use std::io::Write;
     let mut cmd = Argumentos::command();
-    clap_complete::generate(shell, &mut cmd, "ssh-cli", &mut std::io::stdout());
+    let mut buf: Vec<u8> = Vec::new();
+    clap_complete::generate(shell, &mut cmd, "ssh-cli", &mut buf);
+    let mut out = std::io::stdout().lock();
+    if let Err(e) = out.write_all(&buf).and_then(|_| out.flush()) {
+        if e.kind() == std::io::ErrorKind::BrokenPipe {
+            return;
+        }
+        // Outros erros: best-effort em stderr sem panic.
+        let _ = writeln!(std::io::stderr(), "erro ao escrever completions: {e}");
+    }
 }
 
 fn ler_stdin_se(flag: bool, valor: Option<String>) -> Result<Option<String>> {
@@ -503,16 +524,21 @@ fn ler_stdin_se(flag: bool, valor: Option<String>) -> Result<Option<String>> {
     }
 }
 
-/// Resolve formato de saída: explícito > JSON se não-TTY > Text.
+/// Resolve formato de saída: explícito > `SSH_CLI_FORCE_TEXT` > JSON se não-TTY > Text.
 #[must_use]
 pub fn resolver_formato(explicit: Option<FormatoSaida>) -> FormatoSaida {
-    explicit.unwrap_or_else(|| {
-        if !std::io::IsTerminal::is_terminal(&std::io::stdout()) {
-            FormatoSaida::Json
-        } else {
-            FormatoSaida::Text
-        }
-    })
+    if let Some(f) = explicit {
+        return f;
+    }
+    // Isolamento de testes / scripts que forçam prosa humana em pipe.
+    if std::env::var_os("SSH_CLI_FORCE_TEXT").is_some() {
+        return FormatoSaida::Text;
+    }
+    if !std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+        FormatoSaida::Json
+    } else {
+        FormatoSaida::Text
+    }
 }
 
 /// Executa o subcomando solicitado.
@@ -521,6 +547,9 @@ pub async fn executar(args: Argumentos) -> Result<()> {
     // Alinha `secrets.key` com `--config-dir` / testes isolados.
     crate::secrets::definir_diretorio_config(config_override.clone());
     let formato = resolver_formato(args.output_format);
+    // GAP-SSH-IO-003 / IO-004: política de I/O centralizada.
+    crate::output::definir_quiet(args.quiet);
+    crate::output::definir_json_erros(formato == FormatoSaida::Json);
     let disable_sudo = args.disable_sudo;
     let replace_host_key = args.replace_host_key;
 
@@ -599,6 +628,7 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             comando,
             json,
             password,
+            password_stdin,
             su_password,
             su_password_stdin,
             key,
@@ -607,6 +637,7 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             timeout,
             description,
         } => {
+            let password = ler_stdin_se(password_stdin, password)?;
             let su_password = ler_stdin_se(su_password_stdin, su_password)?;
             let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
             let opts = crate::vps::OpcoesExec {
@@ -653,11 +684,16 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             )
             .await
         }
-        Comando::HealthCheck { vps_nome, password } => {
+        Comando::HealthCheck {
+            vps_nome,
+            json,
+            password,
+        } => {
             crate::vps::executar_health_check(
                 vps_nome.as_deref(),
                 config_override,
                 formato,
+                json,
                 password,
             )
             .await

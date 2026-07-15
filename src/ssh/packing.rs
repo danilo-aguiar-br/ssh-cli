@@ -35,30 +35,49 @@ pub fn anexar_description(comando: &str, description: Option<&str>) -> String {
     }
 }
 
-/// Empacota comando para `sudo` com `sh -c` .
+/// Resultado do packing: comando remoto **sem** segredo na argv + bytes opcionais
+/// a enviar no stdin do canal SSH (GAP-SSH-SEC-001).
+#[derive(Debug, Clone)]
+pub struct ComandoEmpacotado {
+    /// Linha de comando remota (sem senha embutida).
+    pub comando: String,
+    /// Dados a escrever no stdin do canal (ex.: senha + `\n` para `sudo -S` / `su`).
+    pub stdin: Option<Vec<u8>>,
+}
+
+/// Empacota comando para `sudo` com `sh -c`.
 ///
-/// - Com senha: `printf '%s\n' 'senha' | sudo -S -p '' sh -c 'cmd'`
-/// - Sem senha: `sudo -n sh -c 'cmd'`
+/// - Com senha: `sudo -S -p '' sh -c 'cmd'` e senha no **stdin do canal** (não na argv).
+/// - Sem senha: `sudo -n sh -c 'cmd'`.
 #[must_use]
-pub fn empacotar_sudo(comando: &str, senha_sudo: Option<&SecretString>) -> String {
+pub fn empacotar_sudo(comando: &str, senha_sudo: Option<&SecretString>) -> ComandoEmpacotado {
     let cmd_esc = escapar_shell_single_quotes(comando);
     match senha_sudo {
         Some(senha) => {
-            let s = escapar_shell_single_quotes(senha.expose_secret());
-            format!("printf '%s\\n' {s} | sudo -S -p '' sh -c {cmd_esc}")
+            let mut stdin = senha.expose_secret().as_bytes().to_vec();
+            stdin.push(b'\n');
+            ComandoEmpacotado {
+                comando: format!("sudo -S -p '' sh -c {cmd_esc}"),
+                stdin: Some(stdin),
+            }
         }
-        None => format!("sudo -n sh -c {cmd_esc}"),
+        None => ComandoEmpacotado {
+            comando: format!("sudo -n sh -c {cmd_esc}"),
+            stdin: None,
+        },
     }
 }
 
-/// Empacota comando para `su - -c` one-shot com senha via stdin.
-///
-/// `printf '%s\n' 'su_pass' | su - -c 'comando'`
+/// Empacota comando para `su - -c` one-shot; senha vai no stdin do canal.
 #[must_use]
-pub fn empacotar_su(comando: &str, senha_su: &SecretString) -> String {
+pub fn empacotar_su(comando: &str, senha_su: &SecretString) -> ComandoEmpacotado {
     let cmd_esc = escapar_shell_single_quotes(comando);
-    let s = escapar_shell_single_quotes(senha_su.expose_secret());
-    format!("printf '%s\\n' {s} | su - -c {cmd_esc}")
+    let mut stdin = senha_su.expose_secret().as_bytes().to_vec();
+    stdin.push(b'\n');
+    ComandoEmpacotado {
+        comando: format!("su - -c {cmd_esc}"),
+        stdin: Some(stdin),
+    }
 }
 
 /// Sanitiza trecho de comando para uso best-effort em `pkill -f`.
@@ -105,26 +124,30 @@ mod testes {
     }
 
     #[test]
-    fn sudo_com_senha_usa_sh_c() {
+    fn sudo_com_senha_usa_sh_c_sem_secret_na_argv() {
         let senha = SecretString::from("s3cr3t".to_string());
-        let cmd = empacotar_sudo("echo hi | tee /tmp/x", Some(&senha));
-        assert!(cmd.contains("sudo -S -p '' sh -c"));
-        assert!(cmd.contains("printf"));
-        assert!(cmd.contains("echo hi | tee /tmp/x") || cmd.contains("sh -c"));
+        let pack = empacotar_sudo("echo hi | tee /tmp/x", Some(&senha));
+        assert!(pack.comando.contains("sudo -S -p '' sh -c"));
+        assert!(!pack.comando.contains("s3cr3t"));
+        assert!(!pack.comando.contains("printf"));
+        let stdin = pack.stdin.expect("stdin com senha");
+        assert_eq!(stdin, b"s3cr3t\n");
     }
 
     #[test]
     fn sudo_sem_senha_usa_n() {
-        let cmd = empacotar_sudo("id", None);
-        assert_eq!(cmd, "sudo -n sh -c 'id'");
+        let pack = empacotar_sudo("id", None);
+        assert_eq!(pack.comando, "sudo -n sh -c 'id'");
+        assert!(pack.stdin.is_none());
     }
 
     #[test]
-    fn su_pack() {
+    fn su_pack_sem_secret_na_argv() {
         let senha = SecretString::from("rootpw".to_string());
-        let cmd = empacotar_su("whoami", &senha);
-        assert!(cmd.contains("su - -c"));
-        assert!(cmd.contains("printf"));
+        let pack = empacotar_su("whoami", &senha);
+        assert!(pack.comando.contains("su - -c"));
+        assert!(!pack.comando.contains("rootpw"));
+        assert_eq!(pack.stdin.as_deref(), Some(b"rootpw\n".as_slice()));
     }
 
     #[test]
@@ -142,10 +165,8 @@ mod testes {
             padrao_abort_remoto("sleep 999"),
             Some("sleep 999".to_string())
         );
-        assert!(
-            padrao_abort_remoto("$(rm -rf)").is_none()
-                || padrao_abort_remoto("$(rm -rf)").is_some()
-        );
+        // GAP-SSH-TEST-003: metacaractere perigoso → rejeita (não tautologia).
+        assert_eq!(padrao_abort_remoto("$(rm -rf)"), None);
         assert!(padrao_abort_remoto("ab").is_none());
     }
 }

@@ -51,17 +51,21 @@ pub async fn executar_tunnel(
         "iniciando tunnel SSH com deadline"
     );
 
-    output::escrever_linha(&format!(
+    // GAP-SSH-IO-006: banners só em TTY humano; agentes/pipes não poluem stdout.
+    let banner = format!(
         "Tunnel SSH: localhost:{} -> {}:{} via {} (timeout {}ms)",
         porta_local, host_remoto, porta_remota, vps_nome, timeout_ms
-    ))?;
-    output::escrever_linha("Pressione Ctrl+C para encerrar antes do deadline.")?;
+    );
+    tracing::info!("{banner}");
+    output::imprimir_banner_humano(&banner);
+    output::imprimir_banner_humano("Pressione Ctrl+C para encerrar antes do deadline.");
 
-    let cliente: Box<dyn ClienteSshTrait> = <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
-    let resultado = tokio::time::timeout(
-        Duration::from_millis(timeout_ms),
-        executar_tunnel_with_client(vps_nome, porta_local, host_remoto, porta_remota, cliente),
-    )
+    // GAP-SSH-TUN-001: deadline cobre connect + loop (não só o accept loop).
+    let resultado = tokio::time::timeout(Duration::from_millis(timeout_ms), async {
+        let cliente: Box<dyn ClienteSshTrait> =
+            <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
+        executar_tunnel_with_client(vps_nome, porta_local, host_remoto, porta_remota, cliente).await
+    })
     .await;
 
     match resultado {
@@ -183,6 +187,7 @@ mod testes {
                 &mut self,
                 _cmd: &str,
                 _max: usize,
+                _stdin: Option<Vec<u8>>,
             ) -> Result<SaidaExecucao, crate::erros::ErroSshCli> {
                 unreachable!()
             }

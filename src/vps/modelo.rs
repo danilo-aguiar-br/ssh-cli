@@ -162,6 +162,23 @@ impl VpsRegistro {
         Ok(())
     }
 
+    /// Validação completa do registro na fronteira de escrita (add/edit/import).
+    ///
+    /// Garante porta ∈ 1..=65535, host/usuário não vazios e credenciais presentes.
+    /// Não verifica existência de `key_path` no filesystem (isso fica no dispatcher).
+    pub fn validar(&self) -> Result<(), String> {
+        if self.porta == 0 {
+            return Err("porta SSH inválida: 0 (use 1..=65535)".to_string());
+        }
+        if self.host.trim().is_empty() {
+            return Err("host não pode ser vazio".to_string());
+        }
+        if self.usuario.trim().is_empty() {
+            return Err("usuário SSH não pode ser vazio".to_string());
+        }
+        self.validar_credenciais()
+    }
+
     /// Normaliza schema após deserialização (migração v1 → v2).
     pub fn normalizar_schema(&mut self) {
         if self.schema_version < SCHEMA_VERSION_ATUAL {
@@ -294,7 +311,16 @@ mod testes {
     }
 
     #[test]
+    #[serial_test::serial]
     fn round_trip_toml_preserva_dados() {
+        // Isola cifragem at-rest de outros testes (master-key global).
+        let tmp = tempfile::TempDir::new().unwrap();
+        crate::secrets::definir_diretorio_config(Some(tmp.path().to_path_buf()));
+        // SAFETY: teste serial; restaura opt-out de plaintext.
+        // SAFETY: env mutável só em teste serial.
+        unsafe {
+            std::env::set_var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS", "1");
+        }
         let r = VpsRegistro::novo(
             "producao".into(),
             "srv.exemplo.com".into(),
@@ -325,6 +351,10 @@ mod testes {
             Some("sudopass".to_string())
         );
         assert!(r2.senha_su.is_none());
+        unsafe {
+            std::env::remove_var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS");
+        }
+        crate::secrets::definir_diretorio_config(None);
     }
 
     #[test]
