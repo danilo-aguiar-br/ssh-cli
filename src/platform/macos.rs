@@ -3,7 +3,7 @@
 
 use tracing::debug;
 
-/// Inicializa particularidades do macOS.
+/// Initializes macOS-specific behavior.
 pub fn initialize() {
     debug!("plataforma macOS detectada");
 }

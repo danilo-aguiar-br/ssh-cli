@@ -3,10 +3,10 @@
 //!
 //! Rule (GAP-SSH-SEC-002): **always** returns `"***"`, without exposing prefix/suffix.
 
-/// Placeholder fixo para qualquer valor sensível.
+/// Fixed placeholder for any sensitive value.
 pub const FIXED_MASK: &str = "***";
 
-/// Mascara um valor sensível sem vazar caracteres úteis.
+/// Masks a sensitive value without leaking useful characters.
 ///
 /// # Examples
 ///
@@ -26,17 +26,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn valor_vazio_retorna_triplo_asterisco() {
+    fn empty_value_returns_triple_asterisk() {
         assert_eq!(mask(""), "***");
     }
 
     #[test]
-    fn valor_curto_retorna_triplo_asterisco() {
+    fn short_value_returns_triple_asterisk() {
         assert_eq!(mask("abc"), "***");
     }
 
     #[test]
-    fn valor_longo_nunca_expoe_prefixo_ou_sufixo() {
+    fn long_value_never_exposes_prefix_or_suffix() {
         let password = "senha-secreta-muito-longa-aqui-123456";
         assert_eq!(mask(password), "***");
         assert!(!mask(password).contains("senha"));
@@ -44,7 +44,7 @@ mod tests {
     }
 
     #[test]
-    fn valor_com_unicode_nao_crasha() {
+    fn unicode_value_does_not_crash() {
         let emojis = "🔒🔑🛡🔐✨🎉💎⚡🌟🔥🎨🚀🌈🍀🎯🎪🎭🎬🎮🎲";
         assert_eq!(mask(emojis), "***");
     }

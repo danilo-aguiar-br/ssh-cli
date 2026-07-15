@@ -3,7 +3,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ssh_cli::masking::mask;
-use ssh_cli::paths::{normalizar_nfc, validate_and_normalize, validate_name};
+use ssh_cli::paths::{normalize_nfc, validate_and_normalize, validate_name};
 
 fn bench_mascaramento(c: &mut Criterion) {
     c.bench_function("mascarar_short", |b| {
@@ -22,10 +22,10 @@ fn bench_paths(c: &mut Criterion) {
         b.iter(|| validate_name(black_box("meu-servidor-producao")))
     });
     c.bench_function("normalizar_nfc_nfd", |b| {
-        b.iter(|| normalizar_nfc(black_box("cafe\u{0301}")))
+        b.iter(|| normalize_nfc(black_box("cafe\u{0301}")))
     });
     c.bench_function("normalizar_nfc_noop", |b| {
-        b.iter(|| normalizar_nfc(black_box("servidor")))
+        b.iter(|| normalize_nfc(black_box("servidor")))
     });
     c.bench_function("validar_e_normalizar", |b| {
         b.iter(|| validate_and_normalize(black_box("meu-servidor")))

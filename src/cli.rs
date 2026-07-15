@@ -2,8 +2,8 @@
 //! CLI argument definitions via `clap` derive and dispatcher.
 //!
 //! 1. CRUD de VPS — `vps add|list|remove|edit|show|path|doctor|export|import`
-//! 2. `connect` — grava arquivo irmão `active` (não campo TOML)
-//! 3. Execução one-shot — `exec|sudo-exec|su-exec|scp|tunnel|health-check`
+//! 2. `connect` — writes sibling `active` file (not a TOML field)
+//! 3. One-shot execution — `exec|sudo-exec|su-exec|scp|tunnel|health-check`
 //! 4. `secrets` — primary-key status/init/reencrypt (cifragem at-rest default)
 //! 5. Completions
 //!
@@ -177,7 +177,7 @@ pub enum Command {
         /// Reads the SSH password from stdin (GAP-SSH-CLI-001).
         #[arg(long)]
         password_stdin: bool,
-        /// Override de password su.
+        /// Su password override.
         #[arg(
             long,
             alias = "suPassword",
@@ -197,7 +197,7 @@ pub enum Command {
         /// Reads the key passphrase from stdin.
         #[arg(long)]
         key_passphrase_stdin: bool,
-        /// Override de timeout.
+        /// Timeout override.
         #[arg(long)]
         timeout: Option<u64>,
         /// Shell comment appended for audit.
@@ -216,11 +216,11 @@ pub enum Command {
     Tunnel {
         /// VPS name.
         vps_name: String,
-        /// Porta local.
+        /// Local port.
         local_port: u16,
-        /// Host remoto.
+        /// Remote host.
         remote_host: String,
-        /// Porta remota.
+        /// Remote port.
         remote_port: u16,
         /// Mandatory tunnel timeout in milliseconds.
         #[arg(long)]
@@ -247,7 +247,7 @@ pub enum Command {
 
     /// Checks SSH connectivity to a VPS.
     HealthCheck {
-        /// Nome da VPS (usa ativa se omitido).
+        /// VPS name (uses active if omitted).
         vps_name: Option<String>,
         /// JSON output (GAP-SSH-IO-002).
         #[arg(long)]
@@ -267,7 +267,7 @@ pub enum Command {
         /// Reads the key passphrase from stdin (GAP-SSH-CLI-006).
         #[arg(long)]
         key_passphrase_stdin: bool,
-        /// Override de timeout SSH em milissegundos (GAP-SSH-CLI-004).
+        /// SSH timeout override in milliseconds (GAP-SSH-CLI-004).
         #[arg(long)]
         timeout: Option<u64>,
     },
@@ -298,13 +298,13 @@ pub enum VpsAction {
         /// Hostname or IP.
         #[arg(long)]
         host: String,
-        /// Porta SSH.
+        /// SSH port.
         #[arg(long, default_value_t = 22)]
         port: u16,
         /// SSH username.
         #[arg(long)]
         user: String,
-        /// Senha SSH.
+        /// SSH password.
         #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
         /// Reads the password from stdin.
@@ -316,19 +316,19 @@ pub enum VpsAction {
         /// Key passphrase.
         #[arg(long)]
         key_passphrase: Option<String>,
-        /// Timeout em milissegundos (default 60000).
+        /// Timeout in milliseconds (default 60000).
         #[arg(long, default_value_t = 60_000)]
         timeout: u64,
-        /// Limite de caracteres do command (entrada). Alias legado: maxChars.
+        /// Command character limit (input). Legacy alias: maxChars.
         #[arg(long)]
         max_command_chars: Option<String>,
         /// Output character limit.
         #[arg(long)]
         max_output_chars: Option<String>,
-        /// Alias legado: mapeia para max_command_chars .
+        /// Legacy alias: maps to max_command_chars.
         #[arg(long, alias = "maxChars")]
         max_chars: Option<String>,
-        /// Senha para `sudo`.
+        /// Password for `sudo`.
         #[arg(
             long,
             alias = "sudoPassword",
@@ -339,7 +339,7 @@ pub enum VpsAction {
         /// Reads the sudo password from stdin.
         #[arg(long)]
         sudo_password_stdin: bool,
-        /// Senha para `su -`.
+        /// Password for `su -`.
         #[arg(
             long,
             alias = "suPassword",
@@ -367,13 +367,13 @@ pub enum VpsAction {
 
     /// Removes a VPS from the registry.
     Remove {
-        /// Nome da VPS a remover.
+        /// VPS name to remove.
         name: String,
     },
 
     /// Edits fields of an existing VPS.
     Edit {
-        /// Nome da VPS a editar.
+        /// VPS name to edit.
         name: String,
         /// Novo hostname/IP.
         #[arg(long)]
@@ -390,7 +390,7 @@ pub enum VpsAction {
         /// Reads the password from stdin.
         #[arg(long)]
         password_stdin: bool,
-        /// Nova chave.
+        /// Nova key.
         #[arg(long)]
         key: Option<String>,
         /// Nova passphrase.
@@ -405,7 +405,7 @@ pub enum VpsAction {
         /// Novo max output chars.
         #[arg(long)]
         max_output_chars: Option<String>,
-        /// Alias legado maxChars → command.
+        /// Legacy alias maxChars → command.
         #[arg(long, alias = "maxChars")]
         max_chars: Option<String>,
         /// Nova password sudo.
@@ -456,7 +456,7 @@ pub enum VpsAction {
 
     /// Exports hosts (passwords redacted by default).
     Export {
-        /// Inclui segredos no export.
+        /// Include secrets in the export.
         #[arg(long)]
         include_secrets: bool,
         /// Output file (stdout if omitted).
@@ -470,10 +470,10 @@ pub enum VpsAction {
 
     /// Imports hosts from a TOML file.
     Import {
-        /// Arquivo de origem.
+        /// Source file.
         #[arg(long)]
         file: PathBuf,
-        /// Permite hosts sem auth completa (export redacted / esqueleto) — GAP-SSH-IMP-001.
+        /// Allow hosts without full auth (redacted export / skeleton) — GAP-SSH-IMP-001.
         #[arg(long)]
         allow_incomplete: bool,
     },
@@ -556,7 +556,7 @@ pub enum SecretsAction {
     },
     /// Generates and stores the primary key (`secrets.key` or keyring). Never prints the key.
     Init {
-        /// Grava no OS keyring em vez de `secrets.key`.
+        /// Store in the OS keyring instead of `secrets.key`.
         #[arg(long)]
         keyring: bool,
         /// Overwrites an existing key.
@@ -567,13 +567,13 @@ pub enum SecretsAction {
     Reencrypt,
 }
 
-/// Faz parsing dos argumentos da CLI.
+/// Parses CLI arguments.
 #[must_use]
 pub fn parse_args() -> CliArgs {
     CliArgs::parse()
 }
 
-/// Inicializa `tracing-subscriber`.
+/// Initializes `tracing-subscriber`.
 ///
 /// GAP-SSH-LOG-001 (0.3.9): default **error** (agent-first). `-v` → debug.
 /// `RUST_LOG` wins. Never defaults to INFO for JSON/non-TTY.
@@ -585,7 +585,7 @@ pub fn initialize_logs(args: &CliArgs) {
     } else if args.verbose {
         EnvFilter::new("debug")
     } else {
-        // quiet e default humano/agente: error (sem prosa INFO em stderr).
+        // quiet and human/agent default: error (no INFO prose on stderr).
         let _ = args.quiet;
         EnvFilter::new("error")
     };
@@ -612,26 +612,26 @@ pub fn gerar_completions(shell: Shell) {
         if e.kind() == std::io::ErrorKind::BrokenPipe {
             return;
         }
-        // Outros erros: best-effort em stderr sem panic.
-        let _ = writeln!(std::io::stderr(), "erro ao escrever completions: {e}");
+        // Other errors: best-effort on stderr without panic.
+        let _ = writeln!(std::io::stderr(), "failed to write completions: {e}");
     }
 }
 
-fn ler_stdin_se(flag: bool, valor: Option<String>) -> Result<Option<String>> {
+fn ler_stdin_se(flag: bool, value: Option<String>) -> Result<Option<String>> {
     if flag {
         Ok(Some(crate::vps::read_secret_stdin()?))
     } else {
-        Ok(valor)
+        Ok(value)
     }
 }
 
 /// Resolves output format: explicit > `SSH_CLI_FORCE_TEXT` > JSON if non-TTY > Text.
 #[must_use]
-pub fn resolver_formato(explicit: Option<OutputFormat>) -> OutputFormat {
+pub fn resolve_format(explicit: Option<OutputFormat>) -> OutputFormat {
     if let Some(f) = explicit {
         return f;
     }
-    // Isolamento de tests / scripts que forçam prosa humana em pipe.
+    // Isolation for tests/scripts that force human prose in a pipe.
     if std::env::var_os("SSH_CLI_FORCE_TEXT").is_some() {
         return OutputFormat::Text;
     }
@@ -645,10 +645,10 @@ pub fn resolver_formato(explicit: Option<OutputFormat>) -> OutputFormat {
 /// Runs the requested subcommand.
 pub async fn dispatch(args: CliArgs) -> Result<()> {
     let config_override = args.config_dir.clone();
-    // Alinha `secrets.key` com `--config-dir` / tests isolados.
+    // Aligns `secrets.key` with `--config-dir` / isolated tests.
     crate::secrets::set_config_dir(config_override.clone());
-    let formato = resolver_formato(args.output_format);
-    // GAP-SSH-IO-003 / IO-004: política de I/O centralizada.
+    let formato = resolve_format(args.output_format);
+    // GAP-SSH-IO-003 / IO-004: centralized I/O policy.
     crate::output::set_quiet(args.quiet);
     crate::output::set_json_errors(formato == OutputFormat::Json);
     let disable_sudo = args.disable_sudo;
@@ -796,7 +796,7 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
             };
             let password = ler_stdin_se(password_stdin, password)?;
             let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
-            // GAP-SSH-IO-007b: --json local ou --format json global → envelope de erro JSON.
+            // GAP-SSH-IO-007b: local --json or global --format json → JSON error envelope.
             let json_efetivo = json_local || formato == OutputFormat::Json;
             if json_efetivo {
                 crate::output::set_json_errors(true);
@@ -804,7 +804,7 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
             crate::scp::run_scp(
                 action,
                 config_override,
-                crate::scp::OpcoesScp {
+                crate::scp::ScpOptions {
                     password,
                     key,
                     key_passphrase,
@@ -833,7 +833,7 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
             if json_efetivo {
                 crate::output::set_json_errors(true);
             }
-            // GAP-SSH-CLI-005: paridade auth com exec/scp (stdin + passphrase).
+            // GAP-SSH-CLI-005: auth parity with exec/scp (stdin + passphrase).
             let password = ler_stdin_se(password_stdin, password)?;
             let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
             crate::tunnel::run_tunnel(
@@ -861,7 +861,7 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
             key_passphrase_stdin,
             timeout,
         } => {
-            // GAP-SSH-CLI-006: paridade auth com exec/scp (stdin + key + passphrase).
+            // GAP-SSH-CLI-006: auth parity with exec/scp (stdin + key + passphrase).
             let password = ler_stdin_se(password_stdin, password)?;
             let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
             crate::vps::run_health_check(
@@ -893,7 +893,7 @@ mod tests {
     use clap::Parser;
 
     #[test]
-    fn parser_entende_tunnel_com_timeout() {
+    fn parser_understands_tunnel_with_timeout() {
         let args = CliArgs::try_parse_from([
             "ssh-cli",
             "tunnel",

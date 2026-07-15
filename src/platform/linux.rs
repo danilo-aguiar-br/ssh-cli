@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Particularidades da plataforma Linux.
 //!
-//! Detecta sandboxes (Flatpak, Snap) e resolve caminhos XDG.
+//! Detects sandboxes (Flatpak, Snap) and resolves XDG paths.
 
 use tracing::debug;
 
-/// Detecta se o ssh-cli está executando dentro de um sandbox.
+/// Detects whether ssh-cli is running inside a sandbox.
 pub fn detectar_sandbox() {
     if std::env::var("FLATPAK_ID").is_ok() {
         debug!("executando dentro de sandbox Flatpak");
@@ -21,7 +21,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn detectar_sandbox_flatpak_sem_panic() {
+    fn detect_flatpak_sandbox_no_panic() {
         std::env::set_var("FLATPAK_ID", "org.teste.App");
         std::env::remove_var("SNAP");
         detectar_sandbox();
@@ -30,7 +30,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn detectar_sandbox_snap_sem_panic() {
+    fn detect_snap_sandbox_no_panic() {
         std::env::remove_var("FLATPAK_ID");
         std::env::set_var("SNAP", "/snap/app");
         detectar_sandbox();

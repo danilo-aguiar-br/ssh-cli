@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Testes de integração do CRUD de VPS via CLI.
 //!
-//! Testa as operações de carregar, salvar, buscar, adicionar e remover
-//! registros de VPS usando `--config-dir` com TempDir para isolamento.
+//! Testa as operações de load, save, buscar, adicionar e remover
+//! records de VPS usando `--config-dir` com TempDir para isolamento.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -14,8 +14,8 @@ fn cmd(tmp: &TempDir) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_ssh-cli"));
     c.env_clear();
     c.env("PATH", std::env::var_os("PATH").unwrap_or_default());
-    if let Some(valor) = llvm_profile_file {
-        c.env("LLVM_PROFILE_FILE", valor);
+    if let Some(value) = llvm_profile_file {
+        c.env("LLVM_PROFILE_FILE", value);
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
@@ -25,14 +25,14 @@ fn cmd(tmp: &TempDir) -> Command {
 
 #[test]
 #[serial]
-fn carregar_retorna_vazio_quando_nao_existe() {
+fn load_returns_empty_when_missing() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp).args(["vps", "list"]).assert().success();
 }
 
 #[test]
 #[serial]
-fn salvar_cria_arquivo_config() {
+fn save_creates_config_file() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -52,12 +52,12 @@ fn salvar_cria_arquivo_config() {
         .stdout(predicate::str::contains("teste-salvar"));
 
     let config_path = tmp.path().join("config.toml");
-    assert!(config_path.exists(), "arquivo config.toml deve existir");
+    assert!(config_path.exists(), "config.toml file must exist");
 }
 
 #[test]
 #[serial]
-fn salvar_define_schema_version() {
+fn save_sets_schema_version() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -76,16 +76,16 @@ fn salvar_define_schema_version() {
         .success();
 
     let config_path = tmp.path().join("config.toml");
-    let conteudo = std::fs::read_to_string(&config_path).unwrap();
+    let content = std::fs::read_to_string(&config_path).unwrap();
     assert!(
-        conteudo.contains("schema_version"),
+        content.contains("schema_version"),
         "deve conter schema_version"
     );
 }
 
 #[test]
 #[serial]
-fn buscar_por_nome_encontra_vps() {
+fn find_by_name_finds_vps() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -113,7 +113,7 @@ fn buscar_por_nome_encontra_vps() {
 
 #[test]
 #[serial]
-fn buscar_por_nome_nao_encontra_inexistente() {
+fn find_by_name_missing_not_found() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["vps", "show", "fantasma-xyz"])
@@ -123,7 +123,7 @@ fn buscar_por_nome_nao_encontra_inexistente() {
 
 #[test]
 #[serial]
-fn adicionar_duplicado_retorna_erro() {
+fn add_duplicate_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -160,7 +160,7 @@ fn adicionar_duplicado_retorna_erro() {
 
 #[test]
 #[serial]
-fn remover_vps_existente() {
+fn remove_existing_vps() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -192,7 +192,7 @@ fn remover_vps_existente() {
 
 #[test]
 #[serial]
-fn remover_vps_inexistente_retorna_erro() {
+fn remove_missing_vps_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["vps", "remove", "nao-existe-123"])
@@ -202,14 +202,14 @@ fn remover_vps_inexistente_retorna_erro() {
 
 #[test]
 #[serial]
-fn list_vazio_retorna_sucesso_sem_erro() {
+fn empty_list_returns_success() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp).args(["vps", "list"]).assert().success();
 }
 
 #[test]
 #[serial]
-fn list_com_vps_retorna_todos() {
+fn list_with_vps_returns_all() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -253,7 +253,7 @@ fn list_com_vps_retorna_todos() {
 
 #[test]
 #[serial]
-fn editar_atualiza_campos() {
+fn edit_updates_fields() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -297,7 +297,7 @@ fn editar_atualiza_campos() {
 
 #[test]
 #[serial]
-fn path_retorna_caminho_config() {
+fn path_returns_config_path() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["vps", "path"])
@@ -308,7 +308,7 @@ fn path_retorna_caminho_config() {
 
 #[test]
 #[serial]
-fn add_com_porta_personalizada() {
+fn add_with_custom_port() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([

@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Tratamento de sinais do sistema operacional.
+//! Operating system signal handling.
 //!
-//! Registra um handler para Ctrl+C (SIGINT) que sinaliza cancelamento
-//! via um [`AtomicBool`] compartilhado. Todos os módulos que executam
-//! operações longas devem verificar [`cancelado`] periodicamente.
+//! Registers a Ctrl+C (SIGINT) handler that signals cancellation
+//! via a shared [`AtomicBool`]. All modules that run
+//! long operations must check [`is_cancelled`] periodically.
 
 use anyhow::Result;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
-/// Flag global de cancelamento. Definida uma única vez na inicialização.
-static FLAG_CANCELAMENTO: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+/// Global cancellation flag. Set once at initialization.
+static CANCEL_FLAG: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 
-/// Registra o handler de Ctrl+C que marca a flag de cancelamento.
+/// Registers the Ctrl+C handler that sets the cancellation flag.
 ///
-/// Deve ser chamada uma única vez, antes de qualquer operação longa.
-/// Chamadas adicionais são seguras e ignoradas silenciosamente.
+/// Must be called once before any long-running operation.
+/// Additional calls are safe and silently ignored.
 pub fn register_handler() -> Result<()> {
-    let flag = obter_flag();
+    let flag = cancellation_flag();
     let flag_clone = Arc::clone(&flag);
 
     ctrlc::set_handler(move || {
@@ -25,70 +25,70 @@ pub fn register_handler() -> Result<()> {
         tracing::debug!("sinal de cancelamento recebido via Ctrl+C");
     })?;
 
-    tracing::debug!("handler de Ctrl+C registrado com sucesso");
+    tracing::debug!("Ctrl+C handler registered successfully");
 
     #[cfg(unix)]
     {
-        let flag_term = obter_flag_sigterm();
+        let flag_term = sigterm_flag();
         signal_hook::flag::register(signal_hook::consts::SIGTERM, flag_term)?;
         tracing::debug!("handler SIGTERM registrado");
     }
 
     #[cfg(not(unix))]
     {
-        // No Windows, SIGTERM não é suportado nativamente.
-        // ctrlc já cobre Ctrl+C (equivalente a SIGINT).
-        let _ = obter_flag_sigterm(); // Inicializa OnceLock mesmo sem handler
+        // On Windows, SIGTERM is not natively supported.
+        // ctrlc already covers Ctrl+C (SIGINT equivalent).
+        let _ = sigterm_flag(); // Initializes OnceLock even without a handler
     }
 
     Ok(())
 }
 
-/// Retorna `true` se o usuário pressionou Ctrl+C.
+/// Returns `true` if the user pressed Ctrl+C.
 ///
-/// Deve ser verificado em loops de operações longas para permitir
-/// encerramento gracioso.
+/// Must be checked in long-running loops to allow
+/// graceful shutdown.
 ///
 /// # Examples
 ///
 /// ```
-/// use ssh_cli::signals::cancelado;
+/// use ssh_cli::signals::is_cancelled;
 ///
-/// // Antes de registrar handler, retorna false
-/// assert!(!cancelado());
+/// // Before registering a handler, returns false
+/// assert!(!is_cancelled());
 /// ```
 #[must_use]
-pub fn cancelado() -> bool {
-    FLAG_CANCELAMENTO
+pub fn is_cancelled() -> bool {
+    CANCEL_FLAG
         .get()
         .map(|f| f.load(Ordering::SeqCst))
         .unwrap_or(false)
 }
 
-/// Retorna o ponteiro compartilhado da flag de cancelamento.
+/// Returns the shared cancellation flag pointer.
 ///
-/// Útil para passar a flag para tarefas assíncronas que precisam
-/// verificar cancelamento sem chamar [`cancelado`] diretamente.
+/// Useful to pass the flag to async tasks that need
+/// to check cancellation without calling [`is_cancelled`] directly.
 #[must_use]
-pub fn obter_flag() -> Arc<AtomicBool> {
-    Arc::clone(FLAG_CANCELAMENTO.get_or_init(|| Arc::new(AtomicBool::new(false))))
+pub fn cancellation_flag() -> Arc<AtomicBool> {
+    Arc::clone(CANCEL_FLAG.get_or_init(|| Arc::new(AtomicBool::new(false))))
 }
 
-/// Flag global para SIGTERM.
+/// Global SIGTERM flag.
 static FLAG_SIGTERM: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 
-/// Retorna `true` se o processo recebeu SIGTERM.
+/// Returns `true` if the process received SIGTERM.
 #[must_use]
-pub fn terminado() -> bool {
+pub fn is_terminated() -> bool {
     FLAG_SIGTERM
         .get()
         .map(|f| f.load(Ordering::SeqCst))
         .unwrap_or(false)
 }
 
-/// Retorna o Arc do flag de SIGTERM para uso em tarefas async.
+/// Returns the Arc of the SIGTERM flag for async tasks.
 #[must_use]
-pub fn obter_flag_sigterm() -> Arc<AtomicBool> {
+pub fn sigterm_flag() -> Arc<AtomicBool> {
     Arc::clone(FLAG_SIGTERM.get_or_init(|| Arc::new(AtomicBool::new(false))))
 }
 
@@ -99,65 +99,65 @@ mod tests {
 
     #[test]
     #[serial]
-    fn cancelado_retorna_false_antes_de_sinal() {
-        // A flag não deve estar marcada em estado inicial
-        // (a menos que outro teste tenha ativado, mas cada test usa a mesma OnceLock)
-        // Verificamos apenas que a chamada não panics.
-        let _ = cancelado();
+    fn is_cancelled_false_before_signal() {
+        // Flag should not be set in initial state
+        // (unless another test set it; each test shares the same OnceLock)
+        // We only check that the call does not panic.
+        let _ = is_cancelled();
     }
 
     #[test]
     #[serial]
-    fn obter_flag_retorna_mesmo_arc() {
-        let flag_a = obter_flag();
-        let flag_b = obter_flag();
-        // Ambos devem apontar para o mesmo AtomicBool subjacente
+    fn cancellation_flag_returns_same_arc() {
+        let flag_a = cancellation_flag();
+        let flag_b = cancellation_flag();
+        // Both must point to the same underlying AtomicBool
         assert!(Arc::ptr_eq(&flag_a, &flag_b));
     }
 
     #[test]
     #[serial]
-    fn flag_pode_ser_marcada_e_lida() {
-        let flag = obter_flag();
-        // Apenas verificamos que o AtomicBool funciona corretamente
-        let valor_anterior = flag.load(Ordering::SeqCst);
-        flag.store(valor_anterior, Ordering::SeqCst);
-        assert_eq!(flag.load(Ordering::SeqCst), valor_anterior);
+    fn flag_can_be_set_and_read() {
+        let flag = cancellation_flag();
+        // We only check that the AtomicBool works correctly
+        let previous_value = flag.load(Ordering::SeqCst);
+        flag.store(previous_value, Ordering::SeqCst);
+        assert_eq!(flag.load(Ordering::SeqCst), previous_value);
     }
 
     #[test]
     #[serial]
-    fn terminado_false_por_padrao() {
-        // GAP-SSH-TEST-001: serial + reset explícito evita race com tests paralelos.
-        let flag = obter_flag_sigterm();
+    fn is_terminated_false_by_default() {
+        // GAP-SSH-TEST-001: serial + explicit reset avoids races with parallel tests.
+        let flag = sigterm_flag();
         flag.store(false, Ordering::SeqCst);
-        assert!(!terminado());
+        assert!(!is_terminated());
     }
 
     #[test]
     #[serial]
-    fn obter_flag_sigterm_retorna_mesmo_arc() {
-        let a = obter_flag_sigterm();
-        let b = obter_flag_sigterm();
+    fn sigterm_flag_returns_same_arc() {
+        let a = sigterm_flag();
+        let b = sigterm_flag();
         assert!(Arc::ptr_eq(&a, &b));
     }
 
     #[test]
     #[serial]
-    fn terminado_verdadeiro_apos_set() {
-        let flag = obter_flag_sigterm();
+    fn is_terminated_true_after_set() {
+        let flag = sigterm_flag();
         flag.store(true, Ordering::SeqCst);
-        assert!(terminado());
-        flag.store(false, Ordering::SeqCst); // Reset para não afetar outros tests
+        assert!(is_terminated());
+        flag.store(false, Ordering::SeqCst); // Reset so other tests are not affected
     }
 
     #[test]
     #[serial]
-    fn cancelado_false_apos_reset() {
-        let flag = obter_flag();
+    fn is_cancelled_false_after_reset() {
+        let flag = cancellation_flag();
         flag.store(true, Ordering::SeqCst);
-        assert!(cancelado());
+        assert!(is_cancelled());
         flag.store(false, Ordering::SeqCst);
-        assert!(!cancelado());
+        assert!(!is_cancelled());
     }
 }

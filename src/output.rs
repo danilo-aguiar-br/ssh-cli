@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Único módulo autorizado a emitir output em stdout para CRUD de VPS.
+//! Only module allowed to emit stdout for VPS CRUD.
 //!
-//! Este módulo centraliza TODA formatação de CRUD: texto e JSON.
+//! This module centralizes ALL CRUD formatting: text and JSON.
 //!
-//! Logs (tracing) vão para stderr, gerenciados por `tracing-subscriber`.
+//! Logs (tracing) go to stderr, managed by `tracing-subscriber`.
 
 use crate::masking::mask;
 use crate::ssh::ExecutionOutput;
@@ -13,51 +13,51 @@ use serde_json::json;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Flag global de `--quiet` (suprime mensagens humanas em stdout).
+/// Global `--quiet` flag (suppresses human messages on stdout).
 static QUIET: AtomicBool = AtomicBool::new(false);
 
-/// Quando true, erros em `main` usam envelope JSON em stderr (IO-003).
-static JSON_ERROS: AtomicBool = AtomicBool::new(false);
+/// When true, errors in `main` use a JSON envelope on stderr (IO-003).
+static JSON_ERRORS: AtomicBool = AtomicBool::new(false);
 
-/// Define se a CLI está em modo quiet (GAP-SSH-IO-004).
+/// Sets whether the CLI is in quiet mode (GAP-SSH-IO-004).
 pub fn set_quiet(quiet: bool) {
     QUIET.store(quiet, Ordering::SeqCst);
 }
 
-/// Define se erros devem sair como envelope JSON em stderr.
+/// Sets whether errors are emitted as a JSON envelope on stderr.
 pub fn set_json_errors(json: bool) {
-    JSON_ERROS.store(json, Ordering::SeqCst);
+    JSON_ERRORS.store(json, Ordering::SeqCst);
 }
 
-/// Retorna se quiet está ativo.
+/// Returns whether quiet mode is active.
 #[must_use]
 pub fn is_quiet() -> bool {
     QUIET.load(Ordering::SeqCst)
 }
 
-/// Retorna se erros devem ser envelope JSON.
+/// Returns whether errors should use a JSON envelope.
 #[must_use]
 pub fn wants_json_errors() -> bool {
-    JSON_ERROS.load(Ordering::SeqCst)
+    JSON_ERRORS.load(Ordering::SeqCst)
 }
 
-/// Escreve uma linha em stdout garantindo LF puro (nunca CRLF).
+/// Writes a line to stdout with pure LF (never CRLF).
 ///
-/// Em quiet, ainda escreve (dados/paths são API). Preferir `print_success`
-/// para mensagens humanas.
+/// In quiet mode still writes (data/paths are API). Prefer `print_success`
+/// for human messages.
 ///
 /// # Errors
-/// Retorna erro se o I/O em stdout falhar.
-pub fn write_line(conteudo: &str) -> io::Result<()> {
+/// Returns an error if stdout I/O fails.
+pub fn write_line(content: &str) -> io::Result<()> {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
-    handle.write_all(conteudo.as_bytes())?;
+    handle.write_all(content.as_bytes())?;
     handle.write_all(b"\n")?;
     handle.flush()?;
     Ok(())
 }
 
-/// Imprime mensagem de sucesso em texto para humanos (silenciada com `--quiet`).
+/// Prints a human success message (suppressed with `--quiet`).
 pub fn print_success(message: &str) {
     if is_quiet() {
         return;
@@ -65,9 +65,9 @@ pub fn print_success(message: &str) {
     println!("{message}");
 }
 
-/// Banner humano (tunnel etc.): só Text+TTY+!quiet+!JSON erros (GAP-SSH-IO-006).
+/// Human banner (tunnel etc.): Text+TTY+!quiet+!JSON errors only (GAP-SSH-IO-006).
 ///
-/// Em pipes/agentes, progresso vai para `tracing` (stderr), nunca para stdout.
+/// In pipes/agents, progress goes to `tracing` (stderr), never stdout.
 pub fn print_human_banner(message: &str) {
     if is_quiet() || wants_json_errors() {
         return;
@@ -76,17 +76,17 @@ pub fn print_human_banner(message: &str) {
         return;
     }
     if std::env::var_os("SSH_CLI_FORCE_TEXT").is_none() {
-        // Sem FORCE_TEXT, non-TTY já retornou; TTY humano ok.
+        // Without FORCE_TEXT, non-TTY already returned; human TTY is ok.
     }
     println!("{message}");
 }
 
-/// Imprime mensagem de erro em stderr (para humanos).
+/// Prints an error message on stderr (human-facing).
 pub fn print_error(message: &str) {
     eprintln!("{message}");
 }
 
-/// Emite envelope JSON de erro em stderr (GAP-SSH-IO-003).
+/// Emits a JSON error envelope on stderr (GAP-SSH-IO-003).
 pub fn print_error_envelope(
     exit_code: i32,
     message: &str,
@@ -109,18 +109,18 @@ pub fn print_error_envelope(
     Ok(())
 }
 
-/// Imprime valor JSON pretty em stdout (dados de API; respeita quiet=false sempre).
+/// Prints pretty JSON on stdout (API data; always respects quiet=false).
 pub fn print_json_value(v: &serde_json::Value) -> io::Result<()> {
     let s = serde_json::to_string_pretty(v).map_err(io::Error::other)?;
     write_line(&s)
 }
 
-/// Imprime relatório doctor em texto (GAP-SSH-IO-005).
+/// Prints the doctor report as text (GAP-SSH-IO-005).
 #[allow(clippy::too_many_arguments)]
 pub fn print_doctor_text(
-    camada: &str,
+    layer: &str,
     config_path: &str,
-    existe: bool,
+    exists: bool,
     perms: &str,
     schema_version: u32,
     hosts: usize,
@@ -134,9 +134,9 @@ pub fn print_doctor_text(
     if is_quiet() {
         return;
     }
-    println!("Winning layer:   {camada}");
+    println!("Winning layer:   {layer}");
     println!("Config path:      {config_path}");
-    println!("Exists:           {existe}");
+    println!("Exists:           {exists}");
     println!("Permissions:      {perms}");
     println!("Schema:           {schema_version}");
     println!("Hosts:            {hosts}");
@@ -151,12 +151,12 @@ pub fn print_doctor_text(
     println!("Telemetry:        disabled");
 }
 
-/// Imprime lista de VPS em formato texto (mascarado).
-pub fn print_list_text(registros: &[VpsRecord]) {
+/// Prints the VPS list as masked text.
+pub fn print_list_text(records: &[VpsRecord]) {
     if is_quiet() {
         return;
     }
-    if registros.is_empty() {
+    if records.is_empty() {
         println!(
             "{}",
             crate::i18n::t(crate::i18n::Message::VpsRegistryEmpty)
@@ -166,9 +166,9 @@ pub fn print_list_text(registros: &[VpsRecord]) {
 
     println!(
         "{:<20} {:<30} {:<6} {:<15} {:<20}",
-        "NOME", "HOST", "PORTA", "USUÁRIO", "SENHA"
+        "NAME", "HOST", "PORT", "USER", "PASSWORD"
     );
-    for r in registros {
+    for r in records {
         println!(
             "{:<20} {:<30} {:<6} {:<15} {:<20}",
             r.name,
@@ -180,16 +180,16 @@ pub fn print_list_text(registros: &[VpsRecord]) {
     }
 }
 
-/// Imprime lista de VPS em formato JSON (mascarado).
-pub fn print_list_json(registros: &[VpsRecord]) {
-    let lista: Vec<_> = registros.iter().map(record_to_masked_json).collect();
-    match serde_json::to_string_pretty(&lista) {
+/// Prints the VPS list as masked JSON.
+pub fn print_list_json(records: &[VpsRecord]) {
+    let list: Vec<_> = records.iter().map(record_to_masked_json).collect();
+    match serde_json::to_string_pretty(&list) {
         Ok(s) => println!("{s}"),
-        Err(erro) => eprintln!("erro ao serializar JSON: {erro}"),
+        Err(err) => eprintln!("failed to serialize JSON: {err}"),
     }
 }
 
-/// Imprime detalhes de UMA VPS em texto (mascarado).
+/// Prints a single VPS record as masked text.
 pub fn print_details_text(r: &VpsRecord) {
     if is_quiet() {
         return;
@@ -198,30 +198,30 @@ pub fn print_details_text(r: &VpsRecord) {
     println!("Host:           {}", r.host);
     println!("Port:            {}", r.port);
     println!("User:            {}", r.username);
-    // GAP-SSH-JSON-001: password vazia (key-only) não finge valor mascarado.
+    // GAP-SSH-JSON-001: empty password (key-only) does not fake a masked value.
     println!(
-        "Senha:          {}",
+        "Password:       {}",
         if r.password.expose_secret().is_empty() {
-            "(não definida)".to_string()
+            "(not set)".to_string()
         } else {
             mask(r.password.expose_secret())
         }
     );
     println!(
         "Key path:       {}",
-        r.key_path.as_deref().unwrap_or("(não definida)")
+        r.key_path.as_deref().unwrap_or("(not set)")
     );
     println!(
-        "Senha sudo:     {}",
+        "Sudo password:  {}",
         r.sudo_password
             .as_ref()
-            .map_or_else(|| "(não definida)".into(), |s| mask(s.expose_secret()))
+            .map_or_else(|| "(not set)".into(), |s| mask(s.expose_secret()))
     );
     println!(
-        "Senha su:       {}",
+        "Su password:    {}",
         r.su_password
             .as_ref()
-            .map_or_else(|| "(não definida)".into(), |s| mask(s.expose_secret()))
+            .map_or_else(|| "(not set)".into(), |s| mask(s.expose_secret()))
     );
     println!("Timeout (ms):   {}", r.timeout_ms);
     println!("Max cmd chars:  {}", r.max_command_chars);
@@ -231,17 +231,17 @@ pub fn print_details_text(r: &VpsRecord) {
     println!("Added at:        {}", r.added_at);
 }
 
-/// Imprime detalhes de UMA VPS em JSON (mascarado).
+/// Prints a single VPS record as masked JSON.
 pub fn print_details_json(r: &VpsRecord) {
     let v = record_to_masked_json(r);
     match serde_json::to_string_pretty(&v) {
         Ok(s) => println!("{s}"),
-        Err(erro) => eprintln!("erro ao serializar JSON: {erro}"),
+        Err(err) => eprintln!("failed to serialize JSON: {err}"),
     }
 }
 
 fn record_to_masked_json(r: &VpsRecord) -> serde_json::Value {
-    // GAP-SSH-JSON-001: password ausente/vazio → null (como sudo/su); presente → "***".
+    // GAP-SSH-JSON-001: missing/empty password → null (like sudo/su); present → "***".
     let password = if r.password.expose_secret().is_empty() {
         json!(null)
     } else {
@@ -266,11 +266,11 @@ fn record_to_masked_json(r: &VpsRecord) -> serde_json::Value {
     })
 }
 
-/// GAP-SSH-UX-001: hosts para `vps export --json`.
+/// GAP-SSH-UX-001: hosts for `vps export --json`.
 ///
 /// - Redacted (`include_secrets=false`): secrets vazios/null, **nunca** ciphertext `sshcli-enc:`
-///   (paridade EXP-001). Password empty → `""` no envelope de export (honest skeleton).
-/// - Com secrets: password em claro só se `--include-secrets` (mesmo risco do TOML).
+///   (EXP-001 parity). Empty password → `""` in export envelope (honest skeleton).
+/// - With secrets: plaintext password only if `--include-secrets` (same risk as TOML).
 pub fn export_hosts_to_json(
     hosts: &std::collections::BTreeMap<String, VpsRecord>,
     include_secrets: bool,
@@ -320,7 +320,7 @@ pub fn export_hosts_to_json(
     serde_json::Value::Object(map)
 }
 
-/// Imprime stdout/stderr de execução de command SSH.
+/// Prints stdout/stderr from an SSH command execution.
 ///
 /// Formato:
 /// ```text
@@ -356,7 +356,7 @@ pub fn print_execution_output(output: &ExecutionOutput) {
     }
 }
 
-/// Imprime stdout/stderr de execução de command SSH em formato JSON.
+/// Prints SSH command execution output as JSON.
 pub fn print_execution_output_json(output: &ExecutionOutput) {
     let v = json!({
         "stdout": output.stdout,
@@ -368,11 +368,11 @@ pub fn print_execution_output_json(output: &ExecutionOutput) {
     });
     match serde_json::to_string_pretty(&v) {
         Ok(s) => println!("{s}"),
-        Err(e) => eprintln!("erro ao serializar JSON: {e}"),
+        Err(e) => eprintln!("failed to serialize JSON: {e}"),
     }
 }
 
-/// Imprime resultado de health-check em formato texto.
+/// Prints a health-check result as text.
 pub fn print_health_check(name: &str, latency_ms: u64) {
     if is_quiet() {
         return;
@@ -386,7 +386,7 @@ pub fn print_health_check(name: &str, latency_ms: u64) {
     println!("  latência: {latency_ms}ms");
 }
 
-/// Imprime resultado de health-check em formato JSON.
+/// Prints a health-check result as JSON.
 pub fn print_health_check_json(name: &str, latency_ms: u64) {
     let v = json!({
         "name": name,
@@ -395,11 +395,11 @@ pub fn print_health_check_json(name: &str, latency_ms: u64) {
     });
     match serde_json::to_string_pretty(&v) {
         Ok(s) => println!("{s}"),
-        Err(e) => eprintln!("erro ao serializar JSON: {e}"),
+        Err(e) => eprintln!("failed to serialize JSON: {e}"),
     }
 }
 
-/// Imprime resultado de transferência SCP em JSON (GAP-SSH-IO-007 / SCP-021 / IO-009).
+/// Prints an SCP transfer result as JSON (GAP-SSH-IO-007 / SCP-021 / IO-009).
 pub fn print_transfer_json(
     direction: &str,
     vps: &str,
@@ -408,7 +408,7 @@ pub fn print_transfer_json(
     bytes: u64,
     duration_ms: u64,
 ) {
-    // GAP-SSH-IO-009: discriminador de evento (paridade com tunnel_listening).
+    // GAP-SSH-IO-009: event discriminator (parity with tunnel_listening).
     let v = json!({
         "ok": true,
         "event": "scp-transfer",
@@ -423,11 +423,11 @@ pub fn print_transfer_json(
         Ok(s) => {
             let _ = write_line(&s);
         }
-        Err(e) => eprintln!("erro ao serializar JSON: {e}"),
+        Err(e) => eprintln!("failed to serialize JSON: {e}"),
     }
 }
 
-/// Evento JSON quando o listener local do tunnel sobe (GAP-SSH-IO-008).
+/// JSON event when the local tunnel listener comes up (GAP-SSH-IO-008).
 pub fn print_tunnel_listening_json(
     vps: &str,
     local_port: u16,
@@ -448,7 +448,7 @@ pub fn print_tunnel_listening_json(
         Ok(s) => {
             let _ = write_line(&s);
         }
-        Err(e) => eprintln!("erro ao serializar JSON: {e}"),
+        Err(e) => eprintln!("failed to serialize JSON: {e}"),
     }
 }
 
@@ -478,7 +478,7 @@ mod tests {
     }
 
     #[test]
-    fn registro_para_json_mascarado_contem_campos_obrigatorios() {
+    fn masked_json_contains_required_fields() {
         let r = registro_teste();
         let json = record_to_masked_json(&r);
         assert_eq!(json["name"], "vps-teste");
@@ -495,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn registro_para_json_mascarado_senha_sudo_nula_quando_nao_definida() {
+    fn masked_json_sudo_null_when_unset() {
         let mut r = registro_teste();
         r.sudo_password = None;
         let json = record_to_masked_json(&r);
@@ -503,7 +503,7 @@ mod tests {
     }
 
     #[test]
-    fn registro_para_json_mascarado_su_password_presente() {
+    fn masked_json_su_password_present() {
         let mut r = registro_teste();
         r.su_password = Some(SecretString::from("senha-su-muito-longa-aqui".to_string()));
         let json = record_to_masked_json(&r);
@@ -511,7 +511,7 @@ mod tests {
     }
 
     #[test]
-    fn registro_para_json_mascarado_password_null_quando_vazio() {
+    fn masked_json_password_null_when_empty() {
         let mut r = registro_teste();
         r.password = SecretString::from(String::new());
         let json = record_to_masked_json(&r);
@@ -519,36 +519,36 @@ mod tests {
     }
 
     #[test]
-    fn escribir_linha_ok() {
-        let resultado = write_line("teste de escrita");
-        assert!(resultado.is_ok());
+    fn write_line_ok() {
+        let result = write_line("write test");
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn escribir_linha_com_caracteres_especiais() {
-        let resultado = write_line("linha com \t tab e \"aspas\"");
-        assert!(resultado.is_ok());
+    fn write_line_special_chars() {
+        let result = write_line("line with \t tab and \"quotes\"");
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn salida_execucao_completa_formatada() {
+    fn execution_output_fully_formatted() {
         let output = ExecutionOutput {
             stdout: "output do comando".to_string(),
-            stderr: "erro do comando".to_string(),
+            stderr: "command error".to_string(),
             exit_code: Some(0),
             truncated_stdout: false,
             truncated_stderr: false,
             duration_ms: 150,
         };
-        let resultado = write_line(&format!(
+        let result = write_line(&format!(
             "stdout: {}, stderr: {}, exit: {:?}",
             output.stdout, output.stderr, output.exit_code
         ));
-        assert!(resultado.is_ok());
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn salida_execucao_sem_exit_code() {
+    fn execution_output_without_exit_code() {
         let output = ExecutionOutput {
             stdout: "".to_string(),
             stderr: "".to_string(),
@@ -565,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    fn vps_registro_debug_nao_expoe_senha() {
+    fn vps_record_debug_does_not_expose_password() {
         let r = registro_teste();
         let json = record_to_masked_json(&r);
         let json_str = serde_json::to_string(&json).unwrap();
@@ -574,10 +574,10 @@ mod tests {
     }
 
     #[test]
-    fn salida_execucao_truncada_mostra_aviso() {
+    fn execution_output_truncated_shows_warning() {
         let output = ExecutionOutput {
             stdout: "output".to_string(),
-            stderr: "erro".to_string(),
+            stderr: "error".to_string(),
             exit_code: Some(1),
             truncated_stdout: true,
             truncated_stderr: true,
@@ -588,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn salida_execucao_com_exit_code_numerico() {
+    fn execution_output_numeric_exit_code() {
         let output = ExecutionOutput {
             stdout: "".to_string(),
             stderr: "".to_string(),
@@ -605,47 +605,47 @@ mod tests {
     }
 
     #[test]
-    fn escribir_linha_string_vazia() {
-        let resultado = write_line("");
-        assert!(resultado.is_ok());
+    fn write_line_empty_string() {
+        let result = write_line("");
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn escribir_linha_com_unicode_brasileiro() {
-        let resultado = write_line("ação você está Itaú");
-        assert!(resultado.is_ok());
+    fn write_line_brazilian_unicode() {
+        let result = write_line("ação você está Itaú");
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn escribir_linha_com_emojis() {
-        let resultado = write_line("texto com 🚀 e 🔐");
-        assert!(resultado.is_ok());
+    fn write_line_with_emojis() {
+        let result = write_line("texto com 🚀 e 🔐");
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn escribir_linha_com_newlines() {
-        let resultado = write_line("linha1\nlinha2\nlinha3");
-        assert!(resultado.is_ok());
+    fn write_line_with_newlines() {
+        let result = write_line("linha1\nlinha2\nlinha3");
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn escribir_linha_longo_texto() {
-        let texto_longo = "a".repeat(10000);
-        let resultado = write_line(&texto_longo);
-        assert!(resultado.is_ok());
+    fn write_line_long_text() {
+        let long_text = "a".repeat(10000);
+        let result = write_line(&long_text);
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn registro_para_json_mascarado_com_senha_curta_mascara_com_asteriscos() {
+    fn masked_json_short_password_asterisks() {
         let mut r = registro_teste();
         r.password = SecretString::from("curta".to_string());
         let json = record_to_masked_json(&r);
-        let senha_str = json["password"].as_str().unwrap();
-        assert_eq!(senha_str, "***");
+        let password_str = json["password"].as_str().unwrap();
+        assert_eq!(password_str, "***");
     }
 
     #[test]
-    fn registro_para_json_mascarado_com_sudo_e_su_definidos() {
+    fn masked_json_with_sudo_and_su_set() {
         let mut r = registro_teste();
         r.sudo_password = Some(SecretString::from("sudo-pass-longa-aqui".to_string()));
         r.su_password = Some(SecretString::from("su-pass-longa-aqui".to_string()));
@@ -657,7 +657,7 @@ mod tests {
     }
 
     #[test]
-    fn saida_execucao_formatacao_completa() {
+    fn execution_output_full_formatting() {
         let output = ExecutionOutput {
             stdout: "comando executado".to_string(),
             stderr: "aviso harmless".to_string(),
@@ -675,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn saida_execucao_sem_stderr() {
+    fn execution_output_without_stderr() {
         let output = ExecutionOutput {
             stdout: "ok".to_string(),
             stderr: String::new(),
@@ -688,7 +688,7 @@ mod tests {
     }
 
     #[test]
-    fn saida_execucao_com_sinal_em_vez_de_exit_code() {
+    fn execution_output_signal_instead_of_exit() {
         let output = ExecutionOutput {
             stdout: String::new(),
             stderr: "signal received".to_string(),
@@ -701,10 +701,10 @@ mod tests {
     }
 
     #[test]
-    fn saida_execucao_json_contem_campos_obrigatorios() {
+    fn execution_output_json_required_fields() {
         let output = ExecutionOutput {
             stdout: "output".to_string(),
-            stderr: "erro".to_string(),
+            stderr: "error".to_string(),
             exit_code: Some(0),
             truncated_stdout: false,
             truncated_stderr: false,

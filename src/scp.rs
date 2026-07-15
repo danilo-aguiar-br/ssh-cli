@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Transferência de arquivos via SCP sobre SSH (one-shot).
+//! File transfer via SCP over SSH (one-shot).
 //!
-//! Wrapper que usa os métodos `upload` e `download` do [`SshClient`].
-//! Somente arquivos regulares (sem `-r` / sem SFTP subsystem).
+//! Wrapper around [`SshClient`] `upload` and `download` methods.
+//! Regular files only (no `-r` / no SFTP subsystem).
 
 use crate::cli::ScpAction;
 use crate::erros::SshCliError;
@@ -12,30 +12,30 @@ use crate::ssh::client::{SshClient, SshClientTrait};
 use crate::vps;
 use std::path::PathBuf;
 
-/// Overrides de runtime para o subcomando `scp` (paridade com exec).
+/// Runtime overrides for the `scp` subcommand (parity with exec).
 #[derive(Debug, Default, Clone)]
-pub struct OpcoesScp {
-    /// Senha SSH (já resolvida de flag ou stdin).
+pub struct ScpOptions {
+    /// SSH password (already resolved from flag or stdin).
     pub password: Option<String>,
-    /// Caminho da chave privada.
+    /// Private key path.
     pub key: Option<String>,
-    /// Passphrase da chave (já resolvida).
+    /// Key passphrase (already resolved).
     pub key_passphrase: Option<String>,
-    /// Timeout total connect+transfer em ms.
+    /// Total connect+transfer timeout in ms.
     pub timeout: Option<u64>,
-    /// Substitui host key divergente (global `--replace-host-key`).
+    /// Replace divergent host key (global `--replace-host-key`).
     pub replace_host_key: bool,
-    /// Emite JSON de sucesso (flag local ou formato global).
+    /// Emit success JSON (local flag or global format).
     pub json: bool,
 }
 
-/// Executa o subcomando SCP (upload/download).
+/// Runs the SCP subcommand (upload/download).
 pub async fn run_scp(
     action: ScpAction,
     config_override: Option<PathBuf>,
-    opts: OpcoesScp,
+    opts: ScpOptions,
 ) -> anyhow::Result<()> {
-    if crate::signals::cancelado() {
+    if crate::signals::is_cancelled() {
         return Err(anyhow::anyhow!(i18n::t(Message::OperationCancelled)));
     }
 
@@ -46,7 +46,7 @@ pub async fn run_scp(
             remote,
             ..
         } => {
-            // GAP-SSH-SCP-001 / SCP-019: validate arquivo local antes do connect.
+            // GAP-SSH-SCP-001 / SCP-019: validate file local antes do connect.
             if local.is_dir() {
                 return Err(SshCliError::InvalidArgument(i18n::t(
                     Message::ScpUploadFileOnly,
@@ -60,7 +60,7 @@ pub async fn run_scp(
             let mut registro = vps::find_by_name(config_override.clone(), &vps_name)?
                 .ok_or_else(|| SshCliError::VpsNotFound(vps_name.clone()))?;
 
-            aplicar_opcoes_scp(&mut registro, &opts);
+            apply_scp_options(&mut registro, &opts);
 
             let path = crate::vps::resolve_config_path(config_override.clone())?;
             let cfg = crate::vps::build_connection_config(
@@ -69,9 +69,9 @@ pub async fn run_scp(
                 opts.replace_host_key,
             );
 
-            let cliente: Box<dyn SshClientTrait> =
+            let client: Box<dyn SshClientTrait> =
                 <SshClient as SshClientTrait>::connect(cfg).await?;
-            run_scp_upload_with_client(&vps_name, &local, &remote, cliente, opts.json).await?;
+            run_scp_upload_with_client(&vps_name, &local, &remote, client, opts.json).await?;
         }
         ScpAction::Download {
             vps_name,
@@ -89,7 +89,7 @@ pub async fn run_scp(
             let mut registro = vps::find_by_name(config_override.clone(), &vps_name)?
                 .ok_or_else(|| SshCliError::VpsNotFound(vps_name.clone()))?;
 
-            aplicar_opcoes_scp(&mut registro, &opts);
+            apply_scp_options(&mut registro, &opts);
 
             let path = crate::vps::resolve_config_path(config_override.clone())?;
             let cfg = crate::vps::build_connection_config(
@@ -98,16 +98,16 @@ pub async fn run_scp(
                 opts.replace_host_key,
             );
 
-            let cliente: Box<dyn SshClientTrait> =
+            let client: Box<dyn SshClientTrait> =
                 <SshClient as SshClientTrait>::connect(cfg).await?;
-            run_scp_download_with_client(&vps_name, &remote, &local, cliente, opts.json)
+            run_scp_download_with_client(&vps_name, &remote, &local, client, opts.json)
                 .await?;
         }
     }
     Ok(())
 }
 
-fn aplicar_opcoes_scp(registro: &mut crate::vps::model::VpsRecord, opts: &OpcoesScp) {
+fn apply_scp_options(registro: &mut crate::vps::model::VpsRecord, opts: &ScpOptions) {
     if let Some(ref pwd) = opts.password {
         registro.password = secrecy::SecretString::from(pwd.clone());
     }
@@ -122,57 +122,57 @@ fn aplicar_opcoes_scp(registro: &mut crate::vps::model::VpsRecord, opts: &Opcoes
     }
 }
 
-/// Versão testável de upload SCP que aceita o cliente como parâmetro.
+/// Testable SCP upload that accepts the client as a parameter.
 pub async fn run_scp_upload_with_client(
     vps_name: &str,
     local: &std::path::Path,
     remote: &std::path::Path,
-    mut cliente: Box<dyn SshClientTrait>,
+    mut client: Box<dyn SshClientTrait>,
     json: bool,
 ) -> anyhow::Result<()> {
-    let resultado = cliente.upload(local, remote).await?;
-    cliente.disconnect().await?;
+    let result = client.upload(local, remote).await?;
+    client.disconnect().await?;
     if json {
         output::print_transfer_json(
             "upload",
             vps_name,
             &local.display().to_string(),
             &remote.display().to_string(),
-            resultado.bytes_transferred,
-            resultado.duration_ms,
+            result.bytes_transferred,
+            result.duration_ms,
         );
     } else {
         output::print_success(&i18n::t(Message::ScpUploadCompleted {
-            bytes: resultado.bytes_transferred,
-            ms: resultado.duration_ms,
+            bytes: result.bytes_transferred,
+            ms: result.duration_ms,
         }));
     }
     Ok(())
 }
 
-/// Versão testável de download SCP que aceita o cliente como parâmetro.
+/// Testable SCP download that accepts the client as a parameter.
 pub async fn run_scp_download_with_client(
     vps_name: &str,
     remote: &std::path::Path,
     local: &std::path::Path,
-    mut cliente: Box<dyn SshClientTrait>,
+    mut client: Box<dyn SshClientTrait>,
     json: bool,
 ) -> anyhow::Result<()> {
-    let resultado = cliente.download(remote, local).await?;
-    cliente.disconnect().await?;
+    let result = client.download(remote, local).await?;
+    client.disconnect().await?;
     if json {
         output::print_transfer_json(
             "download",
             vps_name,
             &local.display().to_string(),
             &remote.display().to_string(),
-            resultado.bytes_transferred,
-            resultado.duration_ms,
+            result.bytes_transferred,
+            result.duration_ms,
         );
     } else {
         output::print_success(&i18n::t(Message::ScpDownloadCompleted {
-            bytes: resultado.bytes_transferred,
-            ms: resultado.duration_ms,
+            bytes: result.bytes_transferred,
+            ms: result.duration_ms,
         }));
     }
     Ok(())
@@ -194,7 +194,7 @@ mod tests {
     use std::path::Path;
     use tempfile::TempDir;
 
-    struct ClienteFakeScp {
+    struct FakeScpClient {
         upload_ok: bool,
         download_ok: bool,
         bytes_upload: u64,
@@ -202,10 +202,10 @@ mod tests {
     }
 
     #[async_trait]
-    impl SshClientTrait for ClienteFakeScp {
+    impl SshClientTrait for FakeScpClient {
         async fn connect(_cfg: ConnectionConfig) -> Result<Box<Self>, SshCliError> {
             Err(SshCliError::ConnectionFailed(
-                "não implementado em teste".to_string(),
+                "not implemented in test".to_string(),
             ))
         }
 
@@ -216,7 +216,7 @@ mod tests {
             _stdin_data: Option<Vec<u8>>,
         ) -> Result<ExecutionOutput, SshCliError> {
             Err(SshCliError::ChannelFailed(
-                "não implementado em teste".to_string(),
+                "not implemented in test".to_string(),
             ))
         }
 
@@ -258,7 +258,7 @@ mod tests {
             _porta_origem: u16,
         ) -> Result<Box<dyn TunnelChannel>, SshCliError> {
             Err(SshCliError::ChannelFailed(
-                "não implementado em teste".to_string(),
+                "not implemented in test".to_string(),
             ))
         }
 
@@ -285,20 +285,20 @@ mod tests {
         )
     }
 
-    fn salvar_config_com_vps(tmp: &TempDir, name: &str) {
+    fn save_config_with_vps(tmp: &TempDir, name: &str) {
         let mut hosts = BTreeMap::new();
         hosts.insert(name.to_string(), registro_teste(name));
-        let arquivo = ConfigFile {
+        let file = ConfigFile {
             schema_version: CURRENT_SCHEMA_VERSION,
             hosts,
         };
         let path = tmp.path().join("config.toml");
-        vps::salvar(&path, &arquivo).expect("salvar config teste");
+        vps::save(&path, &file).expect("save test config");
     }
 
     #[tokio::test]
-    async fn executar_scp_upload_with_client_retorna_ok() {
-        let cliente = Box::new(ClienteFakeScp {
+    async fn scp_upload_with_client_returns_ok() {
+        let client = Box::new(FakeScpClient {
             upload_ok: true,
             download_ok: true,
             bytes_upload: 128,
@@ -306,72 +306,72 @@ mod tests {
         });
         let local = Path::new("/tmp/local.txt");
         let remote = Path::new("/tmp/remote.txt");
-        let resultado = run_scp_upload_with_client("v1", local, remote, cliente, false).await;
-        assert!(resultado.is_ok());
+        let result = run_scp_upload_with_client("v1", local, remote, client, false).await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
-    async fn executar_scp_download_with_client_retorna_ok() {
-        let cliente = Box::new(ClienteFakeScp {
+    async fn scp_download_with_client_returns_ok() {
+        let client = Box::new(FakeScpClient {
             upload_ok: true,
             download_ok: true,
             bytes_upload: 0,
             bytes_download: 256,
         });
-        let resultado = run_scp_download_with_client(
+        let result = run_scp_download_with_client(
             "v1",
             Path::new("/tmp/remote.txt"),
             Path::new("/tmp/local.txt"),
-            cliente,
+            client,
             false,
         )
         .await;
-        assert!(resultado.is_ok());
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
-    async fn executar_scp_upload_with_client_retorna_erro() {
-        let cliente = Box::new(ClienteFakeScp {
+    async fn scp_upload_with_client_returns_error() {
+        let client = Box::new(FakeScpClient {
             upload_ok: false,
             download_ok: true,
             bytes_upload: 0,
             bytes_download: 0,
         });
-        let resultado = run_scp_upload_with_client(
+        let result = run_scp_upload_with_client(
             "v1",
             Path::new("/tmp/local.txt"),
             Path::new("/tmp/remote.txt"),
-            cliente,
+            client,
             false,
         )
         .await;
-        assert!(resultado.is_err());
+        assert!(result.is_err());
     }
 
     #[tokio::test]
-    async fn executar_scp_download_with_client_retorna_erro() {
-        let cliente = Box::new(ClienteFakeScp {
+    async fn scp_download_with_client_returns_error() {
+        let client = Box::new(FakeScpClient {
             upload_ok: true,
             download_ok: false,
             bytes_upload: 0,
             bytes_download: 0,
         });
-        let resultado = run_scp_download_with_client(
+        let result = run_scp_download_with_client(
             "v1",
             Path::new("/tmp/remote.txt"),
             Path::new("/tmp/local.txt"),
-            cliente,
+            client,
             false,
         )
         .await;
-        assert!(resultado.is_err());
+        assert!(result.is_err());
     }
 
     #[tokio::test]
     #[serial]
-    async fn executar_scp_upload_tenta_conectar_quando_vps_existe() {
+    async fn scp_upload_tries_connect_when_vps_exists() {
         let tmp = TempDir::new().unwrap();
-        salvar_config_com_vps(&tmp, "vps-upload");
+        save_config_with_vps(&tmp, "vps-upload");
         let local = tmp.path().join("local.bin");
         std::fs::write(&local, b"abc").unwrap();
         let action = ScpAction::Upload {
@@ -389,21 +389,21 @@ mod tests {
         let r = run_scp(
             action,
             Some(tmp.path().to_path_buf()),
-            OpcoesScp {
+            ScpOptions {
                 timeout: Some(100),
                 ..Default::default()
             },
         )
         .await;
-        // Conexão a 127.0.0.1:1 deve falhar (sem hang longo por timeout 100ms).
+        // Connection to 127.0.0.1:1 must fail (no long hang; 100ms timeout).
         assert!(r.is_err());
     }
 
     #[tokio::test]
     #[serial]
-    async fn executar_scp_download_tenta_conectar_quando_vps_existe() {
+    async fn scp_download_tries_connect_when_vps_exists() {
         let tmp = TempDir::new().unwrap();
-        salvar_config_com_vps(&tmp, "vps-download");
+        save_config_with_vps(&tmp, "vps-download");
         let action = ScpAction::Download {
             vps_name: "vps-download".to_string(),
             remote: PathBuf::from("/tmp/x"),
@@ -419,7 +419,7 @@ mod tests {
         let r = run_scp(
             action,
             Some(tmp.path().to_path_buf()),
-            OpcoesScp {
+            ScpOptions {
                 timeout: Some(100),
                 ..Default::default()
             },
@@ -430,9 +430,9 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn executar_scp_upload_rejeita_diretorio() {
+    async fn scp_upload_rejects_directory() {
         let tmp = TempDir::new().unwrap();
-        salvar_config_com_vps(&tmp, "vps-dir");
+        save_config_with_vps(&tmp, "vps-dir");
         let action = ScpAction::Upload {
             vps_name: "vps-dir".to_string(),
             local: tmp.path().to_path_buf(),
@@ -445,7 +445,7 @@ mod tests {
             timeout: None,
             json: false,
         };
-        let r = run_scp(action, Some(tmp.path().to_path_buf()), OpcoesScp::default()).await;
+        let r = run_scp(action, Some(tmp.path().to_path_buf()), ScpOptions::default()).await;
         assert!(r.is_err());
         let msg = format!("{:?}", r.err().unwrap());
         assert!(

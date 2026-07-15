@@ -1,49 +1,49 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Configuração de output colorido e detecção de terminal interativo.
+//! Colored output configuration and interactive terminal detection.
 //!
-//! Gerencia a escolha de cores via `termcolor` respeitando a precedência:
+//! Manages color choice via `termcolor` honoring precedence:
 //! 1. Flag `--no-color` da CLI (maior prioridade).
-//! 2. Variável de ambiente `NO_COLOR` (padrão <https://no-color.org>).
-//! 3. Variável de ambiente `CLICOLOR_FORCE=1` (forçar cores mesmo sem TTY).
-//! 4. Detecção de TTY (cores apenas se stdout for terminal interativo).
-//! 5. Fallback: sem cor.
+//! 2. `NO_COLOR` environment variable (see <https://no-color.org>).
+//! 3. `CLICOLOR_FORCE=1` environment variable (force colors even without TTY).
+//! 4. TTY detection (colors only if stdout is an interactive terminal).
+//! 5. Fallback: no color.
 
 use anyhow::Result;
 use std::sync::OnceLock;
 use termcolor::ColorChoice;
 
-/// Cache da escolha de cor (definida uma vez na inicialização).
+/// Color choice cache (set once at initialization).
 static COR_CACHE: OnceLock<ColorChoice> = OnceLock::new();
 
-/// Inicializa a configuração de cor do terminal.
+/// Initializes terminal color configuration.
 ///
-/// Deve ser chamada uma única vez após o parsing dos argumentos CLI.
-/// O parâmetro `sem_cor` corresponde à flag `--no-color` da CLI.
-pub fn initialize(sem_cor: bool) -> Result<()> {
-    let escolha = determinar_cor(sem_cor);
-    let _ = COR_CACHE.set(escolha);
-    tracing::debug!("configuração de cor do terminal: {:?}", escolha);
+/// Must be called once after CLI argument parsing.
+/// The `no_color` parameter matches the CLI `--no-color` flag.
+pub fn initialize(no_color: bool) -> Result<()> {
+    let choice = determine_color(no_color);
+    let _ = COR_CACHE.set(choice);
+    tracing::debug!("configuração de cor do terminal: {:?}", choice);
     Ok(())
 }
 
-/// Retorna a escolha de cor configurada.
+/// Returns the configured color choice.
 ///
-/// Se [`initialize`] não foi chamada, retorna [`ColorChoice::Never`] como
+/// If [`initialize`] was not called, returns [`ColorChoice::Never`] as
 /// fallback seguro.
 #[must_use]
-pub fn cor_escolha() -> ColorChoice {
+pub fn color_choice() -> ColorChoice {
     *COR_CACHE.get().unwrap_or(&ColorChoice::Never)
 }
 
-/// Retorna `true` se o processo está rodando em um terminal interativo (TTY).
+/// Returns `true` if the process is running in an interactive terminal (TTY).
 ///
-/// Usa [`std::io::IsTerminal`] (estabilizado no Rust 1.70) para detecção
-/// cross-platform sem dependências externas.
+/// Uses [`std::io::IsTerminal`] (stabilized in Rust 1.70) for detection
+/// cross-platform without external dependencies.
 #[must_use]
 pub fn is_interactive() -> bool {
     use std::io::IsTerminal;
 
-    // Se TERM=dumb, não é interativo independente do TTY
+    // If TERM=dumb, not interactive regardless of TTY
     if std::env::var("TERM").as_deref() == Ok("dumb") {
         return false;
     }
@@ -51,24 +51,24 @@ pub fn is_interactive() -> bool {
     std::io::stdout().is_terminal()
 }
 
-/// Determina a escolha de cor com base nas regras de precedência.
-fn determinar_cor(sem_cor_cli: bool) -> ColorChoice {
+/// Determines color choice based on precedence rules.
+fn determine_color(no_color_cli: bool) -> ColorChoice {
     // 1. Flag --no-color da CLI (maior prioridade)
-    if sem_cor_cli {
+    if no_color_cli {
         return ColorChoice::Never;
     }
 
-    // 2. Variável de ambiente NO_COLOR (qualquer valor)
+    // 2. NO_COLOR environment variable (any value)
     if std::env::var("NO_COLOR").is_ok() {
         return ColorChoice::Never;
     }
 
-    // 3. CLICOLOR_FORCE=1 força cores mesmo sem TTY
+    // 3. CLICOLOR_FORCE=1 forces colors even without TTY
     if std::env::var("CLICOLOR_FORCE").as_deref() == Ok("1") {
         return ColorChoice::Always;
     }
 
-    // 4. Detecção de TTY: cores apenas em terminal interativo
+    // 4. TTY detection: colors only on interactive terminal
     if is_interactive() {
         ColorChoice::Auto
     } else {
@@ -81,22 +81,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sem_cor_cli_retorna_never() {
-        let escolha = determinar_cor(true);
-        assert!(matches!(escolha, ColorChoice::Never));
+    fn no_color_cli_returns_never() {
+        let choice = determine_color(true);
+        assert!(matches!(choice, ColorChoice::Never));
     }
 
     #[test]
-    fn no_color_env_retorna_never() {
-        // Salva e restaura o estado da variável de ambiente
+    fn no_color_env_returns_never() {
+        // Saves and restores environment variable state
         let anterior = std::env::var("NO_COLOR").ok();
         let anterior_force = std::env::var("CLICOLOR_FORCE").ok();
 
         std::env::set_var("NO_COLOR", "1");
         std::env::remove_var("CLICOLOR_FORCE");
 
-        let escolha = determinar_cor(false);
-        assert!(matches!(escolha, ColorChoice::Never));
+        let choice = determine_color(false);
+        assert!(matches!(choice, ColorChoice::Never));
 
         // Restaura
         match anterior {
@@ -110,15 +110,15 @@ mod tests {
     }
 
     #[test]
-    fn clicolor_force_retorna_always() {
+    fn clicolor_force_returns_always() {
         let anterior = std::env::var("NO_COLOR").ok();
         let anterior_force = std::env::var("CLICOLOR_FORCE").ok();
 
         std::env::remove_var("NO_COLOR");
         std::env::set_var("CLICOLOR_FORCE", "1");
 
-        let escolha = determinar_cor(false);
-        assert!(matches!(escolha, ColorChoice::Always));
+        let choice = determine_color(false);
+        assert!(matches!(choice, ColorChoice::Always));
 
         // Restaura
         match anterior {
@@ -132,16 +132,16 @@ mod tests {
     }
 
     #[test]
-    fn cor_escolha_retorna_never_sem_inicializar() {
-        // Sem initialize, o fallback é Never
-        // NOTA: em tests paralelos o OnceLock pode já ter valor.
-        // Apenas verificamos que não panic.
-        let _ = cor_escolha();
+    fn color_choice_returns_never_without_init() {
+        // Without initialize, fallback is Never
+        // NOTE: in parallel tests OnceLock may already hold a value.
+        // Only check that it does not panic.
+        let _ = color_choice();
     }
 
     #[test]
-    fn e_interativo_retorna_bool() {
-        // Apenas verifica que não panic
+    fn is_interactive_returns_bool() {
+        // Only checks that it does not panic
         let _ = is_interactive();
     }
 }

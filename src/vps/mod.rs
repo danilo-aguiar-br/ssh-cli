@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! CRUD e persistência de registros de VPS (XDG + TOML atômico + flock).
+//! VPS record CRUD and persistence (XDG + atomic TOML + flock).
 //!
-//! ZERO arquivo `.env` em runtime. Schema v2 com auth password/chave.
+//! ZERO file `.env` em runtime. Schema v2 com auth password/key.
 
 pub mod model;
 
@@ -19,10 +19,10 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-/// Arquivo de configuração completo.
+/// Full configuration file.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ConfigFile {
-    /// Versão do schema do arquivo.
+    /// File schema version.
     #[serde(default)]
     pub schema_version: u32,
     /// Mapa de VPSs por name.
@@ -30,7 +30,7 @@ pub struct ConfigFile {
     pub hosts: BTreeMap<String, VpsRecord>,
 }
 
-/// Resolve o path do arquivo de config a partir de um override opcional.
+/// Resolves the config file path from an optional override.
 pub fn resolve_config_path(override_path: Option<PathBuf>) -> SshCliResult<PathBuf> {
     match override_path {
         Some(p) => {
@@ -46,7 +46,7 @@ pub fn resolve_config_path(override_path: Option<PathBuf>) -> SshCliResult<PathB
     }
 }
 
-/// Retorna o path do arquivo de config respeitando `SSH_CLI_HOME`.
+/// Returns the config file path honoring `SSH_CLI_HOME`.
 pub fn default_config_path() -> SshCliResult<PathBuf> {
     if let Ok(home) = std::env::var("SSH_CLI_HOME") {
         if home.contains("..") {
@@ -58,93 +58,93 @@ pub fn default_config_path() -> SshCliResult<PathBuf> {
     }
 
     let dirs = directories::ProjectDirs::from("", "", "ssh-cli").ok_or_else(|| {
-        SshCliError::Generic("não foi possível resolver diretório de config".to_string())
+        SshCliError::Generic("could not resolve config directory".to_string())
     })?;
     Ok(dirs.config_dir().join("config.toml"))
 }
 
-/// Camada vencedora de configuração (doctor).
+/// Winning configuration layer (doctor).
 #[derive(Debug, Clone)]
-pub struct CamadaConfig {
-    /// Nome da camada.
+pub struct ConfigLayer {
+    /// Layer name.
     pub name: &'static str,
-    /// Path resolvido.
+    /// Resolved path.
     pub path: PathBuf,
 }
 
-/// Resolve e descreve a camada de config vencedora.
-pub fn camada_vencedora(override_path: Option<PathBuf>) -> SshCliResult<CamadaConfig> {
+/// Resolves and describes the winning config layer.
+pub fn winning_layer(override_path: Option<PathBuf>) -> SshCliResult<ConfigLayer> {
     if override_path.is_some() {
-        return Ok(CamadaConfig {
+        return Ok(ConfigLayer {
             name: "--config-dir",
             path: resolve_config_path(override_path)?,
         });
     }
     if std::env::var("SSH_CLI_HOME").is_ok() {
-        return Ok(CamadaConfig {
+        return Ok(ConfigLayer {
             name: "SSH_CLI_HOME",
             path: default_config_path()?,
         });
     }
-    Ok(CamadaConfig {
+    Ok(ConfigLayer {
         name: "XDG ProjectDirs",
         path: default_config_path()?,
     })
 }
 
-/// Carrega o arquivo de configuração (retorna vazio se não existir).
-pub fn carregar(path: &PathBuf) -> SshCliResult<ConfigFile> {
+/// Loads the configuration file (returns empty if missing).
+pub fn load(path: &PathBuf) -> SshCliResult<ConfigFile> {
     if !path.exists() {
         return Ok(ConfigFile {
             schema_version: model::CURRENT_SCHEMA_VERSION,
             hosts: BTreeMap::new(),
         });
     }
-    let conteudo = std::fs::read_to_string(path)?;
-    let mut arquivo: ConfigFile = toml::from_str(&conteudo)?;
-    for reg in arquivo.hosts.values_mut() {
+    let content = std::fs::read_to_string(path)?;
+    let mut file: ConfigFile = toml::from_str(&content)?;
+    for reg in file.hosts.values_mut() {
         reg.normalize_schema();
     }
-    if arquivo.schema_version < model::CURRENT_SCHEMA_VERSION {
-        arquivo.schema_version = model::CURRENT_SCHEMA_VERSION;
+    if file.schema_version < model::CURRENT_SCHEMA_VERSION {
+        file.schema_version = model::CURRENT_SCHEMA_VERSION;
     }
-    Ok(arquivo)
+    Ok(file)
 }
 
-/// Escreve bytes em `path` de forma atômica (tempfile + fsync + rename + 0o600).
+/// Writes bytes to `path` atomically (tempfile + fsync + rename + 0o600).
 ///
-/// Usado por `salvar` e `export` (GAP-007 residual no export).
-pub fn escrever_atomico(path: &Path, bytes: &[u8]) -> SshCliResult<()> {
-    if let Some(pai) = path.parent() {
-        std::fs::create_dir_all(pai)?;
+/// Usado por `save` e `export` (GAP-007 residual no export).
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> SshCliResult<()> {
+    if let Some(parent_dir) = path.parent() {
+        std::fs::create_dir_all(parent_dir)?;
     }
-    let pai = path
+    let parent_dir = path
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    let mut tmp = tempfile::NamedTempFile::new_in(&pai)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(&parent_dir)?;
     tmp.write_all(bytes)?;
     tmp.as_file().sync_data()?;
     tmp.persist(path).map_err(|e| SshCliError::Io(e.error))?;
     apply_permissions_600(path)?;
     #[cfg(unix)]
     {
-        if let Ok(dir) = std::fs::File::open(&pai) {
+        if let Ok(dir) = std::fs::File::open(&parent_dir) {
             let _ = dir.sync_all();
         }
     }
     Ok(())
 }
 
-/// Salva o arquivo de configuração de forma atômica com flock e 0o600.
-pub fn salvar(path: &Path, arquivo: &ConfigFile) -> SshCliResult<()> {
-    if let Some(pai) = path.parent() {
-        std::fs::create_dir_all(pai)?;
+/// Saves the configuration file atomically with flock and 0o600.
+pub fn save(path: &Path, file: &ConfigFile) -> SshCliResult<()> {
+    if let Some(parent_dir) = path.parent() {
+        std::fs::create_dir_all(parent_dir)?;
     }
-    let texto = toml::to_string_pretty(arquivo)
-        .map_err(|e| SshCliError::Generic(format!("falha serializando TOML: {e}")))?;
+    let text = toml::to_string_pretty(file)
+        .map_err(|e| SshCliError::Generic(format!("failed to serialize TOML: {e}")))?;
 
-    // Lock em arquivo irmão para serializar mutações concorrentes (N one-shots).
+    // Sibling lock file to serialize concurrent mutations (N one-shots).
     let lock_path = path.with_extension("toml.lock");
     let lock_file = std::fs::OpenOptions::new()
         .create(true)
@@ -152,18 +152,18 @@ pub fn salvar(path: &Path, arquivo: &ConfigFile) -> SshCliResult<()> {
         .read(true)
         .write(true)
         .open(&lock_path)?;
-    // GAP-SSH-PERM-001: lock com 0o600 (não 0644 do umask).
+    // GAP-SSH-PERM-001: lock with 0o600 (not umask 0644).
     apply_permissions_600(&lock_path)?;
     fs2::FileExt::lock_exclusive(&lock_file)?;
 
-    escrever_atomico(path, texto.as_bytes())?;
+    write_atomic(path, text.as_bytes())?;
 
     let _ = fs2::FileExt::unlock(&lock_file);
     Ok(())
 }
 
-/// Expande `~` no início do path (home do usuário).
-fn expandir_tilde(path: &str) -> PathBuf {
+/// Expands leading `~` in a path (user home).
+fn expand_tilde(path: &str) -> PathBuf {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from);
@@ -180,24 +180,24 @@ fn expandir_tilde(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// Valida que `key_path` aponta para um arquivo local existente (VAL-003)
-/// e, com `ssh-real`, que o conteúdo é uma chave OpenSSH parseável (VAL-004).
+/// Validates that `key_path` points to an existing local file (VAL-003)
+/// and, with `ssh-real`, that the content is a parseable OpenSSH key (VAL-004).
 ///
-/// Chaves cifradas sem passphrase no cadastro: se o parse indicar necessidade
-/// de password, o arquivo é aceito (formato válido). Lixo de formato → 64.
-fn validar_key_path_existe(key_path: &str) -> Result<(), SshCliError> {
-    validar_key_path_existe_com_passphrase(key_path, None)
+/// Encrypted keys without a registration passphrase: if parse indicates a need
+/// for password, the file is accepted (valid format). Format garbage → 64.
+fn validate_key_path_exists(key_path: &str) -> Result<(), SshCliError> {
+    validate_key_path_exists_with_passphrase(key_path, None)
 }
 
-/// Como [`validar_key_path_existe`], com passphrase opcional do add/edit.
-fn validar_key_path_existe_com_passphrase(
+/// Like [`validate_key_path_exists`], with optional passphrase from add/edit.
+fn validate_key_path_exists_with_passphrase(
     key_path: &str,
     passphrase: Option<&str>,
 ) -> Result<(), SshCliError> {
-    let p = expandir_tilde(key_path);
+    let p = expand_tilde(key_path);
     if !p.is_file() {
         return Err(SshCliError::FileNotFound(format!(
-            "chave privada não encontrada: {}",
+            "private key not found: {}",
             p.display()
         )));
     }
@@ -207,7 +207,7 @@ fn validar_key_path_existe_com_passphrase(
             Ok(_) => Ok(()),
             Err(e) => {
                 let msg = e.to_string().to_lowercase();
-                // Key cifrada válida sem passphrase no write-path.
+                // Valid encrypted key without passphrase on the write-path.
                 if msg.contains("password")
                     || msg.contains("passphrase")
                     || msg.contains("encrypted")
@@ -216,7 +216,7 @@ fn validar_key_path_existe_com_passphrase(
                     return Ok(());
                 }
                 Err(SshCliError::InvalidArgument(format!(
-                    "chave privada OpenSSH inválida em {}: {e}",
+                    "invalid OpenSSH private key at {}: {e}",
                     p.display()
                 )))
             }
@@ -249,7 +249,7 @@ fn apply_permissions_600(_caminho: &Path) -> SshCliResult<()> {
     Ok(())
 }
 
-/// Lê uma linha de password de stdin (sem eco extra).
+/// Reads a password line from stdin (no extra echo).
 pub fn read_secret_stdin() -> SshCliResult<String> {
     let mut buf = String::new();
     std::io::stdin().read_to_string(&mut buf)?;
@@ -258,8 +258,8 @@ pub fn read_secret_stdin() -> SshCliResult<String> {
 
 /// Aplica overrides de runtime sobre um VpsRecord clonado.
 ///
-/// Ordem dos parâmetros: password, sudo, su, timeout, key_path, key_passphrase.
-pub(crate) fn aplicar_overrides(
+/// Parameter order: password, sudo, su, timeout, key_path, key_passphrase.
+pub(crate) fn apply_overrides(
     vps: &mut VpsRecord,
     password_override: Option<String>,
     sudo_password_override: Option<String>,
@@ -335,8 +335,8 @@ pub async fn run_vps_command(
             // GAP-SSH-VAL-001: validate na fronteira de escrita.
             let name = crate::paths::validate_and_normalize(&name)
                 .map_err(|e| SshCliError::InvalidArgument(format!("nome de VPS inválido: {e}")))?;
-            let mut arquivo = carregar(&path)?;
-            if arquivo.hosts.contains_key(&name) {
+            let mut file = load(&path)?;
+            if file.hosts.contains_key(&name) {
                 return Err(SshCliError::VpsDuplicate(name).into());
             }
             if password_stdin && (sudo_password_stdin || su_password_stdin) {
@@ -361,9 +361,9 @@ pub async fn run_vps_command(
                 su_password.map(SecretString::from)
             };
             if let Some(ref k) = key {
-                validar_key_path_existe(k)?;
+                validate_key_path_exists(k)?;
             }
-            // max_chars legado → command se max_command não veio explicitamente
+            // legacy max_chars → command if max_command was not set explicitly
             let max_cmd = max_command_chars
                 .as_deref()
                 .or(max_chars.as_deref())
@@ -388,11 +388,11 @@ pub async fn run_vps_command(
                 su_s,
                 disable_sudo,
             );
-            // GAP-SSH-VAL-002 / VAL-003: domínio completo no write-path.
+            // GAP-SSH-VAL-002 / VAL-003: full domain validation on the write-path.
             registro.validate().map_err(SshCliError::InvalidArgument)?;
-            arquivo.hosts.insert(name.clone(), registro);
-            arquivo.schema_version = model::CURRENT_SCHEMA_VERSION;
-            salvar(&path, &arquivo)?;
+            file.hosts.insert(name.clone(), registro);
+            file.schema_version = model::CURRENT_SCHEMA_VERSION;
+            save(&path, &file)?;
             crate::output::print_success(&crate::i18n::t(crate::i18n::Message::VpsAdded { name: name.clone() }));
             if check {
                 run_health_check(
@@ -410,22 +410,22 @@ pub async fn run_vps_command(
             }
         }
         VpsAction::List { json } => {
-            let arquivo = carregar(&path)?;
-            let registros: Vec<_> = arquivo.hosts.values().cloned().collect();
+            let file = load(&path)?;
+            let records: Vec<_> = file.hosts.values().cloned().collect();
             // GAP-SSH-IO-001: respeitar formato global.
             if usar_json(json, formato) {
-                crate::output::print_list_json(&registros);
+                crate::output::print_list_json(&records);
             } else {
-                crate::output::print_list_text(&registros);
+                crate::output::print_list_text(&records);
             }
         }
         VpsAction::Remove { name } => {
-            let mut arquivo = carregar(&path)?;
-            if arquivo.hosts.remove(&name).is_none() {
+            let mut file = load(&path)?;
+            if file.hosts.remove(&name).is_none() {
                 return Err(SshCliError::VpsNotFound(name).into());
             }
-            salvar(&path, &arquivo)?;
-            // GAP-SSH-STATE-001: limpar active órfão.
+            save(&path, &file)?;
+            // GAP-SSH-STATE-001: clear orphan active marker.
             clear_active_if_name(&path, &name)?;
             crate::output::print_success(&crate::i18n::t(crate::i18n::Message::VpsRemoved { name: name.clone() }));
         }
@@ -448,8 +448,8 @@ pub async fn run_vps_command(
             su_password_stdin,
             disable_sudo,
         } => {
-            let mut arquivo = carregar(&path)?;
-            let registro = arquivo
+            let mut file = load(&path)?;
+            let registro = file
                 .hosts
                 .get_mut(&name)
                 .ok_or_else(|| SshCliError::VpsNotFound(name.clone()))?;
@@ -468,7 +468,7 @@ pub async fn run_vps_command(
                 registro.password = SecretString::from(pw);
             }
             if let Some(k) = key {
-                validar_key_path_existe(&k)?;
+                validate_key_path_exists(&k)?;
                 registro.key_path = Some(k);
             }
             if let Some(kp) = key_passphrase {
@@ -497,12 +497,12 @@ pub async fn run_vps_command(
                 registro.disable_sudo = d;
             }
             registro.validate().map_err(SshCliError::InvalidArgument)?;
-            salvar(&path, &arquivo)?;
+            save(&path, &file)?;
             crate::output::print_success(&crate::i18n::t(crate::i18n::Message::VpsEdited { name: name.clone() }));
         }
         VpsAction::Show { name, json } => {
-            let arquivo = carregar(&path)?;
-            let registro = arquivo
+            let file = load(&path)?;
+            let registro = file
                 .hosts
                 .get(&name)
                 .ok_or_else(|| SshCliError::VpsNotFound(name.clone()))?;
@@ -541,7 +541,7 @@ pub async fn run_vps_command(
     Ok(())
 }
 
-/// Remove o arquivo `active` se o conteúdo for o name removido (STATE-001).
+/// Removes the `active` file if its content matches the removed name (STATE-001).
 fn clear_active_if_name(caminho_config: &Path, name: &str) -> Result<()> {
     let active = caminho_config
         .parent()
@@ -550,24 +550,24 @@ fn clear_active_if_name(caminho_config: &Path, name: &str) -> Result<()> {
     if !active.exists() {
         return Ok(());
     }
-    let conteudo = std::fs::read_to_string(&active).unwrap_or_default();
-    if conteudo.trim() == name {
+    let content = std::fs::read_to_string(&active).unwrap_or_default();
+    if content.trim() == name {
         let _ = std::fs::remove_file(&active);
     }
     Ok(())
 }
 
 fn run_doctor(config_override: Option<PathBuf>, json: bool) -> Result<()> {
-    let camada = camada_vencedora(config_override.clone())?;
-    let path = camada.path.clone();
-    let existe = path.exists();
-    let arquivo = carregar(&path)?;
+    let layer = winning_layer(config_override.clone())?;
+    let path = layer.path.clone();
+    let exists = path.exists();
+    let file = load(&path)?;
     let kh = KnownHosts::path_beside_config(&path);
     let active = path
         .parent()
         .map(|p| p.join("active"))
         .unwrap_or_else(|| PathBuf::from("active"));
-    let perms = if existe {
+    let perms = if exists {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -587,21 +587,21 @@ fn run_doctor(config_override: Option<PathBuf>, json: bool) -> Result<()> {
     let seg = crate::secrets::secrets_status()?;
     if json {
         let v = serde_json::json!({
-            "layer": camada.name,
+            "layer": layer.name,
             "config_path": path.display().to_string(),
-            "exists": existe,
+            "exists": exists,
             "permissions": perms,
-            "schema_version": arquivo.schema_version,
-            "hosts": arquivo.hosts.len(),
+            "schema_version": file.schema_version,
+            "hosts": file.hosts.len(),
             "known_hosts": kh.display().to_string(),
             "active_file": active.display().to_string(),
-            "secrets_at_rest": if seg.cifragem_ativa { "encrypted" } else { "plaintext" },
-            "secrets_key_source": seg.fonte.as_str(),
+            "secrets_at_rest": if seg.encryption_active { "encrypted" } else { "plaintext" },
+            "secrets_key_source": seg.source.as_str(),
             "secrets_key_file": seg.key_file_path.display().to_string(),
             "secrets_plaintext_opt_out": seg.plaintext_opt_out,
             "telemetry": false,
         });
-        // GAP-SSH-IO-005: println só em output.
+        // GAP-SSH-IO-005: println only in output module.
         crate::output::print_json_value(&v)?;
     } else {
         let config_path_s = path.display().to_string();
@@ -609,20 +609,20 @@ fn run_doctor(config_override: Option<PathBuf>, json: bool) -> Result<()> {
         let active_s = active.display().to_string();
         let key_file_s = seg.key_file_path.display().to_string();
         crate::output::print_doctor_text(
-            camada.name,
+            layer.name,
             &config_path_s,
-            existe,
+            exists,
             &perms,
-            arquivo.schema_version,
-            arquivo.hosts.len(),
+            file.schema_version,
+            file.hosts.len(),
             &kh_s,
             &active_s,
-            if seg.cifragem_ativa {
+            if seg.encryption_active {
                 "encrypted"
             } else {
                 "plaintext"
             },
-            seg.fonte.as_str(),
+            seg.source.as_str(),
             &key_file_s,
             seg.plaintext_opt_out,
         );
@@ -636,12 +636,12 @@ fn run_export(
     output: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    let arquivo = carregar(path)?;
+    let file = load(path)?;
     let mut export = ConfigFile {
-        schema_version: arquivo.schema_version,
+        schema_version: file.schema_version,
         hosts: BTreeMap::new(),
     };
-    for (k, mut v) in arquivo.hosts {
+    for (k, mut v) in file.hosts {
         if !include_secrets {
             // EXP-001 parity: redacted limpa secrets (nunca sshcli-enc de empty).
             v.password = SecretString::from(String::new());
@@ -662,15 +662,15 @@ fn run_export(
             "include_secrets": include_secrets,
             "hosts": hosts_json,
         });
-        let texto = serde_json::to_string_pretty(&v)?;
-        texto.into_bytes()
+        let text = serde_json::to_string_pretty(&v)?;
+        text.into_bytes()
     } else {
-        let texto = toml::to_string_pretty(&export)?;
-        texto.into_bytes()
+        let text = toml::to_string_pretty(&export)?;
+        text.into_bytes()
     };
 
     if let Some(path) = output {
-        escrever_atomico(Path::new(path), &bytes)?;
+        write_atomic(Path::new(path), &bytes)?;
         crate::output::print_success(&crate::i18n::t(crate::i18n::Message::ExportCompleted { path: path.to_string() }));
     } else {
         // TOML/JSON body to stdout (agent-first: single payload).
@@ -685,10 +685,10 @@ fn run_export(
 }
 
 fn run_import(path: &PathBuf, file: &Path, allow_incomplete: bool) -> Result<()> {
-    let texto = std::fs::read_to_string(file)?;
-    let importado: ConfigFile = toml::from_str(&texto)?;
-    let mut atual = carregar(path)?;
-    for (k, mut v) in importado.hosts {
+    let text = std::fs::read_to_string(file)?;
+    let imported: ConfigFile = toml::from_str(&text)?;
+    let mut current = load(path)?;
+    for (k, mut v) in imported.hosts {
         // VAL-001 no import.
         let name = crate::paths::validate_and_normalize(&k).map_err(|e| {
             SshCliError::InvalidArgument(format!("nome de VPS inválido no import '{k}': {e}"))
@@ -696,17 +696,17 @@ fn run_import(path: &PathBuf, file: &Path, allow_incomplete: bool) -> Result<()>
         v.name = name.clone();
         if let Some(ref key) = v.key_path {
             if !key.trim().is_empty() {
-                validar_key_path_existe(key)?;
+                validate_key_path_exists(key)?;
             }
         }
         match v.validate() {
             Ok(()) => {
-                atual.hosts.insert(name, v);
+                current.hosts.insert(name, v);
             }
             Err(msg) if allow_incomplete => {
                 // GAP-SSH-IMP-001: esqueleto incompleto permitido.
                 tracing::warn!(host = %name, %msg, "import incomplete permitido");
-                atual.hosts.insert(name, v);
+                current.hosts.insert(name, v);
             }
             Err(msg) => {
                 // Detectar export redacted.
@@ -726,8 +726,8 @@ fn run_import(path: &PathBuf, file: &Path, allow_incomplete: bool) -> Result<()>
             }
         }
     }
-    atual.schema_version = model::CURRENT_SCHEMA_VERSION;
-    salvar(path, &atual)?;
+    current.schema_version = model::CURRENT_SCHEMA_VERSION;
+    save(path, &current)?;
     crate::output::print_success(&crate::i18n::t(crate::i18n::Message::ImportCompleted));
     Ok(())
 }
@@ -746,22 +746,22 @@ pub async fn run_secrets_command(
             let usar_json = json || formato == OutputFormat::Json;
             if usar_json {
                 let v = serde_json::json!({
-                    "encryption_active": seg.cifragem_ativa,
-                    "key_source": seg.fonte.as_str(),
+                    "encryption_active": seg.encryption_active,
+                    "key_source": seg.source.as_str(),
                     "key_file": seg.key_file_path.display().to_string(),
                     "plaintext_opt_out": seg.plaintext_opt_out,
-                    "at_rest": if seg.cifragem_ativa { "encrypted" } else { "plaintext" },
+                    "at_rest": if seg.encryption_active { "encrypted" } else { "plaintext" },
                 });
                 crate::output::print_json_value(&v)?;
             } else {
                 crate::output::print_success(&format!(
                     "at-rest: {} | source: {} | key_file: {} | plaintext_opt_out: {}",
-                    if seg.cifragem_ativa {
+                    if seg.encryption_active {
                         "encrypted"
                     } else {
                         "plaintext"
                     },
-                    seg.fonte.as_str(),
+                    seg.source.as_str(),
                     seg.key_file_path.display(),
                     seg.plaintext_opt_out
                 ));
@@ -772,7 +772,7 @@ pub async fn run_secrets_command(
             let seg = crate::secrets::init_primary_key(keyring, force)?;
             crate::output::print_success(&format!(
                 "primary-key pronta (source={}; key_file={})",
-                seg.fonte.as_str(),
+                seg.source.as_str(),
                 seg.key_file_path.display()
             ));
             Ok(())
@@ -785,54 +785,54 @@ pub async fn run_secrets_command(
     }
 }
 
-/// Recarrega e regrava o config, re-cifando secrets com a chave atual.
+/// Reloads and rewrites config, re-encrypting secrets with the current key.
 fn run_reencrypt(path: &PathBuf) -> Result<()> {
-    let (chave, fonte) = crate::secrets::ensure_key_for_write()?;
-    if chave.is_none() {
+    let (key, source) = crate::secrets::ensure_key_for_write()?;
+    if key.is_none() {
         return Err(SshCliError::InvalidArgument(
             "sem primary-key; rode `ssh-cli secrets init` ou remova SSH_CLI_ALLOW_PLAINTEXT_SECRETS"
                 .to_string(),
         )
         .into());
     }
-    if let Some(mut k) = chave {
+    if let Some(mut k) = key {
         use zeroize::Zeroize;
         k.zeroize();
     }
-    let arquivo = carregar(path)?;
-    salvar(path, &arquivo)?;
+    let file = load(path)?;
+    save(path, &file)?;
     crate::output::print_success(&format!(
         "reencrypt ok (source={}; hosts={})",
-        fonte.as_str(),
-        arquivo.hosts.len()
+        source.as_str(),
+        file.hosts.len()
     ));
     Ok(())
 }
 
-/// Define a VPS ativa gravando seu name em `<config_dir>/active` (arquivo irmão).
+/// Sets the active VPS by writing its name to `<config_dir>/active` (sibling file).
 pub async fn run_connect(name: &str, config_override: Option<PathBuf>) -> Result<()> {
     let path = resolve_config_path(config_override)?;
-    let arquivo = carregar(&path)?;
-    if !arquivo.hosts.contains_key(name) {
+    let file = load(&path)?;
+    if !file.hosts.contains_key(name) {
         return Err(SshCliError::VpsNotFound(name.to_string()).into());
     }
 
-    let arquivo_ativo = path
+    let active_file = path
         .parent()
         .map(|p| p.join("active"))
         .unwrap_or_else(|| PathBuf::from("active"));
-    if let Some(pai) = arquivo_ativo.parent() {
-        std::fs::create_dir_all(pai)?;
+    if let Some(parent_dir) = active_file.parent() {
+        std::fs::create_dir_all(parent_dir)?;
     }
-    // escrita atômica do active
-    let pai = arquivo_ativo
+    // atomic write of active marker
+    let parent_dir = active_file
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    let mut tmp = tempfile::NamedTempFile::new_in(&pai)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(&parent_dir)?;
     tmp.write_all(name.as_bytes())?;
     tmp.as_file().sync_data()?;
-    tmp.persist(&arquivo_ativo)
+    tmp.persist(&active_file)
         .map_err(|e| SshCliError::Io(e.error))?;
     crate::output::print_success(&crate::i18n::t(crate::i18n::Message::VpsActiveSelected { name: name.to_string() }));
     Ok(())
@@ -844,25 +844,25 @@ pub fn find_by_name(
     name: &str,
 ) -> SshCliResult<Option<VpsRecord>> {
     let path = resolve_config_path(config_override)?;
-    let arquivo = carregar(&path)?;
-    Ok(arquivo.hosts.get(name).cloned())
+    let file = load(&path)?;
+    Ok(file.hosts.get(name).cloned())
 }
 
-/// Lê o name da VPS ativa.
+/// Reads the active VPS name.
 pub fn read_active_vps(config_override: Option<PathBuf>) -> SshCliResult<Option<String>> {
     let path = resolve_config_path(config_override)?;
-    let arquivo_ativo = path
+    let active_file = path
         .parent()
         .map(|p| p.join("active"))
         .unwrap_or_else(|| PathBuf::from("active"));
-    if !arquivo_ativo.exists() {
+    if !active_file.exists() {
         return Ok(None);
     }
-    let name = std::fs::read_to_string(&arquivo_ativo)?;
+    let name = std::fs::read_to_string(&active_file)?;
     Ok(Some(name.trim().to_string()))
 }
 
-/// Constrói `ConnectionConfig` a partir de um `VpsRecord`.
+/// Builds `ConnectionConfig` from a `VpsRecord`.
 pub fn build_connection_config(
     vps: &VpsRecord,
     config_toml: Option<&Path>,
@@ -882,7 +882,7 @@ pub fn build_connection_config(
     }
 }
 
-/// Opções comuns de execução remota.
+/// Common remote execution options.
 #[derive(Debug, Default, Clone)]
 pub struct ExecOptions {
     /// Override password.
@@ -905,7 +905,7 @@ pub struct ExecOptions {
     pub disable_sudo: bool,
 }
 
-/// Executa um command em uma VPS via SSH.
+/// Runs a shell command on a VPS over SSH.
 pub async fn run_exec(
     vps_name: &str,
     command: &str,
@@ -914,20 +914,20 @@ pub async fn run_exec(
     json: bool,
     opts: ExecOptions,
 ) -> Result<()> {
-    if crate::signals::cancelado() || crate::signals::terminado() {
+    if crate::signals::is_cancelled() || crate::signals::is_terminated() {
         return Err(anyhow::anyhow!(crate::i18n::t(
             crate::i18n::Message::OperationCancelled
         )));
     }
     let path = resolve_config_path(config_override)?;
-    let arquivo = carregar(&path)?;
-    let vps_base = arquivo
+    let file = load(&path)?;
+    let vps_base = file
         .hosts
         .get(vps_name)
         .ok_or_else(|| SshCliError::VpsNotFound(vps_name.to_string()))?;
 
     let mut vps = vps_base.clone();
-    aplicar_overrides(
+    apply_overrides(
         &mut vps,
         opts.password,
         opts.sudo_password,
@@ -939,36 +939,36 @@ pub async fn run_exec(
     let cmd = append_description(command, opts.description.as_deref());
     validate_command_length(&cmd, vps.max_command_chars)?;
     let cfg = build_connection_config(&vps, Some(&path), opts.replace_host_key);
-    let cliente: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
-    run_exec_with_client(&vps, &cmd, cliente, formato, json).await
+    let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
+    run_exec_with_client(&vps, &cmd, client, formato, json).await
 }
 
-/// Versão testável de run_exec.
+/// Testable version of run_exec.
 pub async fn run_exec_with_client(
     vps: &VpsRecord,
     command: &str,
-    mut cliente: Box<dyn SshClientTrait>,
+    mut client: Box<dyn SshClientTrait>,
     formato: OutputFormat,
     json: bool,
 ) -> Result<()> {
-    if crate::signals::cancelado() || crate::signals::terminado() {
+    if crate::signals::is_cancelled() || crate::signals::is_terminated() {
         return Err(anyhow::anyhow!(crate::i18n::t(
             crate::i18n::Message::OperationCancelled
         )));
     }
     let max_out = effective_limit(vps.max_output_chars);
-    let saida = cliente.run_command(command, max_out, None).await?;
-    cliente.disconnect().await?;
+    let output = client.run_command(command, max_out, None).await?;
+    client.disconnect().await?;
     if formato == OutputFormat::Json || json {
-        output::print_execution_output_json(&saida);
+        output::print_execution_output_json(&output);
     } else {
-        output::print_execution_output(&saida);
+        output::print_execution_output(&output);
     }
-    if let Some(code) = saida.exit_code {
+    if let Some(code) = output.exit_code {
         if code != 0 {
             return Err(SshCliError::CommandFailed {
                 exit_code: code,
-                stderr: saida.stderr.clone(),
+                stderr: output.stderr.clone(),
             }
             .into());
         }
@@ -976,7 +976,7 @@ pub async fn run_exec_with_client(
     Ok(())
 }
 
-/// Executa um command com `sudo` (packing `sh -c`).
+/// Runs a command with `sudo` (packed via `sh -c`).
 pub async fn run_sudo_exec(
     vps_name: &str,
     command: &str,
@@ -985,20 +985,20 @@ pub async fn run_sudo_exec(
     json: bool,
     opts: ExecOptions,
 ) -> Result<()> {
-    if crate::signals::cancelado() || crate::signals::terminado() {
+    if crate::signals::is_cancelled() || crate::signals::is_terminated() {
         return Err(anyhow::anyhow!(crate::i18n::t(
             crate::i18n::Message::OperationCancelled
         )));
     }
     let path = resolve_config_path(config_override)?;
-    let arquivo = carregar(&path)?;
-    let vps_base = arquivo
+    let file = load(&path)?;
+    let vps_base = file
         .hosts
         .get(vps_name)
         .ok_or_else(|| SshCliError::VpsNotFound(vps_name.to_string()))?;
 
     let mut vps = vps_base.clone();
-    aplicar_overrides(
+    apply_overrides(
         &mut vps,
         opts.password.clone(),
         opts.sudo_password.clone(),
@@ -1013,19 +1013,19 @@ pub async fn run_sudo_exec(
     let cmd = append_description(command, opts.description.as_deref());
     validate_command_length(&cmd, vps.max_command_chars)?;
     let cfg = build_connection_config(&vps, Some(&path), opts.replace_host_key);
-    let cliente: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
-    run_sudo_exec_with_client(&vps, &cmd, cliente, formato, json).await
+    let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
+    run_sudo_exec_with_client(&vps, &cmd, client, formato, json).await
 }
 
-/// Versão testável de sudo-exec.
+/// Testable version of sudo-exec.
 pub async fn run_sudo_exec_with_client(
     vps: &VpsRecord,
     command: &str,
-    mut cliente: Box<dyn SshClientTrait>,
+    mut client: Box<dyn SshClientTrait>,
     formato: OutputFormat,
     json: bool,
 ) -> Result<()> {
-    if crate::signals::cancelado() || crate::signals::terminado() {
+    if crate::signals::is_cancelled() || crate::signals::is_terminated() {
         return Err(anyhow::anyhow!(crate::i18n::t(
             crate::i18n::Message::OperationCancelled
         )));
@@ -1035,20 +1035,20 @@ pub async fn run_sudo_exec_with_client(
     }
     let pack = pack_sudo(command, vps.sudo_password.as_ref());
     let max_out = effective_limit(vps.max_output_chars);
-    let saida = cliente
+    let output = client
         .run_command(&pack.command, max_out, pack.stdin)
         .await?;
-    cliente.disconnect().await?;
+    client.disconnect().await?;
     if formato == OutputFormat::Json || json {
-        output::print_execution_output_json(&saida);
+        output::print_execution_output_json(&output);
     } else {
-        output::print_execution_output(&saida);
+        output::print_execution_output(&output);
     }
-    if let Some(code) = saida.exit_code {
+    if let Some(code) = output.exit_code {
         if code != 0 {
             return Err(SshCliError::CommandFailed {
                 exit_code: code,
-                stderr: saida.stderr.clone(),
+                stderr: output.stderr.clone(),
             }
             .into());
         }
@@ -1056,7 +1056,7 @@ pub async fn run_sudo_exec_with_client(
     Ok(())
 }
 
-/// Executa command via `su -` one-shot (consome `su_password`).
+/// Runs a command via `su -` one-shot (consumes `su_password`).
 pub async fn run_su_exec(
     vps_name: &str,
     command: &str,
@@ -1065,20 +1065,20 @@ pub async fn run_su_exec(
     json: bool,
     opts: ExecOptions,
 ) -> Result<()> {
-    if crate::signals::cancelado() || crate::signals::terminado() {
+    if crate::signals::is_cancelled() || crate::signals::is_terminated() {
         return Err(anyhow::anyhow!(crate::i18n::t(
             crate::i18n::Message::OperationCancelled
         )));
     }
     let path = resolve_config_path(config_override)?;
-    let arquivo = carregar(&path)?;
-    let vps_base = arquivo
+    let file = load(&path)?;
+    let vps_base = file
         .hosts
         .get(vps_name)
         .ok_or_else(|| SshCliError::VpsNotFound(vps_name.to_string()))?;
 
     let mut vps = vps_base.clone();
-    aplicar_overrides(
+    apply_overrides(
         &mut vps,
         opts.password,
         opts.sudo_password,
@@ -1095,23 +1095,23 @@ pub async fn run_su_exec(
     validate_command_length(&cmd, vps.max_command_chars)?;
     let pack = pack_su(&cmd, &su_password);
     let cfg = build_connection_config(&vps, Some(&path), opts.replace_host_key);
-    let mut cliente: Box<dyn SshClientTrait> =
+    let mut client: Box<dyn SshClientTrait> =
         <SshClient as SshClientTrait>::connect(cfg).await?;
     let max_out = effective_limit(vps.max_output_chars);
-    let saida = cliente
+    let output = client
         .run_command(&pack.command, max_out, pack.stdin)
         .await?;
-    cliente.disconnect().await?;
+    client.disconnect().await?;
     if formato == OutputFormat::Json || json {
-        output::print_execution_output_json(&saida);
+        output::print_execution_output_json(&output);
     } else {
-        output::print_execution_output(&saida);
+        output::print_execution_output(&output);
     }
-    if let Some(code) = saida.exit_code {
+    if let Some(code) = output.exit_code {
         if code != 0 {
             return Err(SshCliError::CommandFailed {
                 exit_code: code,
-                stderr: saida.stderr.clone(),
+                stderr: output.stderr.clone(),
             }
             .into());
         }
@@ -1120,7 +1120,7 @@ pub async fn run_su_exec(
 }
 
 /// Health-check SSH.
-/// Health-check one-shot com paridade de auth (GAP-SSH-CLI-006) e TOFU (M1).
+/// One-shot health-check with auth parity (GAP-SSH-CLI-006) and TOFU (M1).
 #[allow(clippy::too_many_arguments)]
 pub async fn run_health_check(
     vps_name: Option<&str>,
@@ -1133,34 +1133,34 @@ pub async fn run_health_check(
     key_passphrase_override: Option<String>,
     replace_host_key: bool,
 ) -> Result<()> {
-    // M2: --json local ou formato global → envelope de erro JSON em falha.
+    // M2: --json local ou formato global → envelope de err JSON em falha.
     if json_local || formato == OutputFormat::Json {
         crate::output::set_json_errors(true);
     }
-    if crate::signals::cancelado() || crate::signals::terminado() {
+    if crate::signals::is_cancelled() || crate::signals::is_terminated() {
         return Err(anyhow::anyhow!(crate::i18n::t(
             crate::i18n::Message::OperationCancelled
         )));
     }
-    let nome_resolvido: String = match vps_name {
+    let resolved_name: String = match vps_name {
         Some(n) => n.to_string(),
         None => {
-            // GAP-SSH-EXIT-002: tipado → exit 66 (não anyhow string → exit 1).
+            // GAP-SSH-EXIT-002: typed → exit 66 (not anyhow string → exit 1).
             let ativa = read_active_vps(config_override.clone())?;
             ativa.ok_or(SshCliError::NoActiveVps)?
         }
     };
     let path = resolve_config_path(config_override)?;
-    let arquivo = carregar(&path)?;
-    let vps_base = arquivo
+    let file = load(&path)?;
+    let vps_base = file
         .hosts
-        .get(&nome_resolvido)
-        .ok_or_else(|| SshCliError::VpsNotFound(nome_resolvido.clone()))?;
+        .get(&resolved_name)
+        .ok_or_else(|| SshCliError::VpsNotFound(resolved_name.clone()))?;
 
     let mut vps = vps_base.clone();
     // GAP-SSH-CLI-004: --timeout; GAP-SSH-CLI-006: key + passphrase.
     // Ordem: password, sudo, su, timeout, key_path, key_passphrase.
-    aplicar_overrides(
+    apply_overrides(
         &mut vps,
         password_override,
         None,
@@ -1172,14 +1172,14 @@ pub async fn run_health_check(
     // M1: honra --replace-host-key global (paridade exec/scp/tunnel).
     let cfg = build_connection_config(&vps, Some(&path), replace_host_key);
     let inicio = std::time::Instant::now();
-    let cliente: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
+    let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
     let latency_ms = u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);
-    cliente.disconnect().await?;
+    client.disconnect().await?;
 
     if usar_json(json_local, formato) {
-        output::print_health_check_json(&nome_resolvido, latency_ms);
+        output::print_health_check_json(&resolved_name, latency_ms);
     } else {
-        output::print_health_check(&nome_resolvido, latency_ms);
+        output::print_health_check(&resolved_name, latency_ms);
     }
     Ok(())
 }
@@ -1209,24 +1209,24 @@ mod tests {
     }
 
     #[test]
-    fn arquivo_vazio_serializa_com_schema() {
+    fn empty_file_serializes_with_schema() {
         let arq = ConfigFile {
             schema_version: model::CURRENT_SCHEMA_VERSION,
             hosts: BTreeMap::new(),
         };
-        let texto = toml::to_string(&arq).unwrap();
-        assert!(texto.contains("schema_version = 2"));
+        let text = toml::to_string(&arq).unwrap();
+        assert!(text.contains("schema_version = 2"));
     }
 
     #[test]
-    fn parse_limite_none() {
+    fn parse_limit_none() {
         assert_eq!(parse_char_limit("none"), 0);
         assert_eq!(parse_char_limit("0"), 0);
         assert_eq!(parse_char_limit("1000"), 1000);
     }
 
     #[test]
-    fn construir_configuracao_copia_campos() {
+    fn build_config_copies_fields() {
         let registro = reg_min();
         let cfg = build_connection_config(&registro, None, false);
         assert_eq!(cfg.host, "host.example.com");
@@ -1238,7 +1238,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn salvar_atomico_roundtrip() {
+    fn atomic_save_roundtrip() {
         let tmp = TempDir::new().unwrap();
         crate::secrets::set_config_dir(Some(tmp.path().to_path_buf()));
         // SAFETY:
@@ -1260,10 +1260,10 @@ mod tests {
             hosts: BTreeMap::new(),
         };
         arq.hosts.insert("a".into(), reg_min());
-        salvar(&path, &arq).unwrap();
-        let lido = carregar(&path).unwrap();
-        assert_eq!(lido.hosts.len(), 1);
-        assert_eq!(lido.hosts["a"].password.expose_secret(), "pass");
+        save(&path, &arq).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.hosts.len(), 1);
+        assert_eq!(loaded.hosts["a"].password.expose_secret(), "pass");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -1292,31 +1292,31 @@ mod tests {
     }
 
     #[test]
-    fn resolver_caminho_config_com_override_diretorio() {
-        let resultado = resolve_config_path(Some(PathBuf::from("/tmp/test-dir")));
+    fn resolve_config_path_with_dir_override() {
+        let result = resolve_config_path(Some(PathBuf::from("/tmp/test-dir")));
         assert_eq!(
-            resultado.unwrap(),
+            result.unwrap(),
             PathBuf::from("/tmp/test-dir/config.toml")
         );
     }
 
     #[test]
-    fn validar_comando_longo() {
+    fn validate_long_command() {
         let err = validate_command_length(&"x".repeat(20), 10).unwrap_err();
         assert!(matches!(err, SshCliError::CommandTooLong { .. }));
     }
 
     #[test]
-    fn empacotar_sudo_integrado() {
+    fn pack_sudo_integrated() {
         let pack = pack_sudo("ls -la", None);
         assert_eq!(pack.command, "sudo -n sh -c 'ls -la'");
         assert!(pack.stdin.is_none());
     }
 
     #[test]
-    fn aplicar_overrides_senha() {
+    fn apply_overrides_password() {
         let mut v = reg_min();
-        aplicar_overrides(
+        apply_overrides(
             &mut v,
             Some("nova".into()),
             Some("sudo".into()),
@@ -1331,7 +1331,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn executar_sudo_exec_with_client_ok() {
+    async fn sudo_exec_with_client_ok() {
         use crate::ssh::client::mocks::MockSshClient;
         use crate::ssh::client::ExecutionOutput;
         let mut mock = MockSshClient::new();

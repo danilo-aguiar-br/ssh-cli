@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Tunnel SSH (port-forward local) com deadline obrigatório (one-shot limitado).
+//! SSH tunnel (local port-forward) with mandatory deadline (bounded one-shot).
 
 use crate::erros::SshCliError;
 use crate::output;
@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 
-/// Executa o subcomando `tunnel` com timeout obrigatório.
+/// Runs the `tunnel` subcommand with a mandatory timeout.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_tunnel(
     vps_name: &str,
@@ -37,9 +37,9 @@ pub async fn run_tunnel(
     let mut vps = find_by_name(config_override.clone(), vps_name)?
         .ok_or_else(|| SshCliError::VpsNotFound(vps_name.to_string()))?;
 
-    // GAP-SSH-CLI-005 / M3: paridade com exec/scp via aplicar_overrides (password/key/passphrase).
-    // Timeout do registro VPS não é sobrescrito aqui — o deadline do tunnel é `timeout_ms`.
-    crate::vps::aplicar_overrides(
+    // GAP-SSH-CLI-005 / M3: parity with exec/scp via apply_overrides (password/key/passphrase).
+    // VPS record timeout is not overridden here — the tunnel deadline is `timeout_ms`.
+    crate::vps::apply_overrides(
         &mut vps,
         password_override,
         None,
@@ -58,25 +58,25 @@ pub async fn run_tunnel(
         remote_host,
         remote_port,
         timeout_ms,
-        "iniciando tunnel SSH com deadline"
+        "starting SSH tunnel with deadline"
     );
 
-    // GAP-SSH-IO-006: banners só em TTY humano; agentes/pipes não poluem stdout.
-    // GAP-SSH-IO-008: em JSON, zero prosa — evento estruturado após bind.
-    // Banner com port efetiva fica pós-bind (TUN-003: port 0 é efêmera).
+    // GAP-SSH-IO-006: banners only on human TTY; agents/pipes do not pollute stdout.
+    // GAP-SSH-IO-008: in JSON, zero prose — structured event after bind.
+    // Banner with effective port is post-bind (TUN-003: port 0 is ephemeral).
     if !json {
         output::print_human_banner(
             "Pressione Ctrl+C para encerrar o tunnel antes do deadline.",
         );
     }
 
-    // GAP-SSH-TUN-001: deadline cobre connect + loop (não só o accept loop).
-    // GAP-SSH-TUN-002: se o listener local já subiu, o fim por deadline é sucesso one-shot
-    // (não SshTimeout/exit 74). Timeout antes do bind (connect lento) permanece erro.
+    // GAP-SSH-TUN-001: deadline covers connect + loop (not only the accept loop).
+    // GAP-SSH-TUN-002: if the local listener is already up, deadline end is one-shot success
+    // (not SshTimeout/exit 74). Timeout before bind (slow connect) remains an error.
     let bound = Arc::new(AtomicBool::new(false));
     let bound_flag = Arc::clone(&bound);
-    let resultado = tokio::time::timeout(Duration::from_millis(timeout_ms), async {
-        let cliente: Box<dyn SshClientTrait> =
+    let result = tokio::time::timeout(Duration::from_millis(timeout_ms), async {
+        let client: Box<dyn SshClientTrait> =
             <SshClient as SshClientTrait>::connect(cfg).await?;
         run_tunnel_with_client(
             vps_name,
@@ -85,19 +85,19 @@ pub async fn run_tunnel(
             remote_port,
             timeout_ms,
             json,
-            cliente,
+            client,
             Some(bound_flag),
         )
         .await
     })
     .await;
 
-    match resultado {
+    match result {
         Ok(inner) => inner,
         Err(_) if bound.load(Ordering::SeqCst) => {
             tracing::info!(
                 timeout_ms,
-                "tunnel encerrou por deadline one-shot (sucesso)"
+                "tunnel ended by one-shot deadline (success)"
             );
             Ok(())
         }
@@ -108,7 +108,7 @@ pub async fn run_tunnel(
     }
 }
 
-/// Versão testável do loop de tunnel.
+/// Testable tunnel loop.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_tunnel_with_client(
     vps_name: &str,
@@ -117,18 +117,18 @@ pub async fn run_tunnel_with_client(
     remote_port: u16,
     timeout_ms: u64,
     json: bool,
-    cliente: Box<dyn SshClientTrait>,
+    client: Box<dyn SshClientTrait>,
     bound_flag: Option<Arc<AtomicBool>>,
 ) -> Result<()> {
-    let cliente: std::sync::Arc<dyn SshClientTrait> = std::sync::Arc::from(cliente);
+    let client: std::sync::Arc<dyn SshClientTrait> = std::sync::Arc::from(client);
 
     let listener = TcpListener::bind(format!("127.0.0.1:{local_port}"))
         .await
         .map_err(|e| {
-            SshCliError::Generic(format!("falha ao abrir porta local {}: {}", local_port, e))
+            SshCliError::Generic(format!("failed to open local port {}: {}", local_port, e))
         })?;
 
-    // GAP-SSH-TUN-003: port 0 (efêmera) deve reportar a port real atribuída pelo SO.
+    // GAP-SSH-TUN-003: port 0 (ephemeral) must report the OS-assigned real port.
     // Agentes usam `local_port` do evento `tunnel_listening` para connect.
     let effective_port = listener
         .local_addr()
@@ -141,8 +141,8 @@ pub async fn run_tunnel_with_client(
 
     tracing::info!(port = %effective_port, solicitada = %local_port, vps = %vps_name, "listener TCP local iniciado");
 
-    // GAP-SSH-IO-008: agente recebe confirmação estruturada de que o bind local subiu.
-    // GAP-SSH-TUN-003: sempre reportar `effective_port` (não a solicitada quando 0).
+    // GAP-SSH-IO-008: agent receives structured confirmation that local bind is up.
+    // GAP-SSH-TUN-003: always report `effective_port` (not the requested port when 0).
     if json {
         output::print_tunnel_listening_json(
             vps_name,
@@ -161,8 +161,8 @@ pub async fn run_tunnel_with_client(
     }
 
     loop {
-        if crate::signals::cancelado() || crate::signals::terminado() {
-            tracing::info!("tunnel cancelado por sinal");
+        if crate::signals::is_cancelled() || crate::signals::is_terminated() {
+            tracing::info!("tunnel cancelled by signal");
             break;
         }
 
@@ -172,15 +172,15 @@ pub async fn run_tunnel_with_client(
                     Ok((soquete, addr)) => {
                         tracing::debug!(endereco = %addr, "nova conexão local");
                         let host = remote_host.to_string();
-                        let cliente_c = cliente.clone();
+                        let client_c = client.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = forward(soquete, cliente_c, &host, remote_port).await {
-                                tracing::warn!(erro = %e, "falha no encaminhamento do tunnel");
+                            if let Err(e) = forward(soquete, client_c, &host, remote_port).await {
+                                tracing::warn!(err = %e, "tunnel forwarding failed");
                             }
                         });
                     }
                     Err(e) => {
-                        tracing::error!(erro = %e, "accept falhou");
+                        tracing::error!(err = %e, "accept falhou");
                         break;
                     }
                 }
@@ -191,18 +191,18 @@ pub async fn run_tunnel_with_client(
         }
     }
 
-    let _ = cliente.disconnect().await;
+    let _ = client.disconnect().await;
     Ok(())
 }
 
 async fn forward(
     mut local: tokio::net::TcpStream,
-    cliente: std::sync::Arc<dyn SshClientTrait>,
+    client: std::sync::Arc<dyn SshClientTrait>,
     remote_host: &str,
     remote_port: u16,
 ) -> Result<()> {
     use tokio::io::AsyncWriteExt;
-    let mut canal = cliente
+    let mut canal = client
         .open_tunnel_channel(remote_host, remote_port, "127.0.0.1", 0)
         .await?;
     let (mut lr, mut lw) = local.split();
@@ -231,14 +231,14 @@ mod tests {
     // tunnel tests with mock are limited; ensure timeout_ms 0 fails at API level via unit in cli
 
     #[test]
-    fn timeout_zero_rejeitado_conceitual() {
-        // validação no run_tunnel
+    fn timeout_zero_conceptually_rejected() {
+        // validation in run_tunnel
         assert_eq!(0_u64, 0);
     }
 
     /// GAP-SSH-TUN-003: bind em 127.0.0.1:0 deve expor port real ≠ 0.
     #[tokio::test]
-    async fn tunnel_ephemeral_bind_reporta_porta_real() {
+    async fn tunnel_ephemeral_bind_reports_real_port() {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind efêmero");
@@ -246,13 +246,13 @@ mod tests {
         assert_ne!(port, 0, "SO deve atribuir porta > 0 após bind :0");
         assert!(
             (1..=65535).contains(&port),
-            "porta efetiva fora de 1..=65535: {port}"
+            "effective port out of 1..=65535: {port}"
         );
     }
 
-    /// GAP-SSH-TUN-003: fonte usa local_addr após bind.
+    /// GAP-SSH-TUN-003: source uses local_addr after bind.
     #[test]
-    fn tunnel_source_usa_local_addr_para_porta_efetiva() {
+    fn tunnel_source_uses_local_addr_for_effective_port() {
         let src = include_str!("tunnel.rs");
         assert!(
             src.contains("local_addr()"),
@@ -265,7 +265,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tunnel_with_client_encerra_com_cancel() {
+    async fn tunnel_with_client_ends_on_cancel() {
         use crate::ssh::client::SshClientTrait;
 
         struct Stub;

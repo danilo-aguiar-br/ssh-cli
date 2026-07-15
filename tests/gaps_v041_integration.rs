@@ -17,8 +17,8 @@ fn cmd(tmp: &TempDir) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_ssh-cli"));
     c.env_clear();
     c.env("PATH", std::env::var_os("PATH").unwrap_or_default());
-    if let Some(valor) = llvm_profile_file {
-        c.env("LLVM_PROFILE_FILE", valor);
+    if let Some(value) = llvm_profile_file {
+        c.env("LLVM_PROFILE_FILE", value);
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
@@ -282,7 +282,7 @@ fn gap_doc_041_root_honesty_aud_post() {
 fn gap_cli_005_tunnel_source_passphrase() {
     let src = std::fs::read_to_string(root().join("src/tunnel.rs")).unwrap();
     assert!(
-        src.contains("key_passphrase") || src.contains("aplicar_overrides"),
+        src.contains("key_passphrase") || src.contains("apply_overrides") || src.contains("aplicar_overrides"),
         "tunnel must apply key_passphrase via overrides (CLI-005)"
     );
     let cli = std::fs::read_to_string(root().join("src/cli.rs")).unwrap();

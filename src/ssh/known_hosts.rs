@@ -1,47 +1,47 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Persistência TOFU de fingerprints de host key em XDG.
+//! TOFU persistence of host-key fingerprints under XDG.
 //!
-//! Formato linha a linha (0o600):
+//! Line-oriented format (0o600):
 //! `host:port <fingerprint_sha256>`
 
 use crate::erros::{SshCliError, SshCliResult};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Mapa host:port → fingerprint.
+/// Map of host:port → fingerprint.
 #[derive(Debug, Default, Clone)]
 pub struct KnownHosts {
-    entradas: BTreeMap<String, String>,
+    entries: BTreeMap<String, String>,
     path: PathBuf,
 }
 
 impl KnownHosts {
-    /// Chave canônica `host:port`.
+    /// Canonical key `host:port`.
     #[must_use]
-    pub fn chave(host: &str, port: u16) -> String {
+    pub fn key(host: &str, port: u16) -> String {
         format!("{host}:{port}")
     }
 
-    /// Carrega o arquivo (vazio se inexistente).
-    pub fn carregar(path: PathBuf) -> SshCliResult<Self> {
-        let mut entradas = BTreeMap::new();
+    /// Loads the file (empty if missing).
+    pub fn load(path: PathBuf) -> SshCliResult<Self> {
+        let mut entries = BTreeMap::new();
         if path.exists() {
-            let texto = std::fs::read_to_string(&path)?;
-            for linha in texto.lines() {
-                let linha = linha.trim();
-                if linha.is_empty() || linha.starts_with('#') {
+            let text = std::fs::read_to_string(&path)?;
+            for line in text.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
                     continue;
                 }
-                let mut parts = linha.split_whitespace();
+                let mut parts = line.split_whitespace();
                 if let (Some(k), Some(fp)) = (parts.next(), parts.next()) {
-                    entradas.insert(k.to_string(), fp.to_string());
+                    entries.insert(k.to_string(), fp.to_string());
                 }
             }
         }
-        Ok(Self { entradas, path })
+        Ok(Self { entries, path })
     }
 
-    /// Caminho padrão `config_dir/known_hosts` a partir do path do `config.toml`.
+    /// Default path `config_dir/known_hosts` next to `config.toml`.
     #[must_use]
     pub fn path_beside_config(config_toml: &Path) -> PathBuf {
         config_toml
@@ -50,42 +50,42 @@ impl KnownHosts {
             .unwrap_or_else(|| PathBuf::from("known_hosts"))
     }
 
-    /// Consulta fingerprint gravado.
+    /// Looks up a stored fingerprint.
     #[must_use]
-    pub fn obter(&self, host: &str, port: u16) -> Option<&str> {
-        self.entradas
-            .get(&Self::chave(host, port))
+    pub fn get(&self, host: &str, port: u16) -> Option<&str> {
+        self.entries
+            .get(&Self::key(host, port))
             .map(String::as_str)
     }
 
-    /// Insere ou atualiza e persiste atomicamente.
-    pub fn gravar(&mut self, host: &str, port: u16, fingerprint: &str) -> SshCliResult<()> {
-        self.entradas
-            .insert(Self::chave(host, port), fingerprint.to_string());
-        self.persistir()
+    /// Inserts or updates and persists atomically.
+    pub fn store(&mut self, host: &str, port: u16, fingerprint: &str) -> SshCliResult<()> {
+        self.entries
+            .insert(Self::key(host, port), fingerprint.to_string());
+        self.persist()
     }
 
-    fn persistir(&self) -> SshCliResult<()> {
-        if let Some(pai) = self.path.parent() {
-            std::fs::create_dir_all(pai)?;
+    fn persist(&self) -> SshCliResult<()> {
+        if let Some(parent_dir) = self.path.parent() {
+            std::fs::create_dir_all(parent_dir)?;
         }
-        let mut corpo = String::new();
-        corpo.push_str("# ssh-cli known_hosts (TOFU)\n");
-        for (k, v) in &self.entradas {
-            corpo.push_str(k);
-            corpo.push(' ');
-            corpo.push_str(v);
-            corpo.push('\n');
+        let mut body = String::new();
+        body.push_str("# ssh-cli known_hosts (TOFU)\n");
+        for (k, v) in &self.entries {
+            body.push_str(k);
+            body.push(' ');
+            body.push_str(v);
+            body.push('\n');
         }
 
-        let pai = self
+        let parent_dir = self
             .path
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."));
-        let mut tmp = tempfile::NamedTempFile::new_in(&pai).map_err(SshCliError::Io)?;
+        let mut tmp = tempfile::NamedTempFile::new_in(&parent_dir).map_err(SshCliError::Io)?;
         use std::io::Write;
-        tmp.write_all(corpo.as_bytes())?;
+        tmp.write_all(body.as_bytes())?;
         tmp.as_file().sync_data()?;
         tmp.persist(&self.path)
             .map_err(|e| SshCliError::Io(e.error))?;
@@ -113,9 +113,9 @@ pub fn verificar_tofu(
     fingerprint: &str,
     substituir: bool,
 ) -> SshCliResult<bool> {
-    match kh.obter(host, port) {
+    match kh.get(host, port) {
         None => {
-            kh.gravar(host, port, fingerprint)?;
+            kh.store(host, port, fingerprint)?;
             Ok(true)
         }
         Some(existente) if existente == fingerprint => Ok(true),
@@ -127,7 +127,7 @@ pub fn verificar_tofu(
                 novo = %fingerprint,
                 "substituindo host key (--replace-host-key)"
             );
-            kh.gravar(host, port, fingerprint)?;
+            kh.store(host, port, fingerprint)?;
             Ok(true)
         }
         Some(existente) => Err(SshCliError::HostKeyChanged {
@@ -145,31 +145,31 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn tofu_grava_e_aceita_mesmo() {
+    fn tofu_stores_and_accepts_same() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("known_hosts");
-        let mut kh = KnownHosts::carregar(path).unwrap();
+        let mut kh = KnownHosts::load(path).unwrap();
         assert!(verificar_tofu(&mut kh, "h", 22, "fp1", false).unwrap());
         assert!(verificar_tofu(&mut kh, "h", 22, "fp1", false).unwrap());
     }
 
     #[test]
-    fn tofu_recusa_mudanca() {
+    fn tofu_rejects_change() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("known_hosts");
-        let mut kh = KnownHosts::carregar(path).unwrap();
+        let mut kh = KnownHosts::load(path).unwrap();
         verificar_tofu(&mut kh, "h", 22, "fp1", false).unwrap();
         let err = verificar_tofu(&mut kh, "h", 22, "fp2", false).unwrap_err();
         assert!(matches!(err, SshCliError::HostKeyChanged { .. }));
     }
 
     #[test]
-    fn tofu_substitui_com_flag() {
+    fn tofu_replaces_with_flag() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("known_hosts");
-        let mut kh = KnownHosts::carregar(path).unwrap();
+        let mut kh = KnownHosts::load(path).unwrap();
         verificar_tofu(&mut kh, "h", 22, "fp1", false).unwrap();
         assert!(verificar_tofu(&mut kh, "h", 22, "fp2", true).unwrap());
-        assert_eq!(kh.obter("h", 22), Some("fp2"));
+        assert_eq!(kh.get("h", 22), Some("fp2"));
     }
 }

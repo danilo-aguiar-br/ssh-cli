@@ -13,8 +13,8 @@ fn cmd(tmp: &TempDir) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_ssh-cli"));
     c.env_clear();
     c.env("PATH", std::env::var_os("PATH").unwrap_or_default());
-    if let Some(valor) = llvm_profile_file {
-        c.env("LLVM_PROFILE_FILE", valor);
+    if let Some(value) = llvm_profile_file {
+        c.env("LLVM_PROFILE_FILE", value);
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
@@ -55,7 +55,7 @@ fn add_fake_host(tmp: &TempDir, name: &str) {
 
 #[test]
 #[serial]
-fn doctor_reporta_camada_e_secrets_plaintext() {
+fn doctor_reports_layer_and_secrets_plaintext() {
     let tmp = TempDir::new().unwrap();
     add_fake_host(&tmp, "doc1");
     cmd(&tmp)
@@ -72,7 +72,7 @@ fn doctor_reporta_camada_e_secrets_plaintext() {
 
 #[test]
 #[serial]
-fn add_com_key_path_sem_password() {
+fn add_with_key_path_without_password() {
     let tmp = TempDir::new().unwrap();
     let key = tmp.path().join("id_test_ed25519");
     // GAP-SSH-VAL-004: precisa ser OpenSSH real parseável (não FAKE).
@@ -133,14 +133,14 @@ fn export_redacted_nao_contem_senha() {
         .args(["vps", "export", "--output", out.to_str().unwrap()])
         .assert()
         .success();
-    let texto = std::fs::read_to_string(&out).unwrap();
-    assert!(!texto.contains("fake-test-password-not-real-001"));
+    let text = std::fs::read_to_string(&out).unwrap();
+    assert!(!text.contains("fake-test-password-not-real-001"));
     // GAP-SSH-EXP-001: redacted export must not emit ciphertext blobs of empty secrets.
     assert!(
-        !texto.contains("sshcli-enc:"),
-        "export redacted must not contain sshcli-enc blobs; got:\n{texto}"
+        !text.contains("sshcli-enc:"),
+        "export redacted must not contain sshcli-enc blobs; got:\n{text}"
     );
-    assert!(texto.contains("exp1"));
+    assert!(text.contains("exp1"));
     assert!(out.exists());
 }
 
@@ -223,7 +223,7 @@ fn disable_sudo_global_bloqueia_sudo_exec() {
 fn known_hosts_tofu_unit_via_doctor_path() {
     let tmp = TempDir::new().unwrap();
     add_fake_host(&tmp, "kh1");
-    // doctor expõe path known_hosts (arquivo criado no primeiro connect real)
+    // doctor expõe path known_hosts (file criado no primeiro connect real)
     cmd(&tmp)
         .args(["vps", "doctor", "--json"])
         .assert()

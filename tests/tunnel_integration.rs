@@ -13,8 +13,8 @@ fn cmd(tmp: &TempDir) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_ssh-cli"));
     c.env_clear();
     c.env("PATH", std::env::var_os("PATH").unwrap_or_default());
-    if let Some(valor) = llvm_profile_file {
-        c.env("LLVM_PROFILE_FILE", valor);
+    if let Some(value) = llvm_profile_file {
+        c.env("LLVM_PROFILE_FILE", value);
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
@@ -24,7 +24,7 @@ fn cmd(tmp: &TempDir) -> Command {
 
 #[test]
 #[serial]
-fn tunnel_help_exibe_usage() {
+fn tunnel_help_shows_usage() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["tunnel", "--help"])
@@ -39,21 +39,21 @@ fn tunnel_help_exibe_usage() {
 
 #[test]
 #[serial]
-fn tunnel_sem_parametros_retorna_erro() {
+fn tunnel_without_params_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp).args(["tunnel"]).assert().failure();
 }
 
 #[test]
 #[serial]
-fn tunnel_com_apenas_vps_retorna_erro() {
+fn tunnel_with_only_vps_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp).args(["tunnel", "minha-vps"]).assert().failure();
 }
 
 #[test]
 #[serial]
-fn tunnel_com_parametros_invalidos_retorna_erro() {
+fn tunnel_invalid_params_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["tunnel", "vps-teste", "abc", "host-remoto", "8080"])
@@ -63,7 +63,7 @@ fn tunnel_com_parametros_invalidos_retorna_erro() {
 
 #[test]
 #[serial]
-fn tunnel_com_vps_inexistente_retorna_erro() {
+fn tunnel_missing_vps_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["tunnel", "fantasma-tunnel", "8080", "localhost", "3000"])
@@ -73,7 +73,7 @@ fn tunnel_com_vps_inexistente_retorna_erro() {
 
 #[test]
 #[serial]
-fn tunnel_com_porta_local_fora_range_retorna_erro() {
+fn tunnel_local_port_out_of_range_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["tunnel", "vps-inexistente", "999999", "localhost", "8080"])
@@ -83,7 +83,7 @@ fn tunnel_com_porta_local_fora_range_retorna_erro() {
 
 #[test]
 #[serial]
-fn tunnel_comando_inexistente_retorna_erro() {
+fn tunnel_unknown_command_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["tunnel", "comando-inexistente"])
@@ -93,7 +93,7 @@ fn tunnel_comando_inexistente_retorna_erro() {
 
 #[test]
 #[serial]
-fn tunnel_help_exibe_descricao_port_forward() {
+fn tunnel_help_shows_port_forward_description() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["tunnel", "--help"])

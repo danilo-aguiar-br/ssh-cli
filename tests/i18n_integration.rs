@@ -10,9 +10,9 @@ use ssh_cli::i18n::{current_language, initialize_language, Language, Message};
 #[serial]
 fn inicializar_idioma_nao_panic_com_locale_valido() {
     std::env::remove_var("SSH_CLI_LANG");
-    let resultado = initialize_language(Some("pt-BR"));
+    let result = initialize_language(Some("pt-BR"));
     assert!(
-        resultado.is_ok(),
+        result.is_ok(),
         "inicializar_idioma não deve falhar com locale válido"
     );
 }
@@ -21,9 +21,9 @@ fn inicializar_idioma_nao_panic_com_locale_valido() {
 #[serial]
 fn inicializar_idioma_nao_panic_com_locale_invalido() {
     std::env::remove_var("SSH_CLI_LANG");
-    let resultado = initialize_language(Some("xx-XX"));
+    let result = initialize_language(Some("xx-XX"));
     assert!(
-        resultado.is_ok(),
+        result.is_ok(),
         "inicializar_idioma não deve falhar com locale inválido"
     );
 }
@@ -32,18 +32,18 @@ fn inicializar_idioma_nao_panic_com_locale_invalido() {
 #[serial]
 fn inicializar_idioma_nao_panic_sem_forcar() {
     std::env::remove_var("SSH_CLI_LANG");
-    let resultado = initialize_language(None);
-    assert!(resultado.is_ok(), "inicializar_idioma não deve falhar");
+    let result = initialize_language(None);
+    assert!(result.is_ok(), "initialize_language must not fail");
 }
 
 #[test]
 #[serial]
 fn inicializar_idioma_com_env_var_valida_nao_panic() {
     std::env::set_var("SSH_CLI_LANG", "en-US");
-    let resultado = initialize_language(None);
+    let result = initialize_language(None);
     std::env::remove_var("SSH_CLI_LANG");
     assert!(
-        resultado.is_ok(),
+        result.is_ok(),
         "inicializar_idioma não deve falhar com env var válida"
     );
 }
@@ -52,21 +52,21 @@ fn inicializar_idioma_com_env_var_valida_nao_panic() {
 #[serial]
 fn inicializar_idioma_com_env_var_invalida_nao_panic() {
     std::env::set_var("SSH_CLI_LANG", "xx-XX");
-    let resultado = initialize_language(None);
+    let result = initialize_language(None);
     std::env::remove_var("SSH_CLI_LANG");
     assert!(
-        resultado.is_ok(),
+        result.is_ok(),
         "inicializar_idioma não deve falhar com env var inválida"
     );
 }
 
 #[test]
 #[serial]
-fn idioma_atual_retorna_locale_valido() {
-    initialize_language(None).expect("inicializar_idioma não deve falhar");
-    let idioma = current_language();
+fn current_language_returns_valid_locale() {
+    initialize_language(None).expect("initialize_language must not fail");
+    let language = current_language();
     assert!(
-        idioma == Language::English || idioma == Language::Portuguese,
+        language == Language::English || language == Language::Portuguese,
         "idioma_atual deve ser um locale suportado"
     );
 }
@@ -74,32 +74,32 @@ fn idioma_atual_retorna_locale_valido() {
 #[test]
 #[serial]
 fn inicializar_com_pt_br_define_portugues() {
-    // OnceLock já pode estar setado — o resultado deve ser válido de qualquer forma
-    let resultado = initialize_language(Some("pt-BR"));
-    assert!(resultado.is_ok());
+    // OnceLock já pode estar setado — o result deve ser válido de qualquer forma
+    let result = initialize_language(Some("pt-BR"));
+    assert!(result.is_ok());
 }
 
 #[test]
 #[serial]
 fn inicializar_com_en_us_define_english() {
-    let resultado = initialize_language(Some("en-US"));
-    assert!(resultado.is_ok());
+    let result = initialize_language(Some("en-US"));
+    assert!(result.is_ok());
 }
 
 #[test]
-fn mensagem_vps_registro_vazio_en_nao_vazia() {
-    let texto = Message::VpsRegistryEmpty.text(Language::English);
-    assert!(!texto.is_empty());
+fn message_vps_registry_empty_en_nonempty() {
+    let text = Message::VpsRegistryEmpty.text(Language::English);
+    assert!(!text.is_empty());
 }
 
 #[test]
-fn mensagem_vps_registro_vazio_pt_nao_vazia() {
-    let texto = Message::VpsRegistryEmpty.text(Language::Portuguese);
-    assert!(!texto.is_empty());
+fn message_vps_registry_empty_pt_nonempty() {
+    let text = Message::VpsRegistryEmpty.text(Language::Portuguese);
+    assert!(!text.is_empty());
 }
 
 #[test]
-fn mensagem_vps_registro_vazio_pt_diferente_de_en() {
+fn message_vps_registry_empty_pt_differs_en() {
     let en = Message::VpsRegistryEmpty.text(Language::English);
     let pt = Message::VpsRegistryEmpty.text(Language::Portuguese);
     assert_ne!(en, pt);
@@ -107,7 +107,7 @@ fn mensagem_vps_registro_vazio_pt_diferente_de_en() {
 
 #[test]
 fn variantes_unitarias_nao_vazias_em_ambos_idiomas() {
-    let unitarias = [
+    let unit_variants = [
         Message::VpsRegistryEmpty,
         Message::VpsListTitle,
         Message::ConfigPathLabel,
@@ -120,15 +120,15 @@ fn variantes_unitarias_nao_vazias_em_ambos_idiomas() {
         Message::HealthCheckNoVps,
         Message::OperationCancelled,
     ];
-    for variante in &unitarias {
+    for variante in &unit_variants {
         assert!(
             !variante.text(Language::English).is_empty(),
-            "EN vazia para {:?}",
+            "empty EN for {:?}",
             variante
         );
         assert!(
             !variante.text(Language::Portuguese).is_empty(),
-            "PT vazia para {:?}",
+            "empty PT for {:?}",
             variante
         );
     }
@@ -199,7 +199,7 @@ fn variantes_com_campos_incluem_dados_dinamicos() {
 }
 
 #[test]
-fn tunnel_ativo_inclui_porta_host_e_vps() {
+fn tunnel_active_includes_port_host_and_vps() {
     let msg = Message::TunnelActive {
         local_port: 8080,
         remote_host: "10.0.0.1".to_string(),
@@ -208,10 +208,10 @@ fn tunnel_ativo_inclui_porta_host_e_vps() {
     };
     let en = msg.text(Language::English);
     let pt = msg.clone().text(Language::Portuguese);
-    for texto in &[en, pt] {
-        assert!(texto.contains("8080"), "deve conter porta_local");
-        assert!(texto.contains("10.0.0.1"), "deve conter host_remoto");
-        assert!(texto.contains("22"), "deve conter porta_remota");
-        assert!(texto.contains("relay-01"), "deve conter vps_nome");
+    for text in &[en, pt] {
+        assert!(text.contains("8080"), "deve conter porta_local");
+        assert!(text.contains("10.0.0.1"), "deve conter host_remoto");
+        assert!(text.contains("22"), "deve conter porta_remota");
+        assert!(text.contains("relay-01"), "deve conter vps_nome");
     }
 }

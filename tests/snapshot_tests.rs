@@ -15,8 +15,8 @@ fn cmd(tmp: &TempDir) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_ssh-cli"));
     c.env_clear();
     c.env("PATH", std::env::var_os("PATH").unwrap_or_default());
-    if let Some(valor) = llvm_profile_file {
-        c.env("LLVM_PROFILE_FILE", valor);
+    if let Some(value) = llvm_profile_file {
+        c.env("LLVM_PROFILE_FILE", value);
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
@@ -94,9 +94,9 @@ fn snapshot_error_vps_not_found() {
         .args(["vps", "show", "nao-existe"])
         .output()
         .unwrap();
-    // O erro vai para stdout neste CLI (não para stderr).
+    // O err vai para stdout neste CLI (não para stderr).
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let saida = if stdout.is_empty() { stderr } else { stdout };
-    insta::assert_snapshot!("error_vps_not_found", saida);
+    let output = if stdout.is_empty() { stderr } else { stdout };
+    insta::assert_snapshot!("error_vps_not_found", output);
 }

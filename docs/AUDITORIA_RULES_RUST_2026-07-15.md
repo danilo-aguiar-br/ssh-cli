@@ -115,3 +115,13 @@
 - [x] EN-009 success UI via `Message` + labels output EN
 - [x] `cargo check --all-targets` + `cargo test --all-targets` verdes (pós-snapshot)
 - Publish: **STOP** sem OK
+
+
+## Residual closure (2026-07-15b)
+
+- Re-scan found residual PT after first "0 open" close (~346 hits).
+- Fixed: identifiers (`load`/`save`/`is_cancelled`/`ScpOptions`/…), technical error strings EN,
+  list/details labels EN, clap field docs EN, test names EN, CI gate `scripts/check_en_identifiers.sh`.
+- Allowed residual: `Message::pt()` UI, TOML wire `serde(rename)`, `pub mod erros` shim, fixture password data.
+- `cargo test --all-targets` + `cargo clippy --all-targets -- -D warnings` green.
+- Publish still **STOP** without explicit OK. Semver 0.5.0 decision deferred (GAP-RUST-REL-001 process).

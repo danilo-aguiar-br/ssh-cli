@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Ponto de entrada do binário ssh-cli.
+//! Entry point of the ssh-cli binary.
 //!
-//! Mantém a lógica mínima: configura runtime tokio e chama `ssh_cli::run()`.
+//! Keeps logic minimal: configures the tokio runtime and calls `ssh_cli::run()`.
 
 #[cfg(feature = "musl-allocator")]
 #[global_allocator]
@@ -14,28 +14,28 @@ fn main() {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("erro ao criar runtime: {e}");
+            eprintln!("failed to create runtime: {e}");
             std::process::exit(ssh_cli::erros::exit_codes::EX_IOERR);
         }
     };
 
-    let resultado = runtime.block_on(ssh_cli::run());
+    let result = runtime.block_on(ssh_cli::run());
 
-    match resultado {
+    match result {
         Ok(()) => {
-            if ssh_cli::signals::terminado() {
+            if ssh_cli::signals::is_terminated() {
                 std::process::exit(ssh_cli::erros::exit_codes::EX_SIGTERM);
             }
-            if ssh_cli::signals::cancelado() {
+            if ssh_cli::signals::is_cancelled() {
                 std::process::exit(ssh_cli::erros::exit_codes::EX_SIGINT);
             }
             std::process::exit(ssh_cli::erros::exit_codes::EX_OK);
         }
         Err(e) => {
-            if ssh_cli::signals::terminado() {
+            if ssh_cli::signals::is_terminated() {
                 std::process::exit(ssh_cli::erros::exit_codes::EX_SIGTERM);
             }
-            if ssh_cli::signals::cancelado() {
+            if ssh_cli::signals::is_cancelled() {
                 std::process::exit(ssh_cli::erros::exit_codes::EX_SIGINT);
             }
             let quer_json = ssh_cli::output::wants_json_errors();

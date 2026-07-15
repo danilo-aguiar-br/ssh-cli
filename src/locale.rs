@@ -1,42 +1,42 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Detecção e resolução de idioma cross-platform.
+//! Cross-platform language detection and resolution.
 //!
-//! Precedência de seleção de idioma (do mais para o menos prioritário):
-//! 1. Flag `--lang` da CLI
-//! 2. Variável de ambiente `SSH_CLI_LANG`
-//! 3. Locale do sistema via `sys_locale::get_locale()`
+//! Language selection precedence (highest to lowest):
+//! 1. CLI `--lang` flag
+//! 2. `SSH_CLI_LANG` environment variable
+//! 3. System locale via `sys_locale::get_locale()`
 //! 4. Fallback: `Language::English`
 
 use std::sync::OnceLock;
 
 use crate::i18n::Language;
 
-/// Estado global do idioma — definido uma única vez na inicialização.
-static IDIOMA_GLOBAL: OnceLock<Language> = OnceLock::new();
+/// Global language state — set once at initialization.
+static GLOBAL_LANGUAGE: OnceLock<Language> = OnceLock::new();
 
-/// Resolve o idioma aplicando a hierarquia de precedência em 4 camadas.
+/// Resolves language using a 4-layer precedence hierarchy.
 ///
-/// Retorna o primeiro idioma válido encontrado na ordem:
+/// Returns the first valid language found in order:
 /// flag CLI > env SSH_CLI_LANG > sys_locale > English.
 pub fn resolve_language(force_lang: Option<&str>) -> Language {
     // Camada 1: flag --lang da CLI
     if let Some(codigo) = force_lang {
-        if let Some(idioma) = code_to_language(codigo) {
-            return idioma;
+        if let Some(language) = code_to_language(codigo) {
+            return language;
         }
     }
 
-    // Camada 2: variável de ambiente SSH_CLI_LANG
+    // Layer 2: SSH_CLI_LANG environment variable
     if let Ok(env_lang) = std::env::var("SSH_CLI_LANG") {
-        if let Some(idioma) = code_to_language(&env_lang) {
-            return idioma;
+        if let Some(language) = code_to_language(&env_lang) {
+            return language;
         }
     }
 
     // Camada 3: locale do sistema via sys_locale
     if let Some(locale) = sys_locale::get_locale() {
-        if let Some(idioma) = code_to_language(&locale) {
-            return idioma;
+        if let Some(language) = code_to_language(&locale) {
+            return language;
         }
     }
 
@@ -44,26 +44,26 @@ pub fn resolve_language(force_lang: Option<&str>) -> Language {
     Language::English
 }
 
-/// Define o idioma global (chamada única na inicialização do processo).
+/// Sets the global language (once at process startup).
 ///
-/// Chamadas subsequentes são silenciosamente ignoradas — o `OnceLock`
-/// garante que o idioma é imutável após a primeira definição.
-pub fn set_language(idioma: Language) {
-    let _ = IDIOMA_GLOBAL.set(idioma);
+/// Subsequent calls are silently ignored — `OnceLock`
+/// guarantees the language is immutable after first set.
+pub fn set_language(language: Language) {
+    let _ = GLOBAL_LANGUAGE.set(language);
 }
 
-/// Retorna o idioma global atual.
+/// Returns the current global language.
 ///
-/// Se `set_language` ainda não foi chamado, retorna `Language::English`
-/// como fallback seguro para código executado antes da inicialização.
+/// If `set_language` has not been called yet, returns `Language::English`
+/// as a safe fallback for code run before initialization.
 pub fn current_language() -> Language {
-    IDIOMA_GLOBAL.get().copied().unwrap_or(Language::English)
+    GLOBAL_LANGUAGE.get().copied().unwrap_or(Language::English)
 }
 
-/// Converte código textual de idioma para `Language`.
+/// Converts a language code string to `Language`.
 ///
-/// Reconhece prefixos "pt" e "en" com qualquer sufixo de região,
-/// sem distinção entre maiúsculas e minúsculas.
+/// Recognizes "pt" and "en" prefixes with any region suffix,
+/// case-insensitively.
 fn code_to_language(codigo: &str) -> Option<Language> {
     let normalizado = codigo.to_lowercase();
     match normalizado.as_str() {
@@ -86,93 +86,93 @@ mod tests {
     use super::*;
 
     #[test]
-    fn codigo_pt_retorna_portugues() {
+    fn code_pt_returns_portuguese() {
         assert_eq!(code_to_language("pt"), Some(Language::Portuguese));
     }
 
     #[test]
-    fn codigo_pt_br_retorna_portugues() {
+    fn code_pt_br_returns_portuguese() {
         assert_eq!(code_to_language("pt-BR"), Some(Language::Portuguese));
     }
 
     #[test]
-    fn codigo_pt_br_underscore_retorna_portugues() {
+    fn code_pt_br_underscore_returns_portuguese() {
         assert_eq!(code_to_language("pt_BR"), Some(Language::Portuguese));
     }
 
     #[test]
-    fn codigo_en_retorna_english() {
+    fn code_en_returns_english() {
         assert_eq!(code_to_language("en"), Some(Language::English));
     }
 
     #[test]
-    fn codigo_en_us_retorna_english() {
+    fn code_en_us_returns_english() {
         assert_eq!(code_to_language("en-US"), Some(Language::English));
     }
 
     #[test]
-    fn codigo_en_gb_retorna_english_por_prefixo() {
+    fn code_en_gb_returns_english_by_prefix() {
         assert_eq!(code_to_language("en-GB"), Some(Language::English));
     }
 
     #[test]
-    fn codigo_desconhecido_retorna_none() {
+    fn unknown_code_returns_none() {
         assert_eq!(code_to_language("fr-FR"), None);
     }
 
     #[test]
-    fn codigo_vazio_retorna_none() {
+    fn empty_code_returns_none() {
         assert_eq!(code_to_language(""), None);
     }
 
     #[test]
-    fn codigo_maiusculo_normalizado() {
+    fn uppercase_code_normalized() {
         assert_eq!(code_to_language("PT"), Some(Language::Portuguese));
         assert_eq!(code_to_language("EN"), Some(Language::English));
     }
 
     #[test]
-    fn resolver_com_forcar_pt_retorna_portugues() {
-        let resultado = resolve_language(Some("pt-BR"));
-        assert_eq!(resultado, Language::Portuguese);
+    fn resolve_force_pt_returns_portuguese() {
+        let result = resolve_language(Some("pt-BR"));
+        assert_eq!(result, Language::Portuguese);
     }
 
     #[test]
-    fn resolver_com_forcar_en_retorna_english() {
-        let resultado = resolve_language(Some("en-US"));
-        assert_eq!(resultado, Language::English);
+    fn resolve_force_en_returns_english() {
+        let result = resolve_language(Some("en-US"));
+        assert_eq!(result, Language::English);
     }
 
     #[test]
-    fn resolver_com_forcar_invalido_usa_camadas_seguintes() {
-        // Código inválido não resolve na camada 1; deve cair em sys_locale ou fallback.
+    fn resolve_force_invalid_uses_next_layers() {
+        // Invalid code does not resolve on layer 1; must fall through to sys_locale or fallback.
         std::env::remove_var("SSH_CLI_LANG");
-        let resultado = resolve_language(Some("xx-YY"));
-        // Deve retornar English ou Portuguese — não pode ser um valor inválido.
+        let result = resolve_language(Some("xx-YY"));
+        // Must return English or Portuguese — cannot be an invalid value.
         assert!(
-            resultado == Language::English || resultado == Language::Portuguese,
-            "resolver_idioma deve retornar idioma válido mesmo com código inválido"
+            result == Language::English || result == Language::Portuguese,
+            "resolve_language must return a valid language even with invalid code"
         );
     }
 
     #[test]
-    fn resolver_sem_forcar_retorna_idioma_valido() {
+    fn resolve_without_force_returns_valid_language() {
         std::env::remove_var("SSH_CLI_LANG");
-        let resultado = resolve_language(None);
+        let result = resolve_language(None);
         assert!(
-            resultado == Language::English || resultado == Language::Portuguese,
-            "resolver_idioma deve retornar idioma válido"
+            result == Language::English || result == Language::Portuguese,
+            "resolve_language must return a valid language"
         );
     }
 
     #[test]
-    fn idioma_atual_retorna_fallback_english_antes_de_definir() {
-        // Não chamamos set_language — o OnceLock pode já estar setado em outros tests,
-        // mas o resultado DEVE ser um idioma válido.
-        let resultado = current_language();
+    fn current_language_fallback_english_before_set() {
+        // We do not call set_language — OnceLock may already be set in other tests,
+        // but the result MUST be a valid language.
+        let result = current_language();
         assert!(
-            resultado == Language::English || resultado == Language::Portuguese,
-            "idioma_atual deve retornar idioma válido"
+            result == Language::English || result == Language::Portuguese,
+            "current_language must return a valid language"
         );
     }
 }

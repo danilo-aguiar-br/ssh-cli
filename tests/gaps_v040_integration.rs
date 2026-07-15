@@ -15,8 +15,8 @@ fn cmd(tmp: &TempDir) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_ssh-cli"));
     c.env_clear();
     c.env("PATH", std::env::var_os("PATH").unwrap_or_default());
-    if let Some(valor) = llvm_profile_file {
-        c.env("LLVM_PROFILE_FILE", valor);
+    if let Some(value) = llvm_profile_file {
+        c.env("LLVM_PROFILE_FILE", value);
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
@@ -52,7 +52,7 @@ fn root() -> std::path::PathBuf {
 
 #[test]
 fn gap_version_040() {
-    // Suite histórica 0.4.0: product line atual é 0.4.1+ (mantém regressão SCP/IO).
+    // Suite histórica 0.4.0: product line current é 0.4.1+ (mantém regressão SCP/IO).
     let v = env!("CARGO_PKG_VERSION");
     assert!(
         v.starts_with("0.4."),
@@ -462,7 +462,7 @@ fn gap_scp_023_comando_remoto_usa_p() {
         "remote scp must request -p (OpenSSH source emits T only with -p)"
     );
     assert!(
-        src.contains("aplicar_mode_local") || src.contains("set_permissions"),
+        src.contains("apply_local_mode") || src.contains("aplicar_mode_local") || src.contains("set_permissions"),
         "download must apply remote mode from C-header"
     );
 }
@@ -503,7 +503,7 @@ fn gap_scp_022_partial_suffix_na_fonte() {
     );
     // SCP-022b: mode/times no partial antes do rename (sem residual pós-rename).
     assert!(
-        src.contains("aplicar_mode_local(&partial") || src.contains("aplicar_mode_local(&partial,"),
+        src.contains("apply_local_mode(&partial") || src.contains("aplicar_mode_local(&partial"),
         "mode must be applied on partial before rename"
     );
 }
@@ -519,10 +519,10 @@ fn gap_scp_020_i18n_mensagens() {
     assert!(src.contains("Upload concluído") || src.contains("Upload concluido"));
 }
 
-/// IO-007b: `scp --json` local promove envelope de erro JSON (paridade tunnel).
+/// IO-007b: `scp --json` local promove envelope de err JSON (paridade tunnel).
 #[test]
 #[serial]
-fn gap_io_007b_scp_json_local_envelope_erro() {
+fn gap_io_007b_scp_json_local_error_envelope() {
     let tmp = TempDir::new().unwrap();
     add_host(&tmp, "jsonscp");
     cmd(&tmp)
@@ -544,7 +544,7 @@ fn gap_io_007b_scp_json_local_envelope_erro() {
 #[test]
 fn gap_scp_010_header_unit_source() {
     let src = std::fs::read_to_string(root().join("src/ssh/client.rs")).unwrap();
-    assert!(src.contains("formatar_header_upload_scp"));
-    assert!(src.contains("formatar_linha_t_scp"));
+    assert!(src.contains("format_scp_upload_header") || src.contains("formatar_header_upload_scp"));
+    assert!(src.contains("format_scp_t_line") || src.contains("formatar_linha_t_scp"));
     assert!(src.contains("SCP_OK"));
 }

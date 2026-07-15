@@ -13,8 +13,8 @@ fn cmd(tmp: &TempDir) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_ssh-cli"));
     c.env_clear();
     c.env("PATH", std::env::var_os("PATH").unwrap_or_default());
-    if let Some(valor) = llvm_profile_file {
-        c.env("LLVM_PROFILE_FILE", valor);
+    if let Some(value) = llvm_profile_file {
+        c.env("LLVM_PROFILE_FILE", value);
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
@@ -53,7 +53,7 @@ fn add_host(tmp: &TempDir, name: &str) {
 
 #[test]
 #[serial]
-fn gap_val_001_rejeita_nome_path_traversal() {
+fn gap_val_001_rejects_path_traversal_name() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -75,7 +75,7 @@ fn gap_val_001_rejeita_nome_path_traversal() {
 
 #[test]
 #[serial]
-fn gap_val_001_rejeita_nome_con() {
+fn gap_val_001_rejects_con_name() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -97,7 +97,7 @@ fn gap_val_001_rejeita_nome_con() {
 
 #[test]
 #[serial]
-fn gap_val_002_rejeita_porta_zero() {
+fn gap_val_002_rejects_port_zero() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -117,7 +117,7 @@ fn gap_val_002_rejeita_porta_zero() {
         .assert()
         .failure()
         .code(64)
-        .stderr(predicate::str::contains("porta"));
+        .stderr(predicate::str::contains("port").or(predicate::str::contains("porta")));
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn gap_val_004_key_lixo_rejeitada() {
 
 #[test]
 #[serial]
-fn gap_io_001_output_format_json_list_vazio() {
+fn gap_io_001_output_format_json_empty_list() {
     let tmp = TempDir::new().unwrap();
     cmd_json(&tmp)
         .args(["vps", "list"])
@@ -201,7 +201,7 @@ fn gap_io_002_health_check_aceita_json_local() {
 
 #[test]
 #[serial]
-fn gap_io_003_erro_json_envelope() {
+fn gap_io_003_json_error_envelope() {
     let tmp = TempDir::new().unwrap();
     cmd_json(&tmp)
         .args(["vps", "show", "ghost"])
@@ -248,7 +248,7 @@ fn gap_io_005_doctor_json_sem_println_cru() {
 
 #[test]
 #[serial]
-fn gap_io_006_tunnel_sem_banner_nontty() {
+fn gap_io_006_tunnel_no_banner_nontty() {
     let tmp = TempDir::new().unwrap();
     add_host(&tmp, "tun1");
     let assert = cmd_json(&tmp)
@@ -523,8 +523,8 @@ fn gap_dep_002_russh_patched_no_lock() {
 #[test]
 #[serial]
 fn gap_test_001_signals_api() {
-    let _ = ssh_cli::signals::cancelado();
-    let _ = ssh_cli::signals::terminado();
+    let _ = ssh_cli::signals::is_cancelled();
+    let _ = ssh_cli::signals::is_terminated();
 }
 
 #[test]

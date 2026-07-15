@@ -1,93 +1,93 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Sistema de internacionalização do ssh-cli.
+//! ssh-cli internationalization system.
 //!
-//! Fornece o enum `Language` bilíngue com enum `Message` como única fonte de
-//! strings de UI. A detecção de locale é delegada ao módulo `locale`.
+//! Provides bilingual `Language` with `Message` as the single source of
+//! UI strings. Locale detection is delegated to the `locale` module.
 //!
-//! Precedência de seleção de idioma:
-//! 1. Flag `--lang` da CLI
-//! 2. Variável de ambiente `SSH_CLI_LANG`
-//! 3. Locale do sistema via `sys_locale::get_locale()`
+//! Language selection precedence:
+//! 1. CLI `--lang` flag
+//! 2. `SSH_CLI_LANG` environment variable
+//! 3. System locale via `sys_locale::get_locale()`
 //! 4. Fallback: `Language::English`
 
 use anyhow::Result;
 
-/// Language suportado pelo sistema de internacionalização.
+/// Languages supported by the internationalization system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
-    /// Inglês americano (en-US) — idioma padrão.
+    /// American English (en-US) — default language.
     English,
-    /// Português brasileiro (pt-BR).
+    /// Brazilian Portuguese (pt-BR).
     Portuguese,
 }
 
-/// Todas as mensagens de UI do sistema.
+/// All system UI messages.
 ///
-/// ÚNICA fonte de strings visíveis ao usuário. Cada variante possui tradução
-/// exaustiva em `en()` e `pt()`. PROIBIDO usar string literal de UI fora deste enum.
+/// SINGLE source of user-visible strings. Each variant has an exhaustive
+/// translation in `en()` and `pt()`. FORBIDDEN to use UI literals outside this enum.
 ///
-/// Variantes com campos dinâmicos (ex.: `{ name: String }`) permitem incluir
-/// dados contextuais na mensagem. Message não implementa `Copy` pois campos
-/// `String` não são `Copy`.
+/// Variants with dynamic fields (e.g. `{ name: String }`) allow including
+/// contextual data in the message. Message is not `Copy` because
+/// `String` fields are not `Copy`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
     // VPS
-    /// Nenhuma VPS cadastrada no arquivo de configuração.
+    /// No VPS registered in the configuration file.
     VpsRegistryEmpty,
-    /// Cabeçalho da listagem de VPS registradas.
+    /// Header for the registered VPS listing.
     VpsListTitle,
-    /// VPS adicionada com sucesso ao registro.
+    /// VPS successfully added to the registry.
     VpsAdded {
-        /// Nome da VPS adicionada.
+        /// Name of the added VPS.
         name: String,
     },
-    /// VPS removida com sucesso do registro.
+    /// VPS successfully removed from the registry.
     VpsRemoved {
-        /// Nome da VPS removida.
+        /// Name of the removed VPS.
         name: String,
     },
-    /// Tentativa de adicionar VPS já existente no registro.
+    /// Attempt to add a VPS that already exists.
     VpsDuplicate {
-        /// Nome da VPS duplicada.
+        /// Name of the duplicate VPS.
         name: String,
     },
-    /// VPS solicitada não foi encontrada no registro.
+    /// Requested VPS was not found in the registry.
     VpsNotFound {
-        /// Nome da VPS não encontrada.
+        /// Name of the missing VPS.
         name: String,
     },
-    /// VPS ativa selecionada para operações subsequentes.
+    /// Active VPS selected for subsequent operations.
     VpsActiveSelected {
-        /// Nome da VPS selecionada.
+        /// Name of the selected VPS.
         name: String,
     },
     // Config
-    /// Rótulo do path do arquivo de configuração.
+    /// Label for the configuration file path.
     ConfigPathLabel,
-    /// Caminho atual do arquivo de configuração.
+    /// Current configuration file path.
     ConfigPath {
-        /// Caminho absoluto do arquivo de configuração.
+        /// Absolute configuration file path.
         path: String,
     },
-    /// Nenhuma chave de API configurada no sistema.
+    /// No API keys configured in the system.
     ConfigNoKeys,
     // Erros
-    /// Falha ao carregar o arquivo de configuração.
+    /// Failed to load the configuration file.
     ErrorLoadConfig,
-    /// Falha ao salvar o arquivo de configuração.
+    /// Failed to save the configuration file.
     ErrorSaveConfig,
-    /// Erro ao estabelecer conexão SSH com o servidor remoto.
+    /// Error establishing SSH connection to the remote server.
     ErrorSshConnection,
-    /// Falha na execução de command remoto via SSH.
+    /// Remote SSH command execution failed.
     ErrorCommandFailed,
-    /// Argumento inválido fornecido à operação.
+    /// Invalid argument supplied to the operation.
     ErrorInvalidArgument {
-        /// Detalhe do argumento inválido.
+        /// Detail of the invalid argument.
         detail: String,
     },
-    /// Erro genérico com descrição textual.
+    /// Generic error with a textual description.
     ErrorGeneric {
-        /// Descrição do erro.
+        /// Error description.
         detail: String,
     },
     /// VPS record edited successfully.
@@ -120,95 +120,95 @@ pub enum Message {
         detail: String,
     },
     // Tunnel
-    /// Tunnel SSH ativo com informações de port e host.
+    /// Active SSH tunnel with port and host information.
     TunnelActive {
-        /// Porta local do tunnel.
+        /// Local tunnel port.
         local_port: u16,
-        /// Host remoto destino.
+        /// Remote destination host.
         remote_host: String,
-        /// Porta remota destino.
+        /// Remote destination port.
         remote_port: u16,
-        /// Nome da VPS usada como relay.
+        /// Name of the VPS used as relay.
         vps_name: String,
     },
-    /// Instrução para encerrar o tunnel via Ctrl+C.
+    /// Instruction to stop the tunnel via Ctrl+C.
     TunnelPressCtrlC,
     // Health Check
-    /// Verificação de conectividade com VPS bem-sucedida.
+    /// Successful VPS connectivity check.
     HealthCheckOk {
-        /// Nome da VPS verificada.
+        /// Name of the checked VPS.
         name: String,
     },
-    /// Nenhuma VPS ativa selecionada para health check.
+    /// No active VPS selected for health check.
     HealthCheckNoVps,
-    /// Falha na verificação de conectividade com VPS.
+    /// VPS connectivity check failed.
     HealthCheckFailed {
-        /// Nome da VPS verificada.
+        /// Name of the checked VPS.
         name: String,
-        /// Detalhe do erro.
+        /// Error detail.
         detail: String,
     },
-    /// Resultado de health check com latência.
+    /// Health-check result with latency.
     HealthCheckLatency {
-        /// Nome da VPS verificada.
+        /// Name of the checked VPS.
         name: String,
-        /// Latência em milissegundos.
+        /// Latency in milliseconds.
         latency_ms: u64,
     },
-    /// Operação cancelada por sinal do usuário (Ctrl+C ou SIGTERM).
+    /// Operation cancelled by user signal (Ctrl+C or SIGTERM).
     OperationCancelled,
     // SCP (GAP-SSH-SCP-020)
-    /// Upload SCP concluído.
+    /// SCP upload completed.
     ScpUploadCompleted {
-        /// Bytes transferidos.
+        /// Bytes transferred.
         bytes: u64,
-        /// Duração em milissegundos.
+        /// Duration in milliseconds.
         ms: u64,
     },
-    /// Download SCP concluído.
+    /// SCP download completed.
     ScpDownloadCompleted {
-        /// Bytes transferidos.
+        /// Bytes transferred.
         bytes: u64,
-        /// Duração em milissegundos.
+        /// Duration in milliseconds.
         ms: u64,
     },
-    /// Upload recusado: path local é diretório (file-only, sem -r).
+    /// Upload refused: local path is a directory (file-only, no -r).
     ScpUploadFileOnly,
-    /// Download recusado: path local já é diretório.
+    /// Download refused: local path is already a directory.
     ScpDownloadLocalNotDirectory,
 }
 
 impl Message {
-    /// Retorna a string da mensagem no idioma especificado.
+    /// Returns the message string in the specified language.
     ///
-    /// Método determinístico para uso em tests — não depende de estado global.
-    pub fn text(&self, idioma: Language) -> String {
-        match idioma {
+    /// Deterministic method for tests — does not depend on global state.
+    pub fn text(&self, language: Language) -> String {
+        match language {
             Language::English => en(self),
             Language::Portuguese => pt(self),
         }
     }
 }
 
-/// Inicializa o sistema de i18n detectando o locale do SO.
+/// Initializes i18n by detecting the OS locale.
 ///
-/// Se `force_lang` for `Some(...)`, esse idioma sobrescreve a detecção automática.
+/// If `force_lang` is `Some(...)`, it overrides automatic detection.
 pub fn initialize_language(force_lang: Option<&str>) -> Result<()> {
-    let idioma = crate::locale::resolve_language(force_lang);
-    crate::locale::set_language(idioma);
+    let language = crate::locale::resolve_language(force_lang);
+    crate::locale::set_language(language);
     Ok(())
 }
 
-/// Retorna o idioma atualmente configurado.
+/// Returns the currently configured language.
 #[must_use]
 pub fn current_language() -> Language {
     crate::locale::current_language()
 }
 
-/// Retorna a string da mensagem no idioma global atual.
+/// Returns the message string in the current global language.
 ///
 /// Usa o estado global inicializado por `initialize_language`.
-/// Em tests, prefira `Message::texto(idioma)` para determinismo.
+/// In tests, prefer `Message::text(language)` for determinism.
 ///
 /// # Examples
 ///
@@ -216,15 +216,15 @@ pub fn current_language() -> Language {
 /// use ssh_cli::i18n::{t, initialize_language, Message};
 ///
 /// initialize_language(Some("en-US")).unwrap();
-/// let texto = t(Message::VpsRegistryEmpty);
-/// assert!(!texto.is_empty());
+/// let text = t(Message::VpsRegistryEmpty);
+/// assert!(!text.is_empty());
 /// ```
 #[must_use]
 pub fn t(msg: Message) -> String {
     msg.text(current_language())
 }
 
-/// Traduções para inglês americano.
+/// American English translations.
 fn en(msg: &Message) -> String {
     match msg {
         Message::VpsRegistryEmpty => "No VPS registered.".to_string(),
@@ -288,7 +288,7 @@ fn en(msg: &Message) -> String {
     }
 }
 
-/// Traduções para português brasileiro.
+/// Brazilian Portuguese translations.
 fn pt(msg: &Message) -> String {
     match msg {
         Message::VpsRegistryEmpty => "Nenhum VPS cadastrado.".to_string(),
@@ -357,14 +357,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn idioma_enum_e_copy() {
+    fn language_enum_is_copy() {
         let a = Language::English;
         let b = a;
         assert_eq!(a, b);
     }
 
     #[test]
-    fn mensagem_nao_e_copy_mas_e_clone() {
+    fn message_is_not_copy_but_is_clone() {
         let m = Message::VpsAdded {
             name: "vps-01".to_string(),
         };
@@ -373,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn vps_registro_vazio_en() {
+    fn vps_registry_empty_en() {
         assert_eq!(
             Message::VpsRegistryEmpty.text(Language::English),
             "No VPS registered."
@@ -381,7 +381,7 @@ mod tests {
     }
 
     #[test]
-    fn vps_registro_vazio_pt() {
+    fn vps_registry_empty_pt() {
         assert_eq!(
             Message::VpsRegistryEmpty.text(Language::Portuguese),
             "Nenhum VPS cadastrado."
@@ -389,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn vps_adicionada_inclui_nome_en() {
+    fn vps_added_includes_name_en() {
         let msg = Message::VpsAdded {
             name: "prod-01".to_string(),
         };
@@ -400,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn vps_adicionada_inclui_nome_pt() {
+    fn vps_added_includes_name_pt() {
         let msg = Message::VpsAdded {
             name: "prod-01".to_string(),
         };
@@ -411,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    fn vps_removida_inclui_nome() {
+    fn vps_removed_includes_name() {
         let msg = Message::VpsRemoved {
             name: "dev-01".to_string(),
         };
@@ -420,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn vps_duplicada_inclui_nome() {
+    fn vps_duplicate_includes_name() {
         let msg = Message::VpsDuplicate {
             name: "staging".to_string(),
         };
@@ -429,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn vps_nao_encontrada_inclui_nome() {
+    fn vps_not_found_includes_name() {
         let msg = Message::VpsNotFound {
             name: "inexistente".to_string(),
         };
@@ -438,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn tunnel_ativo_inclui_todos_os_campos() {
+    fn tunnel_active_includes_all_fields() {
         let msg = Message::TunnelActive {
             local_port: 8080,
             remote_host: "1.2.3.4".to_string(),
@@ -453,20 +453,20 @@ mod tests {
     }
 
     #[test]
-    fn erro_argumento_invalido_inclui_detalhe() {
+    fn error_invalid_argument_includes_detail() {
         let msg = Message::ErrorInvalidArgument {
-            detail: "porta fora do intervalo".to_string(),
+            detail: "port out of range".to_string(),
         };
         assert!(msg
             .text(Language::English)
-            .contains("porta fora do intervalo"));
+            .contains("port out of range"));
         assert!(msg
             .text(Language::Portuguese)
-            .contains("porta fora do intervalo"));
+            .contains("port out of range"));
     }
 
     #[test]
-    fn health_check_ok_inclui_nome() {
+    fn health_check_ok_includes_name() {
         let msg = Message::HealthCheckOk {
             name: "prod-01".to_string(),
         };
@@ -475,8 +475,8 @@ mod tests {
     }
 
     #[test]
-    fn todas_variantes_unitarias_en_nao_vazias() {
-        let unitarias = [
+    fn all_unit_variants_en_nonempty() {
+        let unit_variants = [
             Message::VpsRegistryEmpty,
             Message::VpsListTitle,
             Message::ConfigPathLabel,
@@ -489,15 +489,15 @@ mod tests {
             Message::HealthCheckNoVps,
             Message::OperationCancelled,
         ];
-        for v in &unitarias {
-            let texto = v.text(Language::English);
-            assert!(!texto.is_empty(), "EN vazia para {:?}", v);
+        for v in &unit_variants {
+            let text = v.text(Language::English);
+            assert!(!text.is_empty(), "empty EN for {:?}", v);
         }
     }
 
     #[test]
-    fn todas_variantes_unitarias_pt_nao_vazias() {
-        let unitarias = [
+    fn all_unit_variants_pt_nonempty() {
+        let unit_variants = [
             Message::VpsRegistryEmpty,
             Message::VpsListTitle,
             Message::ConfigPathLabel,
@@ -510,29 +510,29 @@ mod tests {
             Message::HealthCheckNoVps,
             Message::OperationCancelled,
         ];
-        for v in &unitarias {
-            let texto = v.text(Language::Portuguese);
-            assert!(!texto.is_empty(), "PT vazia para {:?}", v);
+        for v in &unit_variants {
+            let text = v.text(Language::Portuguese);
+            assert!(!text.is_empty(), "empty PT for {:?}", v);
         }
     }
 
     #[test]
-    fn traducoes_pt_diferentes_de_en_para_unitarias() {
-        let pares = [
+    fn pt_translations_differ_from_en_for_units() {
+        let pairs = [
             (Message::VpsRegistryEmpty, Message::VpsRegistryEmpty),
             (Message::ErrorSshConnection, Message::ErrorSshConnection),
             (Message::HealthCheckNoVps, Message::HealthCheckNoVps),
             (Message::OperationCancelled, Message::OperationCancelled),
         ];
-        for (a, b) in &pares {
+        for (a, b) in &pairs {
             let en = a.text(Language::English);
             let pt = b.text(Language::Portuguese);
-            assert_ne!(en, pt, "EN == PT para {:?}", a);
+            assert_ne!(en, pt, "EN == PT for {:?}", a);
         }
     }
 
     #[test]
-    fn health_check_falhou_inclui_nome_e_detalhe() {
+    fn health_check_failed_includes_name_and_detail() {
         let msg = Message::HealthCheckFailed {
             name: "prod-01".to_string(),
             detail: "timeout".to_string(),
@@ -544,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn health_check_latencia_inclui_nome_e_ms() {
+    fn health_check_latency_includes_name_and_ms() {
         let msg = Message::HealthCheckLatency {
             name: "relay-01".to_string(),
             latency_ms: 42,
@@ -556,20 +556,20 @@ mod tests {
     }
 
     #[test]
-    fn inicializar_idioma_sem_forcar_nao_panic() {
-        let resultado = initialize_language(None);
-        assert!(resultado.is_ok());
+    fn initialize_language_without_force_no_panic() {
+        let result = initialize_language(None);
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn inicializar_idioma_com_pt_br_funciona() {
-        let resultado = initialize_language(Some("pt-BR"));
-        assert!(resultado.is_ok());
+    fn initialize_language_with_pt_br_works() {
+        let result = initialize_language(Some("pt-BR"));
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn idioma_atual_retorna_valor_valido() {
-        let idioma = current_language();
-        assert!(idioma == Language::English || idioma == Language::Portuguese);
+    fn current_language_returns_valid_value() {
+        let language = current_language();
+        assert!(language == Language::English || language == Language::Portuguese);
     }
 }

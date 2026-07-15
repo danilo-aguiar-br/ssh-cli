@@ -1,31 +1,31 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Validação e normalização de caminhos de arquivo.
+//! File path validation and normalization.
 //!
-//! Fornece funções para validate nomes de arquivo de forma segura e
+//! Provides functions to validate file names safely and
 //! cross-platform, prevenindo path traversal, nomes reservados do Windows
-//! e caracteres proibidos.
+//! and forbidden characters.
 
 use anyhow::{bail, Result};
 use unicode_normalization::UnicodeNormalization;
 
-/// Nomes reservados pelo sistema de arquivos do Windows (case-insensitive).
+/// Names reserved by the Windows file system (case-insensitive).
 const NOMES_RESERVADOS_WINDOWS: &[&str] = &[
     "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
-/// Caracteres proibidos em nomes de arquivo (proibidos no Windows ou problemáticos
+/// Characters forbidden in file names (forbidden on Windows or problematic
 /// em sistemas Unix).
 const CHARS_PROIBIDOS: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\0'];
 
-/// Valida um name de arquivo (sem separadores de path).
+/// Validates a file name (no path separators).
 ///
 /// Rejeita:
 /// - Strings vazias.
-/// - Nomes com componentes `..` (path traversal).
-/// - Caracteres proibidos.
-/// - Nomes reservados do Windows (case-insensitive).
-/// - Nomes que terminam com ponto ou espaço (problemáticos no Windows).
+/// - Names with `..` components (path traversal).
+/// - Forbidden characters.
+/// - Windows reserved names (case-insensitive).
+/// - Names ending with a dot or space (problematic on Windows).
 ///
 /// # Examples
 ///
@@ -38,56 +38,56 @@ const CHARS_PROIBIDOS: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|',
 /// ```
 pub fn validate_name(name: &str) -> Result<()> {
     if name.is_empty() {
-        bail!("nome de arquivo não pode ser vazio");
+        bail!("nome de file não pode ser vazio");
     }
 
     if name.contains("..") {
-        bail!("nome de arquivo contém componente de path traversal: '{name}'");
+        bail!("nome de file contém componente de path traversal: '{name}'");
     }
 
     for c in CHARS_PROIBIDOS {
         if name.contains(*c) {
             bail!(
-                "nome de arquivo contém caractere proibido '{}': '{name}'",
+                "nome de file contém caractere proibido '{}': '{name}'",
                 c.escape_default()
             );
         }
     }
 
-    let nome_upper = name.to_uppercase();
-    // Verifica também sem extensão (ex.: "NUL.txt" é proibido no Windows)
-    let raiz = nome_upper.split('.').next().unwrap_or(&nome_upper);
+    let name_upper = name.to_uppercase();
+    // Also checks without extension (e.g. "NUL.txt" is forbidden on Windows)
+    let raiz = name_upper.split('.').next().unwrap_or(&name_upper);
     if NOMES_RESERVADOS_WINDOWS.contains(&raiz) {
-        bail!("nome de arquivo usa nome reservado do Windows: '{name}'");
+        bail!("nome de file usa nome reservado do Windows: '{name}'");
     }
 
     if name.ends_with('.') || name.ends_with(' ') {
-        bail!("nome de arquivo não pode terminar com ponto ou espaço: '{name}'");
+        bail!("nome de file não pode terminar com ponto ou espaço: '{name}'");
     }
 
     Ok(())
 }
 
-/// Normaliza um name de arquivo para a forma NFC do Unicode.
+/// Normalizes a file name to Unicode NFC form.
 ///
-/// A normalização NFC é necessária para garantir comparações consistentes
+/// NFC normalization is required for consistent comparisons
 /// entre diferentes sistemas operacionais (macOS usa NFD, Linux usa NFC).
 #[must_use]
-pub fn normalizar_nfc(name: &str) -> String {
+pub fn normalize_nfc(name: &str) -> String {
     name.nfc().collect()
 }
 
-/// Valida e normaliza um name de arquivo em uma única operação.
+/// Validates and normalizes a file name in one operation.
 ///
-/// Retorna o name normalizado para NFC se passar em todas as validações.
+/// Returns the NFC-normalized name if all validations pass.
 pub fn validate_and_normalize(name: &str) -> Result<String> {
     validate_name(name)?;
-    Ok(normalizar_nfc(name))
+    Ok(normalize_nfc(name))
 }
 
-/// Valida que um path não contém componentes de path traversal.
+/// Validates that a path has no traversal components.
 ///
-/// Verifica todos os segmentos do path separados por `/` ou `\`.
+/// Checks all path segments separated by `/` or `\`.
 pub fn validate_no_traversal(path: &str) -> Result<()> {
     if path.is_empty() {
         bail!("caminho não pode ser vazio");
@@ -108,26 +108,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nome_valido_comum_passa() {
+    fn common_valid_name_passes() {
         assert!(validate_name("meu-servidor").is_ok());
         assert!(validate_name("vps_01").is_ok());
         assert!(validate_name("servidor.produção").is_ok());
     }
 
     #[test]
-    fn nome_vazio_rejeitado() {
+    fn empty_name_rejected() {
         assert!(validate_name("").is_err());
     }
 
     #[test]
-    fn path_traversal_rejeitado() {
+    fn path_traversal_rejected() {
         assert!(validate_name("..").is_err());
         assert!(validate_name("../etc/passwd").is_err());
         assert!(validate_name("foo/../bar").is_err());
     }
 
     #[test]
-    fn chars_proibidos_rejeitados() {
+    fn forbidden_chars_rejected() {
         assert!(validate_name("foo/bar").is_err());
         assert!(validate_name("foo\\bar").is_err());
         assert!(validate_name("foo:bar").is_err());
@@ -136,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn nomes_reservados_windows_rejeitados() {
+    fn windows_reserved_names_rejected() {
         assert!(validate_name("CON").is_err());
         assert!(validate_name("con").is_err());
         assert!(validate_name("NUL.txt").is_err());
@@ -145,101 +145,101 @@ mod tests {
     }
 
     #[test]
-    fn nome_terminando_com_ponto_rejeitado() {
-        assert!(validate_name("arquivo.").is_err());
+    fn name_ending_with_dot_rejected() {
+        assert!(validate_name("file.").is_err());
     }
 
     #[test]
-    fn nome_terminando_com_espaco_rejeitado() {
-        assert!(validate_name("arquivo ").is_err());
+    fn name_ending_with_space_rejected() {
+        assert!(validate_name("file ").is_err());
     }
 
     #[test]
-    fn normalizar_nfc_retorna_string() {
-        let resultado = normalizar_nfc("servidor");
-        assert_eq!(resultado, "servidor");
+    fn normalize_nfc_returns_string() {
+        let result = normalize_nfc("servidor");
+        assert_eq!(result, "servidor");
     }
 
     #[test]
-    fn validar_e_normalizar_retorna_string_valida() {
-        let resultado = validate_and_normalize("meu-servidor").unwrap();
-        assert_eq!(resultado, "meu-servidor");
+    fn validate_and_normalize_returns_valid_string() {
+        let result = validate_and_normalize("meu-servidor").unwrap();
+        assert_eq!(result, "meu-servidor");
     }
 
     #[test]
-    fn validar_sem_traversal_aceita_caminho_normal() {
-        assert!(validate_no_traversal("/home/usuario/arquivo.txt").is_ok());
+    fn validate_no_traversal_accepts_normal_path() {
+        assert!(validate_no_traversal("/home/usuario/file.txt").is_ok());
         assert!(validate_no_traversal("relative/path/file.txt").is_ok());
     }
 
     #[test]
-    fn validar_sem_traversal_rejeita_traversal() {
+    fn validate_no_traversal_rejects_traversal() {
         assert!(validate_no_traversal("/home/../etc/passwd").is_err());
         assert!(validate_no_traversal("../secreto").is_err());
     }
 
     #[test]
-    fn validar_sem_traversal_rejeita_vazio() {
+    fn validate_no_traversal_rejects_empty() {
         assert!(validate_no_traversal("").is_err());
     }
 
     #[test]
-    fn nome_com_acentos_brasileiros_valido() {
+    fn name_with_brazilian_accents_valid() {
         assert!(validate_name("produção").is_ok());
         assert!(validate_name("ação-configuração").is_ok());
     }
 
     #[test]
-    fn nome_com_unicode_cjk_valido() {
+    fn name_with_cjk_unicode_valid() {
         assert!(validate_name("server-\u{4e16}\u{754c}").is_ok());
     }
 
     #[test]
-    fn nome_com_emoji_valido() {
+    fn name_with_emoji_valid() {
         assert!(validate_name("server-\u{1f680}").is_ok());
     }
 
     #[test]
-    fn nome_windows_reservado_case_misto_rejeitado() {
+    fn windows_reserved_mixed_case_rejected() {
         assert!(validate_name("cOn").is_err());
         assert!(validate_name("Nul").is_err());
         assert!(validate_name("lPt1").is_err());
     }
 
     #[test]
-    fn normalizar_nfc_converte_nfd_para_nfc() {
+    fn normalize_nfc_converts_nfd_to_nfc() {
         let nfd = "e\u{0301}"; // e + combining acute
         let nfc = "\u{00e9}"; // é precomposed
-        assert_eq!(normalizar_nfc(nfd), nfc);
+        assert_eq!(normalize_nfc(nfd), nfc);
     }
 
     #[test]
-    fn normalizar_nfc_preserva_nfc() {
+    fn normalize_nfc_preserves_nfc() {
         let nfc = "\u{00e9}";
-        assert_eq!(normalizar_nfc(nfc), nfc);
+        assert_eq!(normalize_nfc(nfc), nfc);
     }
 
     #[test]
-    fn normalizar_nfc_idempotente() {
+    fn normalize_nfc_idempotent() {
         let input = "cafe\u{0301}";
-        let once = normalizar_nfc(input);
-        let twice = normalizar_nfc(&once);
+        let once = normalize_nfc(input);
+        let twice = normalize_nfc(&once);
         assert_eq!(once, twice);
     }
 
     #[test]
-    fn validar_e_normalizar_nfd_converte() {
-        let resultado = validate_and_normalize("cafe\u{0301}").unwrap();
-        assert_eq!(resultado, "caf\u{00e9}");
+    fn validate_and_normalize_converts_nfd() {
+        let result = validate_and_normalize("cafe\u{0301}").unwrap();
+        assert_eq!(result, "caf\u{00e9}");
     }
 
     #[test]
-    fn validar_sem_traversal_com_backslash_rejeitado() {
+    fn validate_no_traversal_rejects_backslash() {
         assert!(validate_no_traversal("foo\\..\\bar").is_err());
     }
 
     #[test]
-    fn validar_sem_traversal_dot_solo_aceita() {
-        assert!(validate_no_traversal("./arquivo").is_ok());
+    fn validate_no_traversal_accepts_dot_alone() {
+        assert!(validate_no_traversal("./file").is_ok());
     }
 }

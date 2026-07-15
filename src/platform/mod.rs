@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Abstrações condicionais por sistema operacional.
+//! Operating-system conditional abstractions.
 //!
-//! A inicialização de plataforma ([`initialize_platform`]) é a PRIMEIRA operação
+//! Platform initialization ([`initialize_platform`]) is the FIRST operation
 //! executada no `main()`. Ela configura:
 //!
 //! - **Windows**: codepage UTF-8 (65001) via `SetConsoleOutputCP` e `SetConsoleCP`
-//! - **Linux**: detecção de sandbox (Flatpak/Snap) e caminhos XDG
-//! - **macOS**: resolução de caminhos de config em `~/Library/Application Support`
+//! - **Linux**: sandbox detection (Flatpak/Snap) and XDG paths
+//! - **macOS**: config path resolution under `~/Library/Application Support`
 
 use anyhow::Result;
 
@@ -17,9 +17,9 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
-/// Inicializa a plataforma antes de qualquer I/O.
+/// Initializes the platform before any I/O.
 ///
-/// DEVE ser chamado como a primeira operação em `main()`.
+/// MUST be called as the first operation in `main()`.
 pub fn initialize_platform() -> Result<()> {
     #[cfg(target_os = "windows")]
     {
@@ -39,16 +39,16 @@ pub fn initialize_platform() -> Result<()> {
     Ok(())
 }
 
-/// Normaliza uma linha de stdin removendo `\r` final (CRLF → LF).
+/// Normalizes a stdin line by stripping trailing `\r` (CRLF → LF).
 ///
-/// Necessário no Windows onde pipes podem emitir `\r\n`.
+/// Required on Windows where pipes may emit `\r\n`.
 #[must_use]
-pub fn normalizar_linha_stdin(linha: &str) -> &str {
-    // Remove qualquer combinação de CR/LF do final.
-    linha.trim_end_matches(['\r', '\n'])
+pub fn normalize_stdin_line(line: &str) -> &str {
+    // Strip any trailing CR/LF combination.
+    line.trim_end_matches(['\r', '\n'])
 }
 
-/// Retorna `true` se stdout está conectado a um terminal (TTY).
+/// Returns `true` if stdout is connected to a terminal (TTY).
 #[must_use]
 pub fn e_tty() -> bool {
     std::io::IsTerminal::is_terminal(&std::io::stdout())
@@ -59,41 +59,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normalizar_remove_cr_final() {
-        assert_eq!(normalizar_linha_stdin("teste\r"), "teste");
-        assert_eq!(normalizar_linha_stdin("teste\r\n"), "teste");
-        assert_eq!(normalizar_linha_stdin("teste\n"), "teste");
-        assert_eq!(normalizar_linha_stdin("teste"), "teste");
+    fn normalize_strips_trailing_cr() {
+        assert_eq!(normalize_stdin_line("teste\r"), "teste");
+        assert_eq!(normalize_stdin_line("teste\r\n"), "teste");
+        assert_eq!(normalize_stdin_line("teste\n"), "teste");
+        assert_eq!(normalize_stdin_line("teste"), "teste");
     }
 
     #[test]
-    fn normalizar_string_vazia() {
-        assert_eq!(normalizar_linha_stdin(""), "");
+    fn normalize_empty_string() {
+        assert_eq!(normalize_stdin_line(""), "");
     }
 
     #[test]
-    fn normalizar_apenas_newlines() {
-        assert_eq!(normalizar_linha_stdin("\n\n\n"), "");
+    fn normalize_newlines_only() {
+        assert_eq!(normalize_stdin_line("\n\n\n"), "");
     }
 
     #[test]
-    fn normalizar_mistos_crlf_lf() {
+    fn normalize_mixed_crlf_lf() {
         assert_eq!(
-            normalizar_linha_stdin("linha1\r\nlinha2\r\nlinha3"),
+            normalize_stdin_line("linha1\r\nlinha2\r\nlinha3"),
             "linha1\r\nlinha2\r\nlinha3"
         );
     }
 
     #[test]
-    fn normalizar_com_espacos() {
+    fn normalize_with_spaces() {
         assert_eq!(
-            normalizar_linha_stdin("texto com espacos  \r\n"),
+            normalize_stdin_line("texto com espacos  \r\n"),
             "texto com espacos  "
         );
     }
 
     #[test]
-    fn e_tty_retorna_bool() {
+    fn is_tty_returns_bool() {
         let _ = e_tty();
     }
 }

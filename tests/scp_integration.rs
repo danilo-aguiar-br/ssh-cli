@@ -13,8 +13,8 @@ fn cmd(tmp: &TempDir) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_ssh-cli"));
     c.env_clear();
     c.env("PATH", std::env::var_os("PATH").unwrap_or_default());
-    if let Some(valor) = llvm_profile_file {
-        c.env("LLVM_PROFILE_FILE", valor);
+    if let Some(value) = llvm_profile_file {
+        c.env("LLVM_PROFILE_FILE", value);
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
@@ -66,21 +66,21 @@ fn scp_download_help_exibe_parametros() {
 
 #[test]
 #[serial]
-fn scp_upload_sem_parametros_retorna_erro() {
+fn scp_upload_without_params_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp).args(["scp", "upload"]).assert().failure();
 }
 
 #[test]
 #[serial]
-fn scp_download_sem_parametros_retorna_erro() {
+fn scp_download_without_params_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp).args(["scp", "download"]).assert().failure();
 }
 
 #[test]
 #[serial]
-fn scp_upload_com_vps_inexistente_retorna_erro() {
+fn scp_upload_missing_vps_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -96,7 +96,7 @@ fn scp_upload_com_vps_inexistente_retorna_erro() {
 
 #[test]
 #[serial]
-fn scp_download_com_vps_inexistente_retorna_erro() {
+fn scp_download_missing_vps_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -112,7 +112,7 @@ fn scp_download_com_vps_inexistente_retorna_erro() {
 
 #[test]
 #[serial]
-fn scp_subcomando_inexistente_retorna_erro() {
+fn scp_unknown_subcommand_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["scp", "comando-inexistente"])
@@ -122,7 +122,7 @@ fn scp_subcomando_inexistente_retorna_erro() {
 
 #[test]
 #[serial]
-fn scp_sem_subcomando_retorna_erro() {
+fn scp_without_subcommand_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp).args(["scp"]).assert().failure();
 }

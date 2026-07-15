@@ -15,8 +15,8 @@ fn cmd(tmp: &TempDir) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_ssh-cli"));
     c.env_clear();
     c.env("PATH", std::env::var_os("PATH").unwrap_or_default());
-    if let Some(valor) = llvm_profile_file {
-        c.env("LLVM_PROFILE_FILE", valor);
+    if let Some(value) = llvm_profile_file {
+        c.env("LLVM_PROFILE_FILE", value);
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
@@ -156,7 +156,7 @@ fn gap_cli_004_health_check_aceita_timeout() {
     );
     assert!(
         stderr.contains("66") || stderr.contains("Nenhuma VPS") || stderr.contains("ativa"),
-        "erro de domínio esperado: {stderr}"
+        "expected domain error: {stderr}"
     );
 }
 
@@ -165,7 +165,7 @@ fn gap_cli_004_health_check_aceita_timeout() {
 #[test]
 #[serial]
 fn gap_doc_003_version_contem_039() {
-    // Suite histórica 0.3.9: product line atual é 0.4.0+ (mantém regressão de behaviours LOG/JSON/CLI).
+    // Suite histórica 0.3.9: product line current é 0.4.0+ (mantém regressão de behaviours LOG/JSON/CLI).
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .arg("--version")

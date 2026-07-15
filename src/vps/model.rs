@@ -144,36 +144,36 @@ impl VpsRecord {
         }
     }
 
-    /// Retorna true se há password não vazia.
+    /// Returns true if there is a non-empty password.
     #[must_use]
     pub fn has_password(&self) -> bool {
         !self.password.expose_secret().is_empty()
     }
 
-    /// Retorna true se há path de chave privada.
+    /// Returns true if there is a private key path.
     #[must_use]
     pub fn has_key(&self) -> bool {
         self.key_path.as_ref().is_some_and(|p| !p.trim().is_empty())
     }
 
-    /// Valida que existe pelo menos um método de autenticação.
+    /// Validates that at least one authentication method exists.
     pub fn validate_credentials(&self) -> Result<(), String> {
         if !self.has_password() && !self.has_key() {
             return Err(
-                "é obrigatório fornecer --password ou --key (auth password ou chave privada)"
+                "must provide --password or --key (password or private key auth)"
                     .to_string(),
             );
         }
         Ok(())
     }
 
-    /// Validação completa do registro na fronteira de escrita (add/edit/import).
+    /// Full record validation at the write boundary (add/edit/import).
     ///
-    /// Garante port ∈ 1..=65535, host/usuário não vazios e credenciais presentes.
-    /// Não verifica existência de `key_path` no filesystem (isso fica no dispatcher).
+    /// Ensures port ∈ 1..=65535, non-empty host/user, and credentials present.
+    /// Does not check that `key_path` exists on the filesystem (dispatcher does).
     pub fn validate(&self) -> Result<(), String> {
         if self.port == 0 {
-            return Err("porta SSH inválida: 0 (use 1..=65535)".to_string());
+            return Err("invalid SSH port: 0 (use 1..=65535)".to_string());
         }
         if self.host.trim().is_empty() {
             return Err("host não pode ser vazio".to_string());
@@ -184,18 +184,18 @@ impl VpsRecord {
         self.validate_credentials()
     }
 
-    /// Normaliza schema após deserialização (migração v1 → v2).
+    /// Normalizes schema after deserialization (v1 → v2 migration).
     pub fn normalize_schema(&mut self) {
         if self.schema_version < CURRENT_SCHEMA_VERSION {
             self.schema_version = CURRENT_SCHEMA_VERSION;
         }
         if self.max_command_chars == 0 && self.max_output_chars == 0 {
-            // nada: 0 significa ilimitado na validação de runtime
+            // nothing: 0 means unlimited at runtime validation
         }
     }
 }
 
-/// Interpreta string de limite (`"none"`, `"0"` ou número).
+/// Parses a limit string (`"none"`, `"0"`, or a number).
 ///
 /// `0`/`none` → `0` (ilimitado no runtime).
 #[must_use]
@@ -208,9 +208,9 @@ pub fn parse_char_limit(s: &str) -> usize {
     }
 }
 
-/// Converte limite de config em valor efetivo para truncagem/validação.
+/// Converts a config limit into the effective value for truncation/validation.
 ///
-/// `0` = sem limite (`usize::MAX` para comparação).
+/// `0` = unlimited (`usize::MAX` for comparison).
 #[must_use]
 pub fn effective_limit(configurado: usize) -> usize {
     if configurado == 0 {
@@ -224,8 +224,8 @@ mod secret_string_serde {
     use super::{ExposeSecret, SecretString};
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S: Serializer>(valor: &SecretString, s: S) -> Result<S::Ok, S::Error> {
-        let plain = valor.expose_secret();
+    pub fn serialize<S: Serializer>(value: &SecretString, s: S) -> Result<S::Ok, S::Error> {
+        let plain = value.expose_secret();
         let out = crate::secrets::serialize_secret(plain).map_err(serde::ser::Error::custom)?;
         s.serialize_str(&out)
     }
@@ -241,8 +241,8 @@ mod opcao_secret_string_serde {
     use super::{ExposeSecret, SecretString};
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S: Serializer>(valor: &Option<SecretString>, s: S) -> Result<S::Ok, S::Error> {
-        match valor {
+    pub fn serialize<S: Serializer>(value: &Option<SecretString>, s: S) -> Result<S::Ok, S::Error> {
+        match value {
             Some(v) => {
                 let out = crate::secrets::serialize_secret(v.expose_secret())
                     .map_err(serde::ser::Error::custom)?;
@@ -270,7 +270,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn novo_registro_aplica_defaults() {
+    fn new_record_applies_defaults() {
         let r = VpsRecord::new(
             "teste".into(),
             "1.2.3.4".into(),
@@ -294,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn debug_nao_exibe_senha() {
+    fn debug_does_not_show_password() {
         let r = VpsRecord::new(
             "t".into(),
             "h".into(),
@@ -317,8 +317,8 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn round_trip_toml_preserva_dados() {
-        // Isola cifragem at-rest de outros tests (primary-key global).
+    fn round_trip_toml_preserves_data() {
+        // Isolates at-rest encryption from other tests (global primary-key).
         let tmp = tempfile::TempDir::new().unwrap();
         crate::secrets::set_config_dir(Some(tmp.path().to_path_buf()));
         // SAFETY:
@@ -377,7 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn migra_max_chars_legado() {
+    fn migrates_legacy_max_chars() {
         let legado = r#"
 nome = "x"
 host = "h"
@@ -395,7 +395,7 @@ adicionado_em = "2020-01-01T00:00:00Z"
     }
 
     #[test]
-    fn validar_credenciais_exige_password_ou_key() {
+    fn validate_credentials_requires_password_or_key() {
         let mut r = VpsRecord::new(
             "t".into(),
             "h".into(),
@@ -417,7 +417,7 @@ adicionado_em = "2020-01-01T00:00:00Z"
     }
 
     #[test]
-    fn parse_limite_none_e_zero() {
+    fn parse_limit_none_and_zero() {
         assert_eq!(parse_char_limit("none"), 0);
         assert_eq!(parse_char_limit("0"), 0);
         assert_eq!(parse_char_limit("1000"), 1000);
