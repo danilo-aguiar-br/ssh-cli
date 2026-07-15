@@ -197,7 +197,15 @@ pub fn imprimir_detalhes_texto(r: &VpsRegistro) {
     println!("Host:           {}", r.host);
     println!("Porta:          {}", r.porta);
     println!("Usuário:        {}", r.usuario);
-    println!("Senha:          {}", mascarar(r.senha.expose_secret()));
+    // GAP-SSH-JSON-001: senha vazia (key-only) não finge valor mascarado.
+    println!(
+        "Senha:          {}",
+        if r.senha.expose_secret().is_empty() {
+            "(não definida)".to_string()
+        } else {
+            mascarar(r.senha.expose_secret())
+        }
+    );
     println!(
         "Key path:       {}",
         r.key_path.as_deref().unwrap_or("(não definida)")
@@ -232,12 +240,18 @@ pub fn imprimir_detalhes_json(r: &VpsRegistro) {
 }
 
 fn registro_para_json_mascarado(r: &VpsRegistro) -> serde_json::Value {
+    // GAP-SSH-JSON-001: password ausente/vazio → null (como sudo/su); presente → "***".
+    let password = if r.senha.expose_secret().is_empty() {
+        json!(null)
+    } else {
+        json!(mascarar(r.senha.expose_secret()))
+    };
     json!({
         "name": r.nome,
         "host": r.host,
         "port": r.porta,
         "user": r.usuario,
-        "password": mascarar(r.senha.expose_secret()),
+        "password": password,
         "key_path": r.key_path,
         "key_passphrase": r.key_passphrase.as_ref().map(|s| mascarar(s.expose_secret())),
         "sudo_password": r.senha_sudo.as_ref().map(|s| mascarar(s.expose_secret())),
@@ -386,6 +400,14 @@ mod testes {
         r.senha_su = Some(SecretString::from("senha-su-muito-longa-aqui".to_string()));
         let json = registro_para_json_mascarado(&r);
         assert_eq!(json["su_password"].as_str().unwrap(), "***");
+    }
+
+    #[test]
+    fn registro_para_json_mascarado_password_null_quando_vazio() {
+        let mut r = registro_teste();
+        r.senha = SecretString::from(String::new());
+        let json = registro_para_json_mascarado(&r);
+        assert!(json["password"].is_null());
     }
 
     #[test]

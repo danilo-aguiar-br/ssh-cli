@@ -17,7 +17,7 @@
 - Follow first use in [docs/HOW_TO_USE.md](docs/HOW_TO_USE.md).
 - Copy recipes from [docs/COOKBOOK.md](docs/COOKBOOK.md).
 - Check platforms in [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md).
-- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.3.6**).
+- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.3.9**).
 - Run tests via [docs/TESTING.md](docs/TESTING.md).
 - Consume JSON contracts under [docs/schemas/README.md](docs/schemas/README.md).
 - Teach LLMs with [skills/ssh-cli-en/SKILL.md](skills/ssh-cli-en/SKILL.md).
@@ -82,7 +82,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Installation
 ### Choose the install path that matches your environment
-- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (after **0.3.6** is published; until then install from git/path for full features).
+- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (after **0.3.9** is published; until then install from git/path for full features).
 - Rebuild from a checkout: `cargo install --path . --locked`
 - Do **not** use install without `--locked` unless you verified the crypto pins resolve cleanly.
 - Force upgrade after a release: `cargo install ssh-cli --locked --force`
@@ -196,7 +196,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Troubleshooting FAQ
 ### Fix common install and runtime failures
-- Install fails on crypto RC drift: rerun with `--locked` or use release **0.3.6+** pins (`scripts/verify_install_resolve.sh`).
+- Install fails on crypto RC drift: rerun with `--locked` or use release **0.3.9+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
 - Auth fails on key-only hosts: set `--key` on `vps add` or pass `--key` / `--password-stdin` to `exec`.
 - Auth fails with passphrase keys: use `--key-passphrase-stdin`.
 - Host key changed: confirm legitimacy then rerun with `--replace-host-key`.

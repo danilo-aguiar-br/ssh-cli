@@ -20,7 +20,7 @@
 - `0.3.5` adiciona caminhos de passphrase stdin, JSON auto em non-TTY, doctor `secrets_at_rest`, export atômico residual.
 - `0.3.4` adiciona `--key`, `--key-passphrase`, `--password-stdin`, `--sudo-password-stdin`, `--su-password-stdin`, `--timeout-ms` (tunnel), `--disable-sudo`, `--description`, `--replace-host-key`, `max_command_chars`, `max_output_chars`, `vps doctor`, `vps export`, `vps import`, `su-exec`.
 - `0.2.0` adiciona overrides runtime `--password`, `--sudo-password`, `--timeout` e aliases camelCase.
-- Prefira **0.3.6+** para automação SSH completa e cifragem default de segredos.
+- Prefira **0.3.9+** para automação SSH completa, cifragem default e supply-chain limpa.
 
 
 ## Tabela resumo

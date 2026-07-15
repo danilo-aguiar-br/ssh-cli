@@ -9,6 +9,22 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-07-15
+
+### Corrigido
+- Residuais da auditoria pós-0.3.8: LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL-003, CHG-001
+- Tracing default **error** (agent-first); `-v` ativa debug (LOG-001)
+- stderr JSON sem prosa INFO por omissão (LOG-001)
+- VPS só-chave: `password: null` no JSON (JSON-001)
+- `health-check --timeout` (CLI-004)
+- Docs de product line em **0.3.9** (DOC-003)
+
+### Adicionado
+- Suite `tests/gaps_v039_integration.rs`
+
+### Alterado
+- Versão 0.3.8 → 0.3.9
+
 ## [0.3.8] - 2026-07-15
 
 ### Corrigido
@@ -155,7 +171,9 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 Release inicial.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.9...HEAD
+[0.3.9]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.8...v0.3.9
+[0.3.8]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.7...v0.3.8
 [0.3.6]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.3...v0.3.4

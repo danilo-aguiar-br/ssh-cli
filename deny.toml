@@ -32,6 +32,9 @@ allow = [
 confidence-threshold = 0.8
 
 [bans]
+# GAP-SSH-DENY-002 (0.3.9): duplicates (aead/chacha20/cipher/…) are transitive
+# from russh 0.62 + chacha20poly1305 0.10 dual stacks — warn only, not ignore CVE.
+# Fail only on wildcards and forbidden native TLS/OpenSSL stacks.
 multiple-versions = "warn"
 wildcards = "deny"
 deny = [

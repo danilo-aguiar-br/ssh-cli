@@ -492,7 +492,7 @@ fn gap_test_002_version_contem_semver() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("0.3.8"));
+        .stdout(predicate::str::is_match(r"ssh-cli 0\.\d+\.\d+ \(").unwrap());
 }
 
 #[test]

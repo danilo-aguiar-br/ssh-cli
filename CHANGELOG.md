@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-07-15
+
+### Fixed
+- Post-0.3.8 audit residuals: LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL-003, CHG-001
+- Default tracing level is **error** (agent-first); `-v` enables debug (LOG-001)
+- Tunnel/JSON stderr no longer emits INFO progress banners by default (LOG-001)
+- Key-only VPS JSON: empty password serializes as `null` instead of `"***"` (JSON-001)
+- `health-check --timeout <ms>` override aligned with exec (CLI-004)
+- Product-line docs (`llms*.txt`, README, AGENTS, INTEGRATIONS) bumped to **0.3.9** (DOC-003)
+- CHANGELOG compare anchors for 0.3.8/0.3.9 (CHG-001)
+- `deny.toml` documents expected multi-version warns without CVE ignore (DENY-002)
+
+### Added
+- Suite `tests/gaps_v039_integration.rs` for residual audit gaps
+
+### Changed
+- Version 0.3.8 → 0.3.9
+
+### Notes
+- No telemetry
+- Local tags `v0.3.8` / `v0.3.9` (no push unless authorized)
+
 ## [0.3.8] - 2026-07-15
 
 ### Fixed
@@ -155,7 +177,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.7...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.9...HEAD
+[0.3.9]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.8...v0.3.9
+[0.3.8]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.4...v0.3.5

@@ -401,6 +401,7 @@ pub async fn executar_comando_vps(
                     formato,
                     false,
                     None,
+                    None,
                 )
                 .await?;
             }
@@ -1088,6 +1089,7 @@ pub async fn executar_health_check(
     formato: FormatoSaida,
     json_local: bool,
     password_override: Option<String>,
+    timeout_override: Option<u64>,
 ) -> Result<()> {
     let _ = json_local; // merged below with formato
     if crate::signals::cancelado() || crate::signals::terminado() {
@@ -1111,7 +1113,16 @@ pub async fn executar_health_check(
         .ok_or_else(|| ErroSshCli::VpsNaoEncontrada(nome_resolvido.clone()))?;
 
     let mut vps = vps_base.clone();
-    aplicar_overrides(&mut vps, password_override, None, None, None, None, None);
+    // GAP-SSH-CLI-004: --timeout alinha health-check a exec/tunnel.
+    aplicar_overrides(
+        &mut vps,
+        password_override,
+        None,
+        None,
+        timeout_override,
+        None,
+        None,
+    );
     let cfg = construir_configuracao(&vps, Some(&caminho), false);
     let inicio = std::time::Instant::now();
     let cliente: Box<dyn ClienteSshTrait> = <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;

@@ -2,7 +2,7 @@
 
 > Complete discovery map for one-shot multi-host SSH automation
 
-ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start the binary, run one operation, and the process exits. Multi-host credentials live under XDG via directories::ProjectDirs. Authentication accepts password or OpenSSH private key. sudo uses secure `sh -c` packing. su-exec provides real elevation. known_hosts implements TOFU. config writes are atomic with flock. Secrets in config.toml are **encrypted by default** (ChaCha20-Poly1305; auto `secrets.key`). Install is gated with crypto pins for clean `cargo install --locked`. Product line **0.3.6** closes GAP-001–014.
+ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start the binary, run one operation, and the process exits. Multi-host credentials live under XDG via directories::ProjectDirs. Authentication accepts password or OpenSSH private key. sudo uses secure `sh -c` packing. su-exec provides real elevation. known_hosts implements TOFU. config writes are atomic with flock. Secrets in config.toml are **encrypted by default** (ChaCha20-Poly1305; auto `secrets.key`). Install is gated with crypto pins for clean `cargo install --locked`. Product line **0.3.9** closes residual post-0.3.8 audit gaps; russh 0.62.2.
 
 - Portuguese discovery file: [llms.pt-BR.txt](llms.pt-BR.txt)
 - Short index: [llms.txt](llms.txt)
@@ -48,7 +48,7 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - [health-check.schema.json](docs/schemas/health-check.schema.json)
 - [error-envelope.schema.json](docs/schemas/error-envelope.schema.json)
 
-## Commands (product surface 0.3.6)
+## Commands (product surface 0.3.9)
 - `vps add|list|show|edit|remove|path|doctor|export|import`
 - `connect`, `exec`, `sudo-exec`, `su-exec`
 - `scp upload|download`, `tunnel --timeout-ms`, `health-check`

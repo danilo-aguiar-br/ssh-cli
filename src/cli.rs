@@ -232,6 +232,9 @@ pub enum Comando {
         /// Override de senha SSH.
         #[arg(long)]
         password: Option<String>,
+        /// Override de timeout SSH em milissegundos (GAP-SSH-CLI-004).
+        #[arg(long)]
+        timeout: Option<u64>,
     },
 
     /// Gerencia master-key e cifragem at-rest de secrets (one-shot).
@@ -476,6 +479,9 @@ pub fn parse_args() -> Argumentos {
 }
 
 /// Inicializa `tracing-subscriber`.
+///
+/// GAP-SSH-LOG-001 (0.3.9): default **error** (agent-first). `-v` → debug.
+/// `RUST_LOG` vence tudo. Nunca INFO por omissão em JSON/non-TTY.
 pub fn inicializar_logs(args: &Argumentos) {
     use tracing_subscriber::{fmt, EnvFilter};
 
@@ -483,10 +489,10 @@ pub fn inicializar_logs(args: &Argumentos) {
         EnvFilter::from_default_env()
     } else if args.verbose {
         EnvFilter::new("debug")
-    } else if args.quiet {
-        EnvFilter::new("error")
     } else {
-        EnvFilter::new("info")
+        // quiet e default humano/agente: error (sem prosa INFO em stderr).
+        let _ = args.quiet;
+        EnvFilter::new("error")
     };
 
     let _ = fmt()
@@ -688,6 +694,7 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             vps_nome,
             json,
             password,
+            timeout,
         } => {
             crate::vps::executar_health_check(
                 vps_nome.as_deref(),
@@ -695,6 +702,7 @@ pub async fn executar(args: Argumentos) -> Result<()> {
                 formato,
                 json,
                 password,
+                timeout,
             )
             .await
         }

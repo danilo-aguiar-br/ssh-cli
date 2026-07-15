@@ -4,7 +4,7 @@
 
 - Read this document in [English](AGENTS.md).
 - Combine com [../INTEGRATIONS.pt-BR.md](../INTEGRATIONS.pt-BR.md) e [../skills/ssh-cli-pt/SKILL.md](../skills/ssh-cli-pt/SKILL.md).
-- Linha de produto: **0.3.6** (GAP-001–014 fechados).
+- Linha de produto: **0.3.9** (inventário Fechado; russh 0.62.2).
 
 
 ## Por quê
