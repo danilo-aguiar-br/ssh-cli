@@ -64,7 +64,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Prefira unit tests determinísticos para packing e migração de schema.
 - Use integration tests em `tests/` para contratos da CLI.
 - Inclua as suites de regressão de gaps `tests/gaps_v038_integration.rs` e `tests/gaps_v039_integration.rs` ao tocar superfície residual de auditoria.
-- Para E2E SSH real local, use `bash scripts/e2e_real_ssh.sh --from-grok-config` (ou env `SSH_CLI_E2E_*`); nunca logue credenciais.
+- Para E2E SSH real local, prefira env `SSH_CLI_E2E_*`, ou `bash scripts/e2e_real_ssh.sh --from-grok-config` só em maintainer lendo `$HOME/.grok/config.toml`; nunca logue credenciais; nunca faça commit de config Grok/MCP ou inventário de hosts neste repositório.
 - Testes que precisam de secrets em claro devem definir `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
 - Nunca deixe testes flaky dependentes de rede sem timeout.
 

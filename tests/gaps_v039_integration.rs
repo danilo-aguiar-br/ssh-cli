@@ -1,7 +1,8 @@
 //! Regressão e2e dos gaps residuais da auditoria pós-0.3.8 (v0.3.9).
 //!
 //! IDs: LOG-001, JSON-001, CLI-004, DOC-003 (version string), DENY-002 (policy),
-//! REL-003 (tag/version), CHG-001 (docs). Usa apenas credenciais FALSAS.
+//! REL-003 (tag/version), CHG-001 (docs), SEC-001..003 (higiene de exposição).
+//! Usa apenas credenciais FALSAS.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -343,5 +344,72 @@ fn gap_chg_001_changelog_tem_039() {
     assert!(
         ch.contains("[0.3.9]:") || ch.contains("compare/v0.3.8"),
         "CHANGELOG deve ter âncora/link 0.3.9"
+    );
+}
+
+// --- SEC-001..003: higiene anti-vazamento (auditoria workspace) ---
+
+#[test]
+fn gap_sec_001_setting_cyber_ignorado_por_diretorio() {
+    let gi = std::fs::read_to_string(".gitignore").expect(".gitignore");
+    assert!(
+        gi.lines().any(|l| l.trim() == ".setting.cyber/"),
+        ".gitignore DEVE ignorar o diretório .setting.cyber/ (não só *.log)"
+    );
+    let cargo = std::fs::read_to_string("Cargo.toml").expect("Cargo.toml");
+    assert!(
+        cargo.contains("\".setting.cyber/\""),
+        "Cargo.toml exclude DEVE listar .setting.cyber/"
+    );
+    let cargoignore = std::fs::read_to_string(".cargoignore").expect(".cargoignore");
+    assert!(
+        cargoignore.lines().any(|l| l.trim() == ".setting.cyber/"),
+        ".cargoignore DEVE listar .setting.cyber/"
+    );
+}
+
+#[test]
+fn gap_sec_002_e2e_recusa_grok_config_dentro_do_repo() {
+    let script = std::fs::read_to_string("scripts/e2e_real_ssh.sh").expect("e2e script");
+    assert!(
+        script.contains("must not live inside the repository"),
+        "e2e_real_ssh.sh DEVE recusar grok config sob a raiz do repo"
+    );
+    assert!(
+        script.contains("GROK_CFG_ABS") && script.contains("ROOT_ABS"),
+        "e2e_real_ssh.sh DEVE comparar path absoluto do grok config com ROOT"
+    );
+    let testing = std::fs::read_to_string("docs/TESTING.md").expect("TESTING");
+    assert!(
+        testing.contains("$HOME/.grok/config.toml")
+            && testing.contains("never copy it into this repository"),
+        "TESTING.md DEVE documentar grok config só em $HOME"
+    );
+}
+
+#[test]
+fn gap_sec_003_docs_sem_s3cret_usa_placeholder_demo() {
+    for path in [
+        "README.md",
+        "README.pt-BR.md",
+        "docs/COOKBOOK.md",
+        "docs/COOKBOOK.pt-BR.md",
+    ] {
+        let body = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("ler {path}: {e}"));
+        assert!(
+            !body.contains("s3cret"),
+            "{path} não deve usar senha demo ambígua 's3cret'"
+        );
+        if body.contains("password-stdin") || body.contains("vps add") {
+            assert!(
+                body.contains("demo-password-not-real"),
+                "{path} deve usar placeholder demo-password-not-real"
+            );
+        }
+    }
+    let sec = std::fs::read_to_string("SECURITY.md").expect("SECURITY");
+    assert!(
+        sec.contains(".setting.cyber/") && sec.contains("demo-password-not-real"),
+        "SECURITY.md deve documentar higiene SEC-001/003"
     );
 }

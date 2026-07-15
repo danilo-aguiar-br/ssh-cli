@@ -68,6 +68,9 @@
 - Mantenha `config.toml` com mode `0600` e restrinja locais de backup.
 - Revise erros de mudança de host key TOFU antes de usar `--replace-host-key`.
 - Nunca faça commit de inventários de host com segredos vivos.
+- Nunca faça commit de sidecars MCP locais (ex.: `.setting.cyber/`), config Grok MCP (`~/.grok/config.toml`), XDG `config.toml` / `secrets.key` / `known_hosts`, ou arquivos de env E2E no repositório.
+- E2E SSH real deve manter credenciais fora da árvore (`SSH_CLI_E2E_*` ou `$HOME/.grok/config.toml`); o script recusa config grok sob a raiz do repo.
+- Senhas de demo na documentação pública são só placeholders (ex.: `demo-password-not-real`); nunca as reutilize em hosts reais.
 - Desabilite elevação com `--disable-sudo` quando o workflow não deve escalar.
 - Rode apenas comandos one-shot; nunca espere um daemon SSH de longa duração desta CLI.
 - Instale com `--locked` para evitar drift de re-resolve crypto.

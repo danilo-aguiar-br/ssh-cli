@@ -68,6 +68,9 @@
 - Keep `config.toml` mode `0600` and restrict backup locations.
 - Review TOFU host-key change errors before using `--replace-host-key`.
 - Never commit host registries that include live secrets.
+- Never commit local MCP sidecars (e.g. `.setting.cyber/`), Grok MCP config (`~/.grok/config.toml`), XDG `config.toml` / `secrets.key` / `known_hosts`, or E2E env files into the repository.
+- Real-SSH E2E must keep credentials outside the tree (`SSH_CLI_E2E_*` env or `$HOME/.grok/config.toml`); the script refuses grok configs under the repo root.
+- Demo passwords in public docs are placeholders only (e.g. `demo-password-not-real`); never reuse them on live hosts.
 - Disable elevation with `--disable-sudo` when a workflow must not escalate.
 - Run one-shot commands only; never expect a long-lived SSH daemon from this CLI.
 - Install with `--locked` to avoid accidental crypto re-resolve drift.

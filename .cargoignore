@@ -1,5 +1,6 @@
 .serena/
 .claude/
+.setting.cyber/
 docs_prd/
 docs_rules/
 /AGENTS.md

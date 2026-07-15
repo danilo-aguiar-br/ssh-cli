@@ -16,6 +16,7 @@ categories = ["command-line-utilities", "network-programming"]
 exclude = [
     ".serena/",
     ".claude/",
+    ".setting.cyber/",
     ".vscode/",
     "logs/",
     "memory/",
@@ -28,6 +29,9 @@ exclude = [
     "graphrag.sqlite",
     "graphrag.sqlite-shm",
     "graphrag.sqlite-wal",
+    ".enrich-queue.sqlite",
+    ".enrich-queue.sqlite-shm",
+    ".enrich-queue.sqlite-wal",
     "projeto_ssh-cli.md",
     ".github/",
     "tests/fixtures/",

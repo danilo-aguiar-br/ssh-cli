@@ -64,7 +64,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Prefer deterministic unit tests for packing and schema migration.
 - Use integration tests under `tests/` for CLI contracts.
 - Include gap regression suites `tests/gaps_v038_integration.rs` and `tests/gaps_v039_integration.rs` when touching residual audit surface.
-- For local real-SSH E2E, use `bash scripts/e2e_real_ssh.sh --from-grok-config` (or env `SSH_CLI_E2E_*`); never log credentials.
+- For local real-SSH E2E, prefer env `SSH_CLI_E2E_*`, or maintainer-local `bash scripts/e2e_real_ssh.sh --from-grok-config` reading `$HOME/.grok/config.toml` only; never log credentials; never commit Grok/MCP config or host inventories into this repo.
 - Unit/integration tests that need plaintext secrets must set `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
 - Never leave flaky remote-dependent tests without timeouts.
 

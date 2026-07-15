@@ -57,8 +57,13 @@ cargo test --locked secrets::
 ### Real SSH E2E (never print secrets)
 
 ```bash
+# Preferred in CI / shared machines: env only (never commit these values)
+export SSH_CLI_E2E_HOST=… SSH_CLI_E2E_USER=… SSH_CLI_E2E_PASSWORD=…
+bash scripts/e2e_real_ssh.sh
+
+# Maintainer-local only: parse $HOME/.grok/config.toml (ssh-flowaiper MCP).
+# That file must stay under $HOME — never copy it into this repository.
 bash scripts/e2e_real_ssh.sh --from-grok-config
-# or export SSH_CLI_E2E_HOST/USER/PASSWORD (and optional SUDO) then run without --from-grok-config
 ```
 
 

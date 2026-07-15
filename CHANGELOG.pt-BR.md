@@ -9,13 +9,6 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-### Corrigido
-- `docs/schemas/vps-show.schema.json` permite `password` com tipo `string | null` (paridade do contrato JSON-001 com o runtime)
-- Aberturas de link cruzado em `docs/*.pt-BR.md` usam narrativa em português ("Leia este documento em inglês")
-- `docs/RELEASE_CHECKLIST.md` + `docs/RELEASE_CHECKLIST.pt-BR.md` bilíngues com gates residuais LOG/JSON/CLI/DOC/DENY/REL/CHG
-- Testes DOC-003 cobrem checklists e janela `null` do schema de password
-- Skills EN/PT consolidadas como fórmulas operacionais imperativas (LOG/JSON/CLI, envelope de erro, quiet, key-passphrase-stdin, port, completions completas) sem histórias de changelog por versão
-
 ## [0.3.9] - 2026-07-15
 
 ### Corrigido
@@ -27,16 +20,23 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Docs de product line em **0.3.9** e comportamentos residuais documentados em README, `llms*.txt`, INTEGRATIONS, `docs/*` (HOW_TO_USE, COOKBOOK, MIGRATION, TESTING, CROSS_PLATFORM, AGENTS, schemas) e skills (auditoria profunda DOC-003)
 - Âncoras de compare do CHANGELOG para 0.3.8/0.3.9 (CHG-001)
 - `deny.toml` documenta warns multi-version esperados sem ignore de CVE (DENY-002)
+- `docs/schemas/vps-show.schema.json` permite `password` com tipo `string | null` (paridade do contrato JSON-001 com o runtime)
+- Aberturas de link cruzado em `docs/*.pt-BR.md` usam narrativa em português ("Leia este documento em inglês")
+- `docs/RELEASE_CHECKLIST.md` + `docs/RELEASE_CHECKLIST.pt-BR.md` bilíngues com gates residuais LOG/JSON/CLI/DOC/DENY/REL/CHG
+- Testes DOC-003 cobrem checklists e janela `null` do schema de password
+- Skills EN/PT consolidadas como fórmulas operacionais imperativas (LOG/JSON/CLI, envelope de erro, quiet, key-passphrase-stdin, port, completions completas) sem histórias de changelog por versão
+- Higiene de exposição SEC-001..003: ignore completo de `.setting.cyber/`, E2E recusa grok config dentro do repo, docs usam `demo-password-not-real` (não `s3cret`)
 
 ### Adicionado
-- Suite `tests/gaps_v039_integration.rs` para gaps residuais de auditoria
+- Suite `tests/gaps_v039_integration.rs` para gaps residuais de auditoria (incl. SEC-001..003)
 
 ### Alterado
 - Versão 0.3.8 → 0.3.9
+- `exclude` do Cargo inclui `.setting.cyber/` e sidecars sqlite do enrich-queue
 
 ### Notas
 - Sem telemetria
-- Tags locais `v0.3.8` / `v0.3.9` (sem push salvo autorização)
+- Credenciais reais ficam fora da árvore (`~/.config/ssh-cli/`, `$HOME/.grok/config.toml`)
 
 ## [0.3.8] - 2026-07-15
 

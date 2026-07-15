@@ -36,7 +36,7 @@ ssh-cli secrets status --json
 ## How To Register a Password Host (stdin, no argv leak)
 
 ```bash
-printf '%s' 's3cret' | ssh-cli vps add \
+printf '%s' 'demo-password-not-real' | ssh-cli vps add \
   --name prod \
   --host prod.example.com \
   --user deploy \
@@ -178,6 +178,7 @@ ssh-cli --disable-sudo exec prod "id"
 ## How To Run Real SSH E2E Without Logging Secrets
 
 ```bash
-# uses local env or --from-grok-config; prints only PASS/FAIL
+# prefer env SSH_CLI_E2E_*; --from-grok-config is maintainer-local ($HOME only)
+# prints only PASS/FAIL — never host/user/password
 bash scripts/e2e_real_ssh.sh --from-grok-config
 ```

@@ -7,6 +7,9 @@ Cargo.lock.bak
 logs/
 *.log
 
+# Local MCP / tooling sidecars (full dir — not only *.log)
+.setting.cyber/
+
 # Secrets
 *.pem
 *.key

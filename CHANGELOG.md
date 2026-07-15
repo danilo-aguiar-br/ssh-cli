@@ -9,13 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- `docs/schemas/vps-show.schema.json` allows `password` type `string | null` (JSON-001 contract parity with runtime)
-- Portuguese cross-language openers in `docs/*.pt-BR.md` use Portuguese narrative ("Leia este documento em inglês")
-- Bilingual `docs/RELEASE_CHECKLIST.md` + `docs/RELEASE_CHECKLIST.pt-BR.md` with residual gates LOG/JSON/CLI/DOC/DENY/REL/CHG
-- DOC-003 tests cover checklists and schema password null window
-- Skills EN/PT consolidated as imperative operational formulas (LOG/JSON/CLI, error envelope, quiet, key-passphrase-stdin, port, full completions) without version changelog stories
-
 ## [0.3.9] - 2026-07-15
 
 ### Fixed
@@ -27,16 +20,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Product-line docs bumped to **0.3.9** and residual behaviors documented across README, `llms*.txt`, INTEGRATIONS, `docs/*` (HOW_TO_USE, COOKBOOK, MIGRATION, TESTING, CROSS_PLATFORM, AGENTS, schemas), and skills (DOC-003 deep audit)
 - CHANGELOG compare anchors for 0.3.8/0.3.9 (CHG-001)
 - `deny.toml` documents expected multi-version warns without CVE ignore (DENY-002)
+- `docs/schemas/vps-show.schema.json` allows `password` type `string | null` (JSON-001 contract parity with runtime)
+- Portuguese cross-language openers in `docs/*.pt-BR.md` use Portuguese narrative ("Leia este documento em inglês")
+- Bilingual `docs/RELEASE_CHECKLIST.md` + `docs/RELEASE_CHECKLIST.pt-BR.md` with residual gates LOG/JSON/CLI/DOC/DENY/REL/CHG
+- DOC-003 tests cover checklists and schema password null window
+- Skills EN/PT consolidated as imperative operational formulas (LOG/JSON/CLI, error envelope, quiet, key-passphrase-stdin, port, full completions) without version changelog stories
+- Workspace secret-hygiene residuals SEC-001..003: ignore `.setting.cyber/` fully, E2E refuses grok config inside the repo, docs use `demo-password-not-real` (not `s3cret`)
 
 ### Added
-- Suite `tests/gaps_v039_integration.rs` for residual audit gaps
+- Suite `tests/gaps_v039_integration.rs` for residual audit gaps (incl. SEC-001..003)
 
 ### Changed
 - Version 0.3.8 → 0.3.9
+- Cargo package `exclude` adds `.setting.cyber/` and enrich-queue sqlite sidecars
 
 ### Notes
 - No telemetry
-- Local tags `v0.3.8` / `v0.3.9` (no push unless authorized)
+- Real credentials stay outside the tree (`~/.config/ssh-cli/`, `$HOME/.grok/config.toml`)
 
 ## [0.3.8] - 2026-07-15
 

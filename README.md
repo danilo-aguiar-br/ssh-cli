@@ -71,7 +71,7 @@
 ```bash
 cargo install ssh-cli --locked
 ssh-cli secrets init   # optional explicit master-key; auto-created on first secret write
-printf %s s3cret | ssh-cli vps add \
+printf %s 'demo-password-not-real' | ssh-cli vps add \
   --name prod \
   --host prod.example.com \
   --port 22 \

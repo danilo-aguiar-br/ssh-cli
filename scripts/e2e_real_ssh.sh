@@ -4,10 +4,14 @@
 # Sources credentials ONLY from:
 #   1) Env: SSH_CLI_E2E_HOST SSH_CLI_E2E_PORT SSH_CLI_E2E_USER SSH_CLI_E2E_PASSWORD
 #      optional: SSH_CLI_E2E_SUDO_PASSWORD
-#   2) Or --from-grok-config (parses ~/.grok/config.toml server ssh-flowaiper args)
+#   2) Or --from-grok-config (parses $HOME/.grok/config.toml server ssh-flowaiper args)
 #
-# Never prints host/user/password. Prints only PASS/FAIL E0n.
-# Uses /tmp (outside Dropbox workspace). Temp dir destroyed on exit.
+# Hygiene (GAP-SSH-SEC-002):
+#   - Grok/MCP config MUST live under $HOME (default ~/.grok/config.toml), NEVER in this repo.
+#   - Prefer env vars in CI; --from-grok-config is maintainer-local only.
+#   - Never prints host/user/password. Prints only PASS/FAIL E0n.
+#   - Uses /tmp (outside workspace). Temp dir destroyed on exit.
+#   - Refuses grok config paths that resolve inside the repository root.
 set -euo pipefail
 set +x
 
@@ -25,7 +29,8 @@ usage() {
   cat <<'EOF'
 Usage: e2e_real_ssh.sh [--from-grok-config] [--bin PATH]
   Env: SSH_CLI_E2E_HOST PORT USER PASSWORD [SUDO_PASSWORD]
-  Never commits credentials. Never prints secrets.
+  Prefer env in CI. --from-grok-config reads $HOME/.grok/config.toml only
+  (never a path inside this repository). Never prints secrets.
 EOF
 }
 
@@ -50,6 +55,15 @@ if [[ "$FROM_GROK" -eq 1 ]]; then
     echo "FAIL E00: grok config missing" >&2
     exit 1
   fi
+  # Refuse configs that live inside the git workspace (must stay outside the repo).
+  GROK_CFG_ABS="$(cd "$(dirname "$GROK_CFG")" && pwd)/$(basename "$GROK_CFG")"
+  ROOT_ABS="$(cd "$ROOT" && pwd)"
+  case "$GROK_CFG_ABS" in
+    "$ROOT_ABS"|"$ROOT_ABS"/*)
+      echo "FAIL E00: grok config must not live inside the repository ($GROK_CFG_ABS)" >&2
+      exit 1
+      ;;
+  esac
   # Parse via helper file to avoid shell quoting hell; values only in env exports.
   HELPER="$(mktemp /tmp/ssh-cli-e2e-parse.XXXXXX.py)"
   cat >"$HELPER" <<'PY'

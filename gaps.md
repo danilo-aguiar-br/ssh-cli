@@ -31,6 +31,14 @@ Todos **Resolvidos** — ver seções anteriores e commit `94941e4` (0.3.8).
 | GAP-SSH-REL-003 | Tag local `v0.3.8` ausente | **Resolvido (0.3.9)** — tags locais `v0.3.8` + `v0.3.9` (sem push) |
 | GAP-SSH-CHG-001 | Âncoras CHANGELOG 0.3.8/0.3.9 | **Resolvido (0.3.9)** |
 
+### Bloco higiene exposição workspace (pós-auditoria secrets) (3)
+
+| ID | Título | Status |
+|----|--------|--------|
+| GAP-SSH-SEC-001 | `.setting.cyber/` só coberto por `*.log` | **Resolvido** — dir em `.gitignore` + `.cargoignore` + `Cargo.toml` exclude |
+| GAP-SSH-SEC-002 | E2E `--from-grok-config` sem barreira de path no repo | **Resolvido** — script recusa config sob ROOT; docs preferem env |
+| GAP-SSH-SEC-003 | Demo `s3cret` ambígua em docs públicas | **Resolvido** — placeholder `demo-password-not-real` + SECURITY |
+
 ---
 
 # Detalhe 0.3.9
@@ -80,6 +88,27 @@ Todos **Resolvidos** — ver seções anteriores e commit `94941e4` (0.3.8).
 | CHG-001 | seções e âncoras `[0.3.9]` / `[0.3.8]` no CHANGELOG |
 | Teste | `gap_chg_001_changelog_tem_039` |
 
+## GAP-SSH-SEC-001
+
+| Status | **Resolvido** |
+| Causa | `.setting.cyber/` não estava no ignore por diretório; só `*.log` |
+| Fix | `.gitignore`, `.cargoignore`, `Cargo.toml` `exclude` listam `.setting.cyber/` |
+| Teste | `gap_sec_001_setting_cyber_ignorado_por_diretorio` |
+
+## GAP-SSH-SEC-002
+
+| Status | **Resolvido** |
+| Causa | E2E lia grok config sem bloquear path dentro do workspace |
+| Fix | `scripts/e2e_real_ssh.sh` compara `GROK_CFG_ABS` vs `ROOT`; docs/TESTING/CONTRIBUTING preferem env |
+| Teste | `gap_sec_002_e2e_recusa_grok_config_dentro_do_repo` |
+
+## GAP-SSH-SEC-003
+
+| Status | **Resolvido** |
+| Causa | Placeholder `s3cret` em README/COOKBOOK |
+| Fix | `demo-password-not-real`; SECURITY documenta placeholders |
+| Teste | `gap_sec_003_docs_sem_s3cret_usa_placeholder_demo` |
+
 ---
 
 ## Plano de ação PA (auditoria 0.3.8) — todos Feitos
@@ -102,6 +131,7 @@ Todos **Resolvidos** — ver seções anteriores e commit `94941e4` (0.3.8).
 |---------|--------|
 | Gaps abertos | **0** |
 | Gaps 0.3.9 resolvidos | **7** |
+| Gaps SEC higiene exposição | **3** Resolvidos (SEC-001..003) |
 | Gaps legados 0.3.7+0.3.8 | **35** Resolvidos |
 | russh | **0.62.2** |
 | Telemetria | Ausente |
