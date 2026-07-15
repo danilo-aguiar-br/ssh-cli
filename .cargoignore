@@ -1,8 +1,10 @@
 .serena/
 .claude/
+docs_prd/
 docs_rules/
 AGENTS.md
 CLAUDE.md
+gaps.md
 ralph-loop.local.md
 .env
 .env.*
@@ -13,3 +15,9 @@ logs/
 coverage/
 deny.toml
 Cross.toml
+graphrag.sqlite
+graphrag.sqlite-shm
+graphrag.sqlite-wal
+.enrich-queue.sqlite
+.enrich-queue.sqlite-shm
+.enrich-queue.sqlite-wal

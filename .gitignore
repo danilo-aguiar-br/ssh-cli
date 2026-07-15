@@ -20,9 +20,19 @@ known_hosts
 .serena/
 .claude/
 CLAUDE.md
+docs_prd/
 docs_rules/
 projeto_ssh-cli.md
+gaps.md
 .cursor/
+
+# GraphRAG / filas de enriquecimento (artefatos locais)
+graphrag.sqlite
+graphrag.sqlite-shm
+graphrag.sqlite-wal
+.enrich-queue.sqlite
+.enrich-queue.sqlite-shm
+.enrich-queue.sqlite-wal
 
 # IDE
 .idea/

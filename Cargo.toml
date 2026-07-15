@@ -1,14 +1,14 @@
 [package]
 name = "ssh-cli"
-version = "0.2.1"
+version = "0.3.3"
 edition = "2021"
 rust-version = "1.85.0"
 default-run = "ssh-cli"
 description = "Native Rust CLI that gives LLMs (Claude Code, Cursor, Windsurf) the ability to operate remote servers via SSH over stdin/stdout"
-authors = ["Danilo <daniloaguiarbr@pm.me>"]
+authors = ["Danilo Aguiar <daniloaguiarbr@proton.me>"]
 license = "MIT"
-repository = "https://github.com/daniloaguiarbr/ssh-cli"
-homepage = "https://github.com/daniloaguiarbr/ssh-cli"
+repository = "https://github.com/danilo-aguiar-br/ssh-cli"
+homepage = "https://github.com/danilo-aguiar-br/ssh-cli"
 documentation = "https://docs.rs/ssh-cli"
 readme = "README.md"
 keywords = ["ssh", "cli", "llm", "automation", "devops"]

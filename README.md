@@ -2,7 +2,6 @@
 
 [![crates.io](https://img.shields.io/crates/v/ssh-cli.svg)](https://crates.io/crates/ssh-cli)
 [![docs.rs](https://docs.rs/ssh-cli/badge.svg)](https://docs.rs/ssh-cli)
-[![CI](https://github.com/comandoaguiar/ssh-cli/workflows/CI/badge.svg)](https://github.com/comandoaguiar/ssh-cli/actions)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85.0-blue)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
 [![license](https://img.shields.io/crates/l/ssh-cli.svg)](LICENSE)
 
