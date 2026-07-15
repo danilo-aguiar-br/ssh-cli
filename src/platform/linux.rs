@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Particularidades da plataforma Linux.
 //!
 //! Detecta sandboxes (Flatpak, Snap) e resolve caminhos XDG.
@@ -14,7 +15,7 @@ pub fn detectar_sandbox() {
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::detectar_sandbox;
     use serial_test::serial;
 

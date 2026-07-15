@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Abstrações condicionais por sistema operacional.
 //!
-//! A inicialização de plataforma ([`inicializar_plataforma`]) é a PRIMEIRA operação
+//! A inicialização de plataforma ([`initialize_platform`]) é a PRIMEIRA operação
 //! executada no `main()`. Ela configura:
 //!
 //! - **Windows**: codepage UTF-8 (65001) via `SetConsoleOutputCP` e `SetConsoleCP`
@@ -19,10 +20,10 @@ mod windows;
 /// Inicializa a plataforma antes de qualquer I/O.
 ///
 /// DEVE ser chamado como a primeira operação em `main()`.
-pub fn inicializar_plataforma() -> Result<()> {
+pub fn initialize_platform() -> Result<()> {
     #[cfg(target_os = "windows")]
     {
-        windows::configurar_codepage_utf8()?;
+        windows::configure_utf8_codepage()?;
     }
 
     #[cfg(target_os = "linux")]
@@ -32,7 +33,7 @@ pub fn inicializar_plataforma() -> Result<()> {
 
     #[cfg(target_os = "macos")]
     {
-        macos::inicializar();
+        macos::initialize();
     }
 
     Ok(())
@@ -54,7 +55,7 @@ pub fn e_tty() -> bool {
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
     #[test]

@@ -1,54 +1,53 @@
 ---
 source: tests/snapshot_tests.rs
-assertion_line: 32
 expression: stdout
 ---
-ssh-cli: binário leve one-shot (nascer→executar→morrer). Multi-host em storage XDG sem .env. Auth
-por senha ou chave. Sem telemetria.
+ssh-cli: lightweight one-shot binary (spawn→run→exit). Multi-host XDG storage without .env. Password
+or key auth. No telemetry.
 
 Usage: ssh-cli [OPTIONS] <COMMAND>
 
 Commands:
-  vps           Gerencia VPSs cadastradas
-  connect       Define a VPS ativa (grava arquivo irmão `active` no diretório de config)
-  exec          Executa um comando na VPS via SSH (stdout/stderr capturados)
-  sudo-exec     Executa um comando com `sudo` (packing `sh -c` seguro)
-  su-exec       Executa um comando com elevação `su -` one-shot
-  scp           Transferência de arquivos via SCP (upload/download)
-  tunnel        Tunnel SSH com deadline obrigatório (one-shot limitado)
-  health-check  Verifica conectividade SSH com uma VPS
-  secrets       Gerencia master-key e cifragem at-rest de secrets (one-shot)
-  completions   Gera completions de shell
+  vps           Manages registered VPS hosts
+  connect       Sets the active VPS (writes sibling `active` file in the config directory)
+  exec          Runs a command on the VPS over SSH (stdout/stderr captured)
+  sudo-exec     Runs a command with `sudo` (safe `sh -c` packing)
+  su-exec       Runs a command with one-shot `su -` elevation
+  scp           SCP file transfer (upload/download)
+  tunnel        SSH tunnel with mandatory deadline (bounded one-shot)
+  health-check  Checks SSH connectivity to a VPS
+  secrets       Manages the primary key and at-rest secret encryption (one-shot)
+  completions   Generates shell completions
   help          Print this message or the help of the given subcommand(s)
 
 Options:
       --lang <LOCALE>
-          Força o idioma da CLI (ex.: `pt-BR`, `en-US`)
+          Forces the CLI language (e.g. `pt-BR`, `en-US`)
 
   -v, --verbose
-          Aumenta a verbosidade de logs em stderr
+          Increases log verbosity on stderr
 
   -q, --quiet
-          Suprime output não-JSON (modo silencioso)
+          Suppresses non-JSON output (quiet mode)
 
       --config-dir <DIR>
-          Override do diretório de configuração (útil para testes)
+          Configuration directory override (useful for tests)
 
       --no-color
-          Desativa cores no output
+          Disables colored output
 
       --output-format <OUTPUT_FORMAT>
-          Formato global de saída (text, json). Se omitido: JSON quando stdout não é TTY
+          Global output format (text, json). If omitted: JSON when stdout is not a TTY
 
           Possible values:
-          - text: Texto legível por humanos (padrão)
-          - json: JSON estruturado
+          - text: Human-readable text (default)
+          - json: Structured JSON
 
       --disable-sudo
-          Desabilita sudo-exec/su-exec nesta invocação (alias --disableSudo)
+          Disables sudo-exec/su-exec for this invocation (alias --disableSudo)
 
       --replace-host-key
-          Substitui host key divergente no known_hosts TOFU
+          Replaces a diverging host key in TOFU known_hosts
 
   -h, --help
           Print help (see a summary with '-h')

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Regressão 1:1 dos gaps AUD-POST fechados na v0.4.1
 //! (EXP-001, TUN-002, CLI-005, CLI-006, IO-009, REL-006).
 
@@ -143,7 +144,7 @@ fn gap_io_009_scp_event_schema() {
     let out = std::fs::read_to_string(root().join("src/output.rs")).unwrap();
     assert!(
         out.contains("\"event\": \"scp-transfer\"") || out.contains("\"scp-transfer\""),
-        "imprimir_transferencia_json must emit event scp-transfer"
+        "print_transfer_json must emit event scp-transfer"
     );
 }
 
@@ -154,7 +155,7 @@ fn gap_exp_001_serializar_empty_source() {
     let src = std::fs::read_to_string(root().join("src/secrets.rs")).unwrap();
     assert!(
         src.contains("plaintext.is_empty()") || src.contains("is_empty()"),
-        "serializar_segredo must early-return on empty plaintext (EXP-001)"
+        "serialize_secret must early-return on empty plaintext (EXP-001)"
     );
     assert!(
         src.contains("empty_secret_never_encrypted_blob") || src.contains("GAP-SSH-EXP-001"),
@@ -296,14 +297,14 @@ fn gap_cli_006_health_source_key() {
     let src = std::fs::read_to_string(root().join("src/vps/mod.rs")).unwrap();
     assert!(
         src.contains("key_override") && src.contains("key_passphrase_override"),
-        "executar_health_check must accept key overrides (CLI-006)"
+        "run_health_check must accept key overrides (CLI-006)"
     );
     assert!(
         src.contains("replace_host_key"),
         "health-check must honor replace_host_key (M1)"
     );
     assert!(
-        src.contains("definir_json_erros"),
+        src.contains("set_json_errors"),
         "health-check must enable JSON error envelope (M2)"
     );
 }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Snapshot tests para outputs estáveis do ssh-cli.
 //!
 //! Usa `insta` para capturar e verificar outputs do binário.
@@ -50,7 +51,7 @@ fn snapshot_vps_path_format() {
     let tmp = TempDir::new().unwrap();
     let output = cmd(&tmp).args(["vps", "path"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    // Substitui o caminho temporário variável por um placeholder estável.
+    // Substitui o path temporário variável por um placeholder estável.
     let redacted = stdout.replace(tmp.path().to_str().unwrap_or(""), "[CONFIG_DIR]");
     insta::assert_snapshot!("vps_path_format", redacted);
 }

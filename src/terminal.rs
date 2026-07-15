@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Configuração de output colorido e detecção de terminal interativo.
 //!
 //! Gerencia a escolha de cores via `termcolor` respeitando a precedência:
@@ -18,7 +19,7 @@ static COR_CACHE: OnceLock<ColorChoice> = OnceLock::new();
 ///
 /// Deve ser chamada uma única vez após o parsing dos argumentos CLI.
 /// O parâmetro `sem_cor` corresponde à flag `--no-color` da CLI.
-pub fn inicializar(sem_cor: bool) -> Result<()> {
+pub fn initialize(sem_cor: bool) -> Result<()> {
     let escolha = determinar_cor(sem_cor);
     let _ = COR_CACHE.set(escolha);
     tracing::debug!("configuração de cor do terminal: {:?}", escolha);
@@ -27,7 +28,7 @@ pub fn inicializar(sem_cor: bool) -> Result<()> {
 
 /// Retorna a escolha de cor configurada.
 ///
-/// Se [`inicializar`] não foi chamada, retorna [`ColorChoice::Never`] como
+/// Se [`initialize`] não foi chamada, retorna [`ColorChoice::Never`] como
 /// fallback seguro.
 #[must_use]
 pub fn cor_escolha() -> ColorChoice {
@@ -39,7 +40,7 @@ pub fn cor_escolha() -> ColorChoice {
 /// Usa [`std::io::IsTerminal`] (estabilizado no Rust 1.70) para detecção
 /// cross-platform sem dependências externas.
 #[must_use]
-pub fn e_interativo() -> bool {
+pub fn is_interactive() -> bool {
     use std::io::IsTerminal;
 
     // Se TERM=dumb, não é interativo independente do TTY
@@ -68,7 +69,7 @@ fn determinar_cor(sem_cor_cli: bool) -> ColorChoice {
     }
 
     // 4. Detecção de TTY: cores apenas em terminal interativo
-    if e_interativo() {
+    if is_interactive() {
         ColorChoice::Auto
     } else {
         ColorChoice::Never
@@ -76,7 +77,7 @@ fn determinar_cor(sem_cor_cli: bool) -> ColorChoice {
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
     #[test]
@@ -132,8 +133,8 @@ mod testes {
 
     #[test]
     fn cor_escolha_retorna_never_sem_inicializar() {
-        // Sem inicializar, o fallback é Never
-        // NOTA: em testes paralelos o OnceLock pode já ter valor.
+        // Sem initialize, o fallback é Never
+        // NOTA: em tests paralelos o OnceLock pode já ter valor.
         // Apenas verificamos que não panic.
         let _ = cor_escolha();
     }
@@ -141,6 +142,6 @@ mod testes {
     #[test]
     fn e_interativo_retorna_bool() {
         // Apenas verifica que não panic
-        let _ = e_interativo();
+        let _ = is_interactive();
     }
 }

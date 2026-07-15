@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Testes de integração do módulo tunnel.
 //!
 //! Testa o subcomando `tunnel` via CLI, validando help e parâmetros obrigatórios.
@@ -30,8 +31,8 @@ fn tunnel_help_exibe_usage() {
         .assert()
         .success()
         .stdout(predicate::str::contains("tunnel"))
-        .stdout(predicate::str::contains("VPS_NOME"))
-        .stdout(predicate::str::contains("PORTA_LOCAL"))
+        .stdout(predicate::str::contains("VPS_NAME"))
+        .stdout(predicate::str::contains("LOCAL_PORT"))
         // GAP-SSH-IO-008
         .stdout(predicate::str::contains("--json"));
 }

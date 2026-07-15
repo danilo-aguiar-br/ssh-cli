@@ -1,24 +1,25 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Testes property-based com proptest.
 
 use proptest::prelude::*;
-use ssh_cli::mascaramento::mascarar;
+use ssh_cli::masking::mask;
 
 proptest! {
-    // ---------- mascarar (GAP-SSH-SEC-002: sempre "***") ----------
+    // ---------- mask (GAP-SSH-SEC-002: sempre "***") ----------
 
     #[test]
     fn prop_mascarar_never_panics(s in "\\PC*") {
-        let _ = mascarar(&s);
+        let _ = mask(&s);
     }
 
     #[test]
     fn prop_mascarar_sempre_triplo_asterisco(s in "\\PC*") {
-        prop_assert_eq!(mascarar(&s), "***");
+        prop_assert_eq!(mask(&s), "***");
     }
 
     #[test]
     fn prop_mascarar_nunca_retorna_input(s in "\\PC{1,100}") {
-        let resultado = mascarar(&s);
+        let resultado = mask(&s);
         prop_assume!(s != "***");
         prop_assert_ne!(
             resultado.as_str(),

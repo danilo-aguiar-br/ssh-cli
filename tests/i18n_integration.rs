@@ -1,15 +1,16 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Testes de integração do sistema de internacionalização.
 //!
 //! Testa as funções públicas do módulo i18n e locale.
 
 use serial_test::serial;
-use ssh_cli::i18n::{idioma_atual, inicializar_idioma, Idioma, Mensagem};
+use ssh_cli::i18n::{current_language, initialize_language, Language, Message};
 
 #[test]
 #[serial]
 fn inicializar_idioma_nao_panic_com_locale_valido() {
     std::env::remove_var("SSH_CLI_LANG");
-    let resultado = inicializar_idioma(Some("pt-BR"));
+    let resultado = initialize_language(Some("pt-BR"));
     assert!(
         resultado.is_ok(),
         "inicializar_idioma não deve falhar com locale válido"
@@ -20,7 +21,7 @@ fn inicializar_idioma_nao_panic_com_locale_valido() {
 #[serial]
 fn inicializar_idioma_nao_panic_com_locale_invalido() {
     std::env::remove_var("SSH_CLI_LANG");
-    let resultado = inicializar_idioma(Some("xx-XX"));
+    let resultado = initialize_language(Some("xx-XX"));
     assert!(
         resultado.is_ok(),
         "inicializar_idioma não deve falhar com locale inválido"
@@ -31,7 +32,7 @@ fn inicializar_idioma_nao_panic_com_locale_invalido() {
 #[serial]
 fn inicializar_idioma_nao_panic_sem_forcar() {
     std::env::remove_var("SSH_CLI_LANG");
-    let resultado = inicializar_idioma(None);
+    let resultado = initialize_language(None);
     assert!(resultado.is_ok(), "inicializar_idioma não deve falhar");
 }
 
@@ -39,7 +40,7 @@ fn inicializar_idioma_nao_panic_sem_forcar() {
 #[serial]
 fn inicializar_idioma_com_env_var_valida_nao_panic() {
     std::env::set_var("SSH_CLI_LANG", "en-US");
-    let resultado = inicializar_idioma(None);
+    let resultado = initialize_language(None);
     std::env::remove_var("SSH_CLI_LANG");
     assert!(
         resultado.is_ok(),
@@ -51,7 +52,7 @@ fn inicializar_idioma_com_env_var_valida_nao_panic() {
 #[serial]
 fn inicializar_idioma_com_env_var_invalida_nao_panic() {
     std::env::set_var("SSH_CLI_LANG", "xx-XX");
-    let resultado = inicializar_idioma(None);
+    let resultado = initialize_language(None);
     std::env::remove_var("SSH_CLI_LANG");
     assert!(
         resultado.is_ok(),
@@ -62,10 +63,10 @@ fn inicializar_idioma_com_env_var_invalida_nao_panic() {
 #[test]
 #[serial]
 fn idioma_atual_retorna_locale_valido() {
-    inicializar_idioma(None).expect("inicializar_idioma não deve falhar");
-    let idioma = idioma_atual();
+    initialize_language(None).expect("inicializar_idioma não deve falhar");
+    let idioma = current_language();
     assert!(
-        idioma == Idioma::English || idioma == Idioma::Portugues,
+        idioma == Language::English || idioma == Language::Portuguese,
         "idioma_atual deve ser um locale suportado"
     );
 }
@@ -74,59 +75,59 @@ fn idioma_atual_retorna_locale_valido() {
 #[serial]
 fn inicializar_com_pt_br_define_portugues() {
     // OnceLock já pode estar setado — o resultado deve ser válido de qualquer forma
-    let resultado = inicializar_idioma(Some("pt-BR"));
+    let resultado = initialize_language(Some("pt-BR"));
     assert!(resultado.is_ok());
 }
 
 #[test]
 #[serial]
 fn inicializar_com_en_us_define_english() {
-    let resultado = inicializar_idioma(Some("en-US"));
+    let resultado = initialize_language(Some("en-US"));
     assert!(resultado.is_ok());
 }
 
 #[test]
 fn mensagem_vps_registro_vazio_en_nao_vazia() {
-    let texto = Mensagem::VpsRegistroVazio.texto(Idioma::English);
+    let texto = Message::VpsRegistryEmpty.text(Language::English);
     assert!(!texto.is_empty());
 }
 
 #[test]
 fn mensagem_vps_registro_vazio_pt_nao_vazia() {
-    let texto = Mensagem::VpsRegistroVazio.texto(Idioma::Portugues);
+    let texto = Message::VpsRegistryEmpty.text(Language::Portuguese);
     assert!(!texto.is_empty());
 }
 
 #[test]
 fn mensagem_vps_registro_vazio_pt_diferente_de_en() {
-    let en = Mensagem::VpsRegistroVazio.texto(Idioma::English);
-    let pt = Mensagem::VpsRegistroVazio.texto(Idioma::Portugues);
+    let en = Message::VpsRegistryEmpty.text(Language::English);
+    let pt = Message::VpsRegistryEmpty.text(Language::Portuguese);
     assert_ne!(en, pt);
 }
 
 #[test]
 fn variantes_unitarias_nao_vazias_em_ambos_idiomas() {
     let unitarias = [
-        Mensagem::VpsRegistroVazio,
-        Mensagem::VpsListaTitulo,
-        Mensagem::ConfigCaminhoLabel,
-        Mensagem::ConfigSemChaves,
-        Mensagem::ErroCarregarConfig,
-        Mensagem::ErroSalvarConfig,
-        Mensagem::ErroConexaoSsh,
-        Mensagem::ErroComandoFalhou,
-        Mensagem::TunnelPressioneCtrlC,
-        Mensagem::HealthCheckSemVps,
-        Mensagem::OperacaoCancelada,
+        Message::VpsRegistryEmpty,
+        Message::VpsListTitle,
+        Message::ConfigPathLabel,
+        Message::ConfigNoKeys,
+        Message::ErrorLoadConfig,
+        Message::ErrorSaveConfig,
+        Message::ErrorSshConnection,
+        Message::ErrorCommandFailed,
+        Message::TunnelPressCtrlC,
+        Message::HealthCheckNoVps,
+        Message::OperationCancelled,
     ];
     for variante in &unitarias {
         assert!(
-            !variante.texto(Idioma::English).is_empty(),
+            !variante.text(Language::English).is_empty(),
             "EN vazia para {:?}",
             variante
         );
         assert!(
-            !variante.texto(Idioma::Portugues).is_empty(),
+            !variante.text(Language::Portuguese).is_empty(),
             "PT vazia para {:?}",
             variante
         );
@@ -135,61 +136,61 @@ fn variantes_unitarias_nao_vazias_em_ambos_idiomas() {
 
 #[test]
 fn variantes_com_campos_incluem_dados_dinamicos() {
-    let casos: Vec<(Mensagem, &str)> = vec![
+    let casos: Vec<(Message, &str)> = vec![
         (
-            Mensagem::VpsAdicionada {
-                nome: "meu-servidor".to_string(),
+            Message::VpsAdded {
+                name: "meu-servidor".to_string(),
             },
             "meu-servidor",
         ),
         (
-            Mensagem::VpsRemovida {
-                nome: "servidor-antigo".to_string(),
+            Message::VpsRemoved {
+                name: "servidor-antigo".to_string(),
             },
             "servidor-antigo",
         ),
         (
-            Mensagem::VpsDuplicada {
-                nome: "duplicado".to_string(),
+            Message::VpsDuplicate {
+                name: "duplicado".to_string(),
             },
             "duplicado",
         ),
         (
-            Mensagem::VpsNaoEncontrada {
-                nome: "inexistente".to_string(),
+            Message::VpsNotFound {
+                name: "inexistente".to_string(),
             },
             "inexistente",
         ),
         (
-            Mensagem::HealthCheckOk {
-                nome: "prod-01".to_string(),
+            Message::HealthCheckOk {
+                name: "prod-01".to_string(),
             },
             "prod-01",
         ),
         (
-            Mensagem::HealthCheckFalhou {
-                nome: "test-vps".to_string(),
-                detalhe: "connection refused".to_string(),
+            Message::HealthCheckFailed {
+                name: "test-vps".to_string(),
+                detail: "connection refused".to_string(),
             },
             "test-vps",
         ),
         (
-            Mensagem::HealthCheckLatencia {
-                nome: "relay-01".to_string(),
-                latencia_ms: 42,
+            Message::HealthCheckLatency {
+                name: "relay-01".to_string(),
+                latency_ms: 42,
             },
             "relay-01",
         ),
     ];
     for (msg, esperado) in &casos {
         assert!(
-            msg.texto(Idioma::English).contains(esperado),
+            msg.text(Language::English).contains(esperado),
             "EN não contém '{}' para {:?}",
             esperado,
             msg
         );
         assert!(
-            msg.texto(Idioma::Portugues).contains(esperado),
+            msg.text(Language::Portuguese).contains(esperado),
             "PT não contém '{}' para {:?}",
             esperado,
             msg
@@ -199,14 +200,14 @@ fn variantes_com_campos_incluem_dados_dinamicos() {
 
 #[test]
 fn tunnel_ativo_inclui_porta_host_e_vps() {
-    let msg = Mensagem::TunnelAtivo {
-        porta_local: 8080,
-        host_remoto: "10.0.0.1".to_string(),
-        porta_remota: 22,
-        vps_nome: "relay-01".to_string(),
+    let msg = Message::TunnelActive {
+        local_port: 8080,
+        remote_host: "10.0.0.1".to_string(),
+        remote_port: 22,
+        vps_name: "relay-01".to_string(),
     };
-    let en = msg.texto(Idioma::English);
-    let pt = msg.clone().texto(Idioma::Portugues);
+    let en = msg.text(Language::English);
+    let pt = msg.clone().text(Language::Portuguese);
     for texto in &[en, pt] {
         assert!(texto.contains("8080"), "deve conter porta_local");
         assert!(texto.contains("10.0.0.1"), "deve conter host_remoto");

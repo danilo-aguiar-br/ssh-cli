@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Regressão e2e dos 23 gaps resolvidos na 0.3.7.
 //!
 //! Usa apenas senhas/caminhos FALSOS. Nunca credenciais reais SSH.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Tratamento de sinais do sistema operacional.
 //!
 //! Registra um handler para Ctrl+C (SIGINT) que sinaliza cancelamento
@@ -15,7 +16,7 @@ static FLAG_CANCELAMENTO: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 ///
 /// Deve ser chamada uma única vez, antes de qualquer operação longa.
 /// Chamadas adicionais são seguras e ignoradas silenciosamente.
-pub fn registrar_handler() -> Result<()> {
+pub fn register_handler() -> Result<()> {
     let flag = obter_flag();
     let flag_clone = Arc::clone(&flag);
 
@@ -92,7 +93,7 @@ pub fn obter_flag_sigterm() -> Arc<AtomicBool> {
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
     use serial_test::serial;
 
@@ -127,7 +128,7 @@ mod testes {
     #[test]
     #[serial]
     fn terminado_false_por_padrao() {
-        // GAP-SSH-TEST-001: serial + reset explícito evita race com testes paralelos.
+        // GAP-SSH-TEST-001: serial + reset explícito evita race com tests paralelos.
         let flag = obter_flag_sigterm();
         flag.store(false, Ordering::SeqCst);
         assert!(!terminado());
@@ -147,7 +148,7 @@ mod testes {
         let flag = obter_flag_sigterm();
         flag.store(true, Ordering::SeqCst);
         assert!(terminado());
-        flag.store(false, Ordering::SeqCst); // Reset para não afetar outros testes
+        flag.store(false, Ordering::SeqCst); // Reset para não afetar outros tests
     }
 
     #[test]

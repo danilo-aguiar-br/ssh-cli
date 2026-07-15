@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Testes de integração dos gaps residuais 0.3.5.
 //!
 //! Usa apenas senhas/caminhos FALSOS de teste. Nunca credenciais reais SSH.
@@ -17,7 +18,7 @@ fn cmd(tmp: &TempDir) -> Command {
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
-    // Testes legados isolam plaintext; cifragem default coberta em testes dedicados.
+    // Testes legados isolam plaintext; cifragem default coberta em tests dedicados.
     c.env("SSH_CLI_ALLOW_PLAINTEXT_SECRETS", "1");
     // Força text em snapshots de CLI que capturam stdout em pipe (senão auto-JSON).
     c.env("SSH_CLI_FORCE_TEXT", "1");
@@ -178,7 +179,7 @@ fn max_command_chars_rejeita_comando_longo() {
     let tmp = TempDir::new().unwrap();
     add_fake_host(&tmp, "maxc");
     let longo = "x".repeat(80);
-    // Falha antes do SSH (sem rede) com ComandoMuitoLongo
+    // Falha antes do SSH (sem rede) com CommandTooLong
     cmd(&tmp)
         .args(["exec", "maxc", &longo])
         .assert()

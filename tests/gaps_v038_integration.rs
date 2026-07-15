@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Regressão e2e 1:1 dos gaps produto 0.3.7 + residuais 0.3.8 (TEST-004).
 //!
 //! Usa apenas senhas/caminhos FALSOS. Nunca credenciais reais SSH.
@@ -413,12 +414,12 @@ fn gap_sec_002_mask_sempre_asteriscos() {
 #[serial]
 fn gap_sec_001_packing_unit_via_lib() {
     use secrecy::SecretString;
-    use ssh_cli::ssh::packing::{empacotar_su, empacotar_sudo};
-    let senha = SecretString::from("never-in-argv-sec001".to_string());
-    let s = empacotar_sudo("id", Some(&senha));
-    assert!(!s.comando.contains("never-in-argv-sec001"));
-    let u = empacotar_su("id", &senha);
-    assert!(!u.comando.contains("never-in-argv-sec001"));
+    use ssh_cli::ssh::packing::{pack_su, pack_sudo};
+    let password = SecretString::from("never-in-argv-sec001".to_string());
+    let s = pack_sudo("id", Some(&password));
+    assert!(!s.command.contains("never-in-argv-sec001"));
+    let u = pack_su("id", &password);
+    assert!(!u.command.contains("never-in-argv-sec001"));
 }
 
 #[test]
@@ -540,7 +541,7 @@ fn gap_test_002_version_contem_semver() {
 #[test]
 #[serial]
 fn gap_test_003_padrao_abort_nao_tautologico() {
-    use ssh_cli::ssh::packing::padrao_abort_remoto;
-    assert!(padrao_abort_remoto("$(rm -rf)").is_none());
-    assert_eq!(padrao_abort_remoto("sleep 9"), Some("sleep 9".into()));
+    use ssh_cli::ssh::packing::remote_abort_pattern;
+    assert!(remote_abort_pattern("$(rm -rf)").is_none());
+    assert_eq!(remote_abort_pattern("sleep 9"), Some("sleep 9".into()));
 }

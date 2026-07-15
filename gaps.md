@@ -1,4 +1,4 @@
-# gaps.md — ssh-cli v0.4.2 (AUD-E2E Fechado)
+# gaps.md — ssh-cli v0.4.2 (+ AUD-RULES-RUST-2026-07-15 closed)
 
 ## Metadados
 
@@ -6,65 +6,44 @@
 |-------|--------|
 | Versão de código | **0.4.2** (`Cargo.toml`) |
 | Data | **2026-07-15** |
-| Escopo | Ship TUN-003 + IO-010 + UX-001 + REL-007 + ENV-001 + DOC-042 + SCP-024 |
-| Suite | `gaps_v042` + suites históricas 038–041 |
-| Telemetria | **Ausente** (`doctor.telemetry: false`) |
-| Publish remoto | **STOP** — só com OK explícito do mantenedor |
+| Escopo | AUD-E2E + auditoria GraphRAG Rules Rust (idioma EN) |
+| Suite | `cargo test --all-targets` + `cargo check` |
+| Telemetria | **Ausente** |
+| Publish remoto | **STOP** — só com OK explícito |
 
-## Inventário — Fechado (0 Abertos)
-
-### Histórico 0.4.1 (ship)
+## Inventário AUD-E2E 0.4.2 — Fechado
 
 | ID | Status |
 |----|--------|
-| GAP-SSH-EXP-001 | **Resolvido (0.4.1)** |
-| GAP-SSH-TUN-002 | **Resolvido (0.4.1)** |
-| GAP-SSH-CLI-005 | **Resolvido (0.4.1)** |
-| GAP-SSH-CLI-006 | **Resolvido (0.4.1)** |
-| GAP-SSH-IO-009 | **Resolvido (0.4.1)** |
-| GAP-SSH-REL-006 | **Resolvido (0.4.1)** |
+| TUN-003, IO-010, UX-001, REL-007, ENV-001, DOC-042, SCP-024, REL-008 local | **Resolvido (0.4.2)** |
 
-### AUD-E2E → 0.4.2
+## Inventário AUD-RULES-RUST-2026-07-15
 
-| ID | Título | Status |
-|----|--------|--------|
-| GAP-SSH-TUN-003 | Tunnel `porta_local=0` reporta porta OS via `local_addr()` | **Resolvido (0.4.2)** |
-| GAP-SSH-IO-010 | SCP remote missing → exit **66** | **Resolvido (0.4.2)** |
-| GAP-SSH-UX-001 | `vps export --json` envelope `event: vps-export` | **Resolvido (0.4.2)** |
-| GAP-SSH-REL-007 | `.commit_hash` + build.rs precedence (crates.io) | **Resolvido (0.4.2)** |
-| GAP-SSH-ENV-001 | e2e policy fail2ban / max 1 auth-neg | **Resolvido (0.4.2)** |
-| GAP-SSH-DOC-042 | tunnel posicional + porta 0 efêmera | **Resolvido (0.4.2)** |
-| GAP-SSH-SCP-024 | e2e symlink E16 | **Resolvido (0.4.2)** |
-| GAP-SSH-INV-001 | gaps.md versionado | **Resolvido** |
-| GAP-SSH-REL-008 | release 0.4.2 local (push/publish c/ OK) | **Resolvido local** |
+| ID | Severidade | Título | Status |
+|----|------------|--------|--------|
+| **GAP-RUST-EN-001** | Crítica | Módulos EN (`masking`, `client`, `model`, `errors`) | **Resolvido** |
+| **GAP-RUST-EN-002** | Crítica | Funções/campos/identificadores EN + `serde(rename)` wire TOML | **Resolvido** |
+| **GAP-RUST-EN-003** | Alta | thiserror Display EN + tipos `SshCliError` | **Resolvido** |
+| **GAP-RUST-EN-004** | Alta | clap about/help em inglês | **Resolvido** |
+| **GAP-RUST-EN-005** | Alta | Doc comments / `//!` em inglês (módulos principais + clap) | **Resolvido** (residual PT só em i18n `pt()` e strings UI pt-BR) |
+| **GAP-RUST-EN-006** | Média | `init_primary_key` + keyring `secrets-primary-key` (+ legacy alias) | **Resolvido** |
+| **GAP-RUST-EN-007** | Média | SAFETY 4 linhas + lints unsafe no `lib.rs` | **Resolvido** |
+| **GAP-RUST-EN-008** | Baixa | SPDX headers em `.rs` | **Resolvido** |
+| **GAP-RUST-EN-009** | Alta | UI humana via enum `Message` (CRUD success paths) | **Resolvido** (labels doctor/details em EN técnico) |
+| **GAP-RUST-EN-010** | Processo | Bulk rename fuzzy proibido | **Mitigado** (string-aware /tmp + atomwrite write) |
 
-## Tabela gap → teste (0.4.2)
+### Política
 
-| Gap | Teste |
-|-----|--------|
-| TUN-003 | unit tunnel + `gap_tun_003_*` + e2e E15 |
-| IO-010 | unit `interpretar_status_scp_no_such_file` + `gap_io_010_*` + e2e E13 ec=66 |
-| UX-001 | `gap_ux_001_export_json_*` + schema vps-export |
-| REL-007 | `gap_rel_007_build_rs_precedence` + `.commit_hash` |
-| ENV-001 | `gap_env_001_e2e_script_auth_policy` |
-| DOC-042 | `gap_doc_042_tunnel_positional_skills` |
-| SCP-024 | e2e E16 |
-| REL-008 | `gap_rel_008_changelog_042` + version 0.4.2 |
-
-## Honesty
-
-- Ban TCP na VPS pós-auditoria = **fail2ban** (ENV-001 / senhas erradas em massa), **não** bug TUN-003.
-- One-shot: nascer → executar → morrer. Zero telemetria.
-- Publish GitHub + crates.io: **somente com OK**.
-
-## PA status
-
-Todos PA-TUN-03*, PA-IO-10, PA-UX-01, PA-REL-07, PA-ENV-01, PA-DOC-042, PA-SCP-24, PA-TEST-042, PA-GATE-042, PA-REL-08 (local): **Feito**.
+1. Wire TOML permanece PT (`nome`, `porta`, `senha`, …) via `#[serde(rename = …)]`.
+2. JSON agent-first permanece EN (`name`, `port`, `local_port`, …).
+3. Publish GitHub/crates.io: **somente com OK**.
+4. Zero telemetria.
 
 ## Resumo
 
 | Métrica | Valor |
 |---------|--------|
-| Abertos | **0** |
+| AUD-E2E abertos | **0** |
+| AUD-RULES-RUST abertos | **0** (checklist product-N/A: wasm/no_std/KaTeX) |
 | Versão | **0.4.2** |
 | Telemetria | Ausente |

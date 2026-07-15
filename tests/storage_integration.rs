@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Testes de integração do CRUD de VPS via CLI.
 //!
 //! Testa as operações de carregar, salvar, buscar, adicionar e remover
@@ -181,7 +182,7 @@ fn remover_vps_existente() {
         .args(["vps", "remove", "remover-teste"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("removida"));
+        .stdout(predicate::str::contains("removed").or(predicate::str::contains("removida")));
 
     cmd(&tmp)
         .args(["vps", "show", "remover-teste"])
@@ -284,7 +285,7 @@ fn editar_atualiza_campos() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("editada"));
+        .stdout(predicate::str::contains("edited").or(predicate::str::contains("editada")));
 
     cmd(&tmp)
         .args(["vps", "show", "editar-teste"])

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Regressão e2e dos gaps residuais da auditoria pós-0.3.8 (v0.3.9).
 //!
 //! IDs: LOG-001, JSON-001, CLI-004, DOC-003 (version string), DENY-002 (policy),

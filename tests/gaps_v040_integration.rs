@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Regressão 1:1 dos gaps AUD-SCP fechados na v0.4.0.
 //!
 //! IDs: SCP-010..023, REL-004, DOC-004, TEST-004, IO-007.
@@ -455,7 +456,7 @@ fn gap_e2e_script_e10_e12() {
 
 #[test]
 fn gap_scp_023_comando_remoto_usa_p() {
-    let src = std::fs::read_to_string(root().join("src/ssh/cliente.rs")).unwrap();
+    let src = std::fs::read_to_string(root().join("src/ssh/client.rs")).unwrap();
     assert!(
         src.contains("modo_p") || src.contains("-tp") || src.contains("format!(\"{modo}p\")"),
         "remote scp must request -p (OpenSSH source emits T only with -p)"
@@ -479,19 +480,19 @@ fn gap_io_008_tunnel_json_flag() {
     );
     let src = std::fs::read_to_string(root().join("src/tunnel.rs")).unwrap();
     assert!(
-        src.contains("imprimir_tunnel_listening_json") || src.contains("tunnel_listening"),
+        src.contains("print_tunnel_listening_json") || src.contains("tunnel_listening"),
         "tunnel must emit structured listening JSON"
     );
     let out = std::fs::read_to_string(root().join("src/output.rs")).unwrap();
     assert!(
-        out.contains("imprimir_tunnel_listening_json"),
+        out.contains("print_tunnel_listening_json"),
         "output must define tunnel listening JSON printer"
     );
 }
 
 #[test]
 fn gap_scp_022_partial_suffix_na_fonte() {
-    let src = std::fs::read_to_string(root().join("src/ssh/cliente.rs")).unwrap();
+    let src = std::fs::read_to_string(root().join("src/ssh/client.rs")).unwrap();
     assert!(
         src.contains("ssh-cli.partial") || src.contains("SCP_PARTIAL_SUFFIX"),
         "download must use partial file path for atomic write"
@@ -510,10 +511,10 @@ fn gap_scp_022_partial_suffix_na_fonte() {
 #[test]
 fn gap_scp_020_i18n_mensagens() {
     let src = std::fs::read_to_string(root().join("src/i18n.rs")).unwrap();
-    assert!(src.contains("ScpUploadConcluido"));
-    assert!(src.contains("ScpDownloadConcluido"));
-    assert!(src.contains("ScpUploadSomenteArquivo"));
-    assert!(src.contains("ScpDownloadLocalNaoDiretorio"));
+    assert!(src.contains("ScpUploadCompleted"));
+    assert!(src.contains("ScpDownloadCompleted"));
+    assert!(src.contains("ScpUploadFileOnly"));
+    assert!(src.contains("ScpDownloadLocalNotDirectory"));
     assert!(src.contains("Upload completed"));
     assert!(src.contains("Upload concluído") || src.contains("Upload concluido"));
 }
@@ -542,7 +543,7 @@ fn gap_io_007b_scp_json_local_envelope_erro() {
 
 #[test]
 fn gap_scp_010_header_unit_source() {
-    let src = std::fs::read_to_string(root().join("src/ssh/cliente.rs")).unwrap();
+    let src = std::fs::read_to_string(root().join("src/ssh/client.rs")).unwrap();
     assert!(src.contains("formatar_header_upload_scp"));
     assert!(src.contains("formatar_linha_t_scp"));
     assert!(src.contains("SCP_OK"));

@@ -1,78 +1,79 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Detecção e resolução de idioma cross-platform.
 //!
 //! Precedência de seleção de idioma (do mais para o menos prioritário):
 //! 1. Flag `--lang` da CLI
 //! 2. Variável de ambiente `SSH_CLI_LANG`
 //! 3. Locale do sistema via `sys_locale::get_locale()`
-//! 4. Fallback: `Idioma::English`
+//! 4. Fallback: `Language::English`
 
 use std::sync::OnceLock;
 
-use crate::i18n::Idioma;
+use crate::i18n::Language;
 
 /// Estado global do idioma — definido uma única vez na inicialização.
-static IDIOMA_GLOBAL: OnceLock<Idioma> = OnceLock::new();
+static IDIOMA_GLOBAL: OnceLock<Language> = OnceLock::new();
 
 /// Resolve o idioma aplicando a hierarquia de precedência em 4 camadas.
 ///
 /// Retorna o primeiro idioma válido encontrado na ordem:
 /// flag CLI > env SSH_CLI_LANG > sys_locale > English.
-pub fn resolver_idioma(forcar: Option<&str>) -> Idioma {
+pub fn resolve_language(force_lang: Option<&str>) -> Language {
     // Camada 1: flag --lang da CLI
-    if let Some(codigo) = forcar {
-        if let Some(idioma) = codigo_para_idioma(codigo) {
+    if let Some(codigo) = force_lang {
+        if let Some(idioma) = code_to_language(codigo) {
             return idioma;
         }
     }
 
     // Camada 2: variável de ambiente SSH_CLI_LANG
     if let Ok(env_lang) = std::env::var("SSH_CLI_LANG") {
-        if let Some(idioma) = codigo_para_idioma(&env_lang) {
+        if let Some(idioma) = code_to_language(&env_lang) {
             return idioma;
         }
     }
 
     // Camada 3: locale do sistema via sys_locale
     if let Some(locale) = sys_locale::get_locale() {
-        if let Some(idioma) = codigo_para_idioma(&locale) {
+        if let Some(idioma) = code_to_language(&locale) {
             return idioma;
         }
     }
 
     // Camada 4: fallback incondicional
-    Idioma::English
+    Language::English
 }
 
 /// Define o idioma global (chamada única na inicialização do processo).
 ///
 /// Chamadas subsequentes são silenciosamente ignoradas — o `OnceLock`
 /// garante que o idioma é imutável após a primeira definição.
-pub fn definir_idioma(idioma: Idioma) {
+pub fn set_language(idioma: Language) {
     let _ = IDIOMA_GLOBAL.set(idioma);
 }
 
 /// Retorna o idioma global atual.
 ///
-/// Se `definir_idioma` ainda não foi chamado, retorna `Idioma::English`
+/// Se `set_language` ainda não foi chamado, retorna `Language::English`
 /// como fallback seguro para código executado antes da inicialização.
-pub fn idioma_atual() -> Idioma {
-    IDIOMA_GLOBAL.get().copied().unwrap_or(Idioma::English)
+pub fn current_language() -> Language {
+    IDIOMA_GLOBAL.get().copied().unwrap_or(Language::English)
 }
 
-/// Converte código textual de idioma para `Idioma`.
+/// Converte código textual de idioma para `Language`.
 ///
 /// Reconhece prefixos "pt" e "en" com qualquer sufixo de região,
 /// sem distinção entre maiúsculas e minúsculas.
-fn codigo_para_idioma(codigo: &str) -> Option<Idioma> {
+fn code_to_language(codigo: &str) -> Option<Language> {
     let normalizado = codigo.to_lowercase();
     match normalizado.as_str() {
-        "pt" | "pt-br" | "pt_br" => Some(Idioma::Portugues),
-        "en" | "en-us" | "en_us" => Some(Idioma::English),
+        "pt" | "pt-br" | "pt_br" => Some(Language::Portuguese),
+        "en" | "en-us" | "en_us" => Some(Language::English),
         outro => {
             if outro.starts_with("pt") {
-                Some(Idioma::Portugues)
+                Some(Language::Portuguese)
             } else if outro.starts_with("en") {
-                Some(Idioma::English)
+                Some(Language::English)
             } else {
                 None
             }
@@ -81,75 +82,75 @@ fn codigo_para_idioma(codigo: &str) -> Option<Idioma> {
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
     #[test]
     fn codigo_pt_retorna_portugues() {
-        assert_eq!(codigo_para_idioma("pt"), Some(Idioma::Portugues));
+        assert_eq!(code_to_language("pt"), Some(Language::Portuguese));
     }
 
     #[test]
     fn codigo_pt_br_retorna_portugues() {
-        assert_eq!(codigo_para_idioma("pt-BR"), Some(Idioma::Portugues));
+        assert_eq!(code_to_language("pt-BR"), Some(Language::Portuguese));
     }
 
     #[test]
     fn codigo_pt_br_underscore_retorna_portugues() {
-        assert_eq!(codigo_para_idioma("pt_BR"), Some(Idioma::Portugues));
+        assert_eq!(code_to_language("pt_BR"), Some(Language::Portuguese));
     }
 
     #[test]
     fn codigo_en_retorna_english() {
-        assert_eq!(codigo_para_idioma("en"), Some(Idioma::English));
+        assert_eq!(code_to_language("en"), Some(Language::English));
     }
 
     #[test]
     fn codigo_en_us_retorna_english() {
-        assert_eq!(codigo_para_idioma("en-US"), Some(Idioma::English));
+        assert_eq!(code_to_language("en-US"), Some(Language::English));
     }
 
     #[test]
     fn codigo_en_gb_retorna_english_por_prefixo() {
-        assert_eq!(codigo_para_idioma("en-GB"), Some(Idioma::English));
+        assert_eq!(code_to_language("en-GB"), Some(Language::English));
     }
 
     #[test]
     fn codigo_desconhecido_retorna_none() {
-        assert_eq!(codigo_para_idioma("fr-FR"), None);
+        assert_eq!(code_to_language("fr-FR"), None);
     }
 
     #[test]
     fn codigo_vazio_retorna_none() {
-        assert_eq!(codigo_para_idioma(""), None);
+        assert_eq!(code_to_language(""), None);
     }
 
     #[test]
     fn codigo_maiusculo_normalizado() {
-        assert_eq!(codigo_para_idioma("PT"), Some(Idioma::Portugues));
-        assert_eq!(codigo_para_idioma("EN"), Some(Idioma::English));
+        assert_eq!(code_to_language("PT"), Some(Language::Portuguese));
+        assert_eq!(code_to_language("EN"), Some(Language::English));
     }
 
     #[test]
     fn resolver_com_forcar_pt_retorna_portugues() {
-        let resultado = resolver_idioma(Some("pt-BR"));
-        assert_eq!(resultado, Idioma::Portugues);
+        let resultado = resolve_language(Some("pt-BR"));
+        assert_eq!(resultado, Language::Portuguese);
     }
 
     #[test]
     fn resolver_com_forcar_en_retorna_english() {
-        let resultado = resolver_idioma(Some("en-US"));
-        assert_eq!(resultado, Idioma::English);
+        let resultado = resolve_language(Some("en-US"));
+        assert_eq!(resultado, Language::English);
     }
 
     #[test]
     fn resolver_com_forcar_invalido_usa_camadas_seguintes() {
         // Código inválido não resolve na camada 1; deve cair em sys_locale ou fallback.
         std::env::remove_var("SSH_CLI_LANG");
-        let resultado = resolver_idioma(Some("xx-YY"));
-        // Deve retornar English ou Portugues — não pode ser um valor inválido.
+        let resultado = resolve_language(Some("xx-YY"));
+        // Deve retornar English ou Portuguese — não pode ser um valor inválido.
         assert!(
-            resultado == Idioma::English || resultado == Idioma::Portugues,
+            resultado == Language::English || resultado == Language::Portuguese,
             "resolver_idioma deve retornar idioma válido mesmo com código inválido"
         );
     }
@@ -157,20 +158,20 @@ mod testes {
     #[test]
     fn resolver_sem_forcar_retorna_idioma_valido() {
         std::env::remove_var("SSH_CLI_LANG");
-        let resultado = resolver_idioma(None);
+        let resultado = resolve_language(None);
         assert!(
-            resultado == Idioma::English || resultado == Idioma::Portugues,
+            resultado == Language::English || resultado == Language::Portuguese,
             "resolver_idioma deve retornar idioma válido"
         );
     }
 
     #[test]
     fn idioma_atual_retorna_fallback_english_antes_de_definir() {
-        // Não chamamos definir_idioma — o OnceLock pode já estar setado em outros testes,
+        // Não chamamos set_language — o OnceLock pode já estar setado em outros tests,
         // mas o resultado DEVE ser um idioma válido.
-        let resultado = idioma_atual();
+        let resultado = current_language();
         assert!(
-            resultado == Idioma::English || resultado == Idioma::Portugues,
+            resultado == Language::English || resultado == Language::Portuguese,
             "idioma_atual deve retornar idioma válido"
         );
     }

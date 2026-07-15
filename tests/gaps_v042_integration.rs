@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Regressão 1:1 dos gaps AUD-E2E fechados na v0.4.2
 //! (TUN-003, IO-010, UX-001, REL-007, ENV-001, DOC-042, SCP-024, REL-008).
 
@@ -54,8 +55,8 @@ fn gap_tun_003_source_local_addr() {
         "tunnel must read local_addr() after bind (TUN-003)"
     );
     assert!(
-        src.contains("porta_efetiva"),
-        "tunnel must expose porta_efetiva in JSON event"
+        src.contains("effective_port"),
+        "tunnel must expose effective_port in JSON event"
     );
 }
 
@@ -77,14 +78,14 @@ fn gap_tun_003_schema_min_1() {
 
 #[test]
 fn gap_io_010_source_classificar() {
-    let src = std::fs::read_to_string(root().join("src/ssh/cliente.rs")).unwrap();
+    let src = std::fs::read_to_string(root().join("src/ssh/client.rs")).unwrap();
     assert!(
         src.contains("classificar_mensagem_scp") || src.contains("no such file"),
         "SCP client must classify remote missing messages"
     );
     assert!(
-        src.contains("ArquivoNaoEncontrado"),
-        "SCP path must map to ArquivoNaoEncontrado for missing remote"
+        src.contains("FileNotFound"),
+        "SCP path must map to FileNotFound for missing remote"
     );
 }
 

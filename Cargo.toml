@@ -54,10 +54,10 @@ name = "ssh-cli"
 path = "src/main.rs"
 
 [dependencies]
-# Runtime assíncrono
+# Async runtime
 tokio = { version = "1.40", features = ["rt-multi-thread", "io-util", "io-std", "time", "sync", "macros", "fs", "net"] }
 
-# CLI e configuração
+# CLI and configuration
 clap = { version = "4.5", features = ["derive", "env", "unicode", "wrap_help"] }
 clap_complete = "4.5"
 serde = { version = "1.0", features = ["derive"] }
@@ -67,44 +67,44 @@ directories = "6"
 tempfile = "3.13"
 fs2 = "0.4"
 
-# Internacionalização
+# Internationalization
 sys-locale = "0.3"
 
-# Sinalização e terminal
+# Signals and terminal
 ctrlc = { version = "3.4", features = ["termination"] }
 termcolor = "1.4"
 unicode-normalization = "0.1"
 
-# Alocador musl (ativado apenas com feature musl-allocator)
+# musl allocator (enabled only with musl-allocator feature)
 mimalloc = { version = "0.1", optional = true }
 
-# Segurança de credenciais
+# Credential security
 zeroize = { version = "1.8", features = ["derive"] }
 secrecy = { version = "0.10", features = ["serde"] }
-# Cifragem at-rest default (GAP-009/R-SECRETS): ChaCha20-Poly1305 + env/file/keyring/xdg secrets.key
+# Default at-rest encryption (GAP-009/R-SECRETS): ChaCha20-Poly1305 + env/file/keyring/xdg secrets.key
 chacha20poly1305 = "0.10"
 base64 = "0.22"
 getrandom = "0.2"
 keyring = "3"
 
-# Logs e erros
+# Logging and errors
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 thiserror = "2.0"
 anyhow = "1.0"
 
-# Utilitários
+# Utilities
 chrono = { version = "0.4", features = ["serde", "clock"] }
 
-# Async traits para permitir mocks em testes.
+# Async traits to enable test mocks.
 async-trait = "0.1"
 
-# SSH real via russh (GAP-SSH-DEP-002 / 0.3.8).
+# Real SSH via russh (GAP-SSH-DEP-002 / 0.3.8).
 # `default-features = false` evita puxar `rsa` 0.9.x (RUSTSEC-2023-0071 Marvin Attack).
 # `aws-lc-rs` (crypto backend) + `flate2` (compressão zlib).
-# Keys em `russh::keys`. MSRV 1.85 (russh >= 0.55).
-# Piso segurança: russh >= 0.60.3 (RUSTSEC-2026-0153/0154 / CVE-2026-46673).
-# Alvo: 0.62.x (latest patched; sem pins COMPAT RC — resolve estável no install).
+# Keys in . MSRV 1.85 (russh >= 0.55).
+# Security floor: russh >= 0.60.3 (RUSTSEC-2026-0153/0154 / CVE-2026-46673).
+# Target: 0.62.x (latest patched; no COMPAT RC pins — stable resolve on install).
 russh = { version = "0.62", default-features = false, features = ["aws-lc-rs", "flate2"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
@@ -114,12 +114,12 @@ signal-hook = "0.3"
 windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
 
 [features]
-# SSH real é ATIVADO POR PADRÃO na iteração 2.
-# Para build sem russh (ex.: diagnóstico de deps), use `--no-default-features`.
+# Real SSH is ENABLED BY DEFAULT as of iteration 2.
+# For builds without russh (e.g. dependency diagnosis), use .
 default = ["ssh-real"]
-# Ativa stack SSH real via russh + aws-lc-rs.
+# Enables real SSH stack via russh + aws-lc-rs.
 ssh-real = ["dep:russh"]
-# Ativa mimalloc como alocador global (útil em builds musl para performance).
+# Enables mimalloc as global allocator (useful for musl builds/performance).
 musl-allocator = ["dep:mimalloc"]
 
 [dev-dependencies]

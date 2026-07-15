@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Ponto de entrada do binário ssh-cli.
 //!
 //! Mantém a lógica mínima: configura runtime tokio e chama `ssh_cli::run()`.
@@ -37,15 +38,15 @@ fn main() {
             if ssh_cli::signals::cancelado() {
                 std::process::exit(ssh_cli::erros::exit_codes::EX_SIGINT);
             }
-            let quer_json = ssh_cli::output::quer_json_erros();
-            if let Some(erro_ssh) = e.downcast_ref::<ssh_cli::erros::ErroSshCli>() {
+            let quer_json = ssh_cli::output::wants_json_errors();
+            if let Some(erro_ssh) = e.downcast_ref::<ssh_cli::erros::SshCliError>() {
                 let code = erro_ssh.exit_code();
                 let remote = match erro_ssh {
-                    ssh_cli::erros::ErroSshCli::ComandoFalhou { exit_code, .. } => Some(*exit_code),
+                    ssh_cli::erros::SshCliError::CommandFailed { exit_code, .. } => Some(*exit_code),
                     _ => None,
                 };
                 if quer_json {
-                    let _ = ssh_cli::output::imprimir_erro_envelope(
+                    let _ = ssh_cli::output::print_error_envelope(
                         code,
                         &erro_ssh.to_string(),
                         remote,
@@ -57,7 +58,7 @@ fn main() {
             }
             let code = ssh_cli::erros::exit_codes::EX_GENERAL;
             if quer_json {
-                let _ = ssh_cli::output::imprimir_erro_envelope(code, &e.to_string(), None);
+                let _ = ssh_cli::output::print_error_envelope(code, &e.to_string(), None);
             } else {
                 eprintln!("{e}");
             }

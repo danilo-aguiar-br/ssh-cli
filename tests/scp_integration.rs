@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Testes de integração do módulo SCP.
 //!
 //! Testa o subcomando `scp` via CLI, validando help e parâmetros obrigatórios.
@@ -42,7 +43,7 @@ fn scp_upload_help_exibe_parametros() {
         .args(["scp", "upload", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("VPS_NOME"))
+        .stdout(predicate::str::contains("VPS_NAME"))
         .stdout(predicate::str::contains("LOCAL"))
         .stdout(predicate::str::contains("REMOTE"))
         .stdout(predicate::str::contains("--timeout"))
@@ -58,7 +59,7 @@ fn scp_download_help_exibe_parametros() {
         .args(["scp", "download", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("VPS_NOME"))
+        .stdout(predicate::str::contains("VPS_NAME"))
         .stdout(predicate::str::contains("REMOTE"))
         .stdout(predicate::str::contains("LOCAL"));
 }

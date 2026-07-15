@@ -1,46 +1,47 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Cliente SSH real via `russh` 0.62.2.
 //!
-//! Conexão one-shot: TCP + handshake + auth (senha e/ou chave) + exec com
+//! Conexão one-shot: TCP + handshake + auth (password e/ou chave) + exec com
 //! timeout, truncagem de saída e abort remoto best-effort.
 //! Host keys: TOFU em `known_hosts` XDG (ver [`super::known_hosts`]).
 
-use crate::erros::{ErroSshCli, ResultadoSshCli};
+use crate::erros::{SshCliError, SshCliResult};
 use secrecy::{ExposeSecret, SecretString};
 use std::path::PathBuf;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 /// Configuração de uma conexão SSH.
 ///
-/// Construída a partir de um [`crate::vps::modelo::VpsRegistro`] no momento
-/// da chamada. Auth: chave privada (preferida) e/ou senha.
+/// Construída a partir de um [`crate::vps::model::VpsRecord`] no momento
+/// da chamada. Auth: chave privada (preferida) e/ou password.
 #[derive(Clone)]
-pub struct ConfiguracaoConexao {
+pub struct ConnectionConfig {
     /// Hostname ou IP do servidor SSH.
     pub host: String,
     /// Porta TCP do servidor SSH (padrão 22).
-    pub porta: u16,
+    pub port: u16,
     /// Nome de usuário SSH.
-    pub usuario: String,
+    pub username: String,
     /// Senha SSH (`SecretString` para zeroize automático); pode ser vazia se key-only.
-    pub senha: SecretString,
+    pub password: SecretString,
     /// Caminho da chave privada OpenSSH (opcional).
     pub key_path: Option<String>,
     /// Passphrase da chave (opcional).
     pub key_passphrase: Option<SecretString>,
     /// Timeout total para conexão + handshake + autenticação + exec, em ms.
     pub timeout_ms: u64,
-    /// Caminho do arquivo known_hosts (TOFU). `None` = always-trust (só testes).
+    /// Caminho do arquivo known_hosts (TOFU). `None` = always-trust (só tests).
     pub known_hosts_path: Option<PathBuf>,
     /// Se true, permite substituir fingerprint divergente.
     pub replace_host_key: bool,
 }
 
-impl std::fmt::Debug for ConfiguracaoConexao {
+impl std::fmt::Debug for ConnectionConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ConfiguracaoConexao")
+        f.debug_struct("ConnectionConfig")
             .field("host", &self.host)
-            .field("porta", &self.porta)
-            .field("usuario", &self.usuario)
+            .field("porta", &self.port)
+            .field("usuario", &self.username)
             .field("senha", &"<redacted>")
             .field("key_path", &self.key_path)
             .field(
@@ -54,28 +55,28 @@ impl std::fmt::Debug for ConfiguracaoConexao {
     }
 }
 
-impl ConfiguracaoConexao {
+impl ConnectionConfig {
     /// Valida os campos básicos da configuração.
-    pub fn validar(&self) -> ResultadoSshCli<()> {
+    pub fn validate(&self) -> SshCliResult<()> {
         if self.host.trim().is_empty() {
-            return Err(ErroSshCli::ArgumentoInvalido(
-                "host vazio em ConfiguracaoConexao".to_string(),
+            return Err(SshCliError::InvalidArgument(
+                "host vazio em ConnectionConfig".to_string(),
             ));
         }
-        if self.porta == 0 {
-            return Err(ErroSshCli::ArgumentoInvalido(
-                "porta 0 inválida em ConfiguracaoConexao".to_string(),
+        if self.port == 0 {
+            return Err(SshCliError::InvalidArgument(
+                "porta 0 inválida em ConnectionConfig".to_string(),
             ));
         }
-        if self.usuario.trim().is_empty() {
-            return Err(ErroSshCli::ArgumentoInvalido(
-                "usuário vazio em ConfiguracaoConexao".to_string(),
+        if self.username.trim().is_empty() {
+            return Err(SshCliError::InvalidArgument(
+                "usuário vazio em ConnectionConfig".to_string(),
             ));
         }
-        let tem_senha = !self.senha.expose_secret().is_empty();
+        let has_password = !self.password.expose_secret().is_empty();
         let tem_key = self.key_path.as_ref().is_some_and(|p| !p.trim().is_empty());
-        if !tem_senha && !tem_key {
-            return Err(ErroSshCli::ArgumentoInvalido(
+        if !has_password && !tem_key {
+            return Err(SshCliError::InvalidArgument(
                 "auth exige senha ou key_path".to_string(),
             ));
         }
@@ -83,30 +84,30 @@ impl ConfiguracaoConexao {
     }
 }
 
-/// Saída da execução de um comando SSH remoto.
+/// Saída da execução de um command SSH remoto.
 #[derive(Debug, Clone)]
-pub struct SaidaExecucao {
+pub struct ExecutionOutput {
     /// Stdout capturado (possivelmente truncado a `max_chars` codepoints).
     pub stdout: String,
     /// Stderr capturado (possivelmente truncado a `max_chars` codepoints).
     pub stderr: String,
-    /// Código de saída. `None` quando o comando foi terminado por sinal ou timeout.
+    /// Código de saída. `None` quando o command foi terminado por sinal ou timeout.
     pub exit_code: Option<i32>,
     /// `true` se `stdout` foi truncado em `max_chars`.
-    pub truncado_stdout: bool,
+    pub truncated_stdout: bool,
     /// `true` se `stderr` foi truncado em `max_chars`.
-    pub truncado_stderr: bool,
+    pub truncated_stderr: bool,
     /// Duração total da execução, em milissegundos.
-    pub duracao_ms: u64,
+    pub duration_ms: u64,
 }
 
 /// Resultado de uma operação de transferência de arquivo via SCP.
 #[derive(Debug, Clone)]
-pub struct TransferenciaResultado {
+pub struct TransferResult {
     /// Número de bytes transferidos.
-    pub bytes_transferidos: u64,
+    pub bytes_transferred: u64,
     /// Duração total em milissegundos.
-    pub duracao_ms: u64,
+    pub duration_ms: u64,
 }
 
 /// Trunca uma string UTF-8 a no máximo `max_chars` codepoints.
@@ -114,7 +115,7 @@ pub struct TransferenciaResultado {
 /// Retorna `(string_truncada, truncou)`. Se `max_chars == 0` retorna string vazia.
 /// Unicode-safe: opera sobre codepoints via `chars()`, nunca quebra no meio.
 #[must_use]
-pub fn truncar_utf8(conteudo: &str, max_chars: usize) -> (String, bool) {
+pub fn truncate_utf8(conteudo: &str, max_chars: usize) -> (String, bool) {
     let total = conteudo.chars().count();
     if total <= max_chars {
         return (conteudo.to_string(), false);
@@ -124,89 +125,89 @@ pub fn truncar_utf8(conteudo: &str, max_chars: usize) -> (String, bool) {
 }
 
 // =========================================================================
-// Trait ClienteSshTrait para permitir mocks em teste.
+// Trait SshClientTrait para permitir mocks em teste.
 // =========================================================================
 
 use async_trait::async_trait;
 use std::path::Path;
 
 /// Stream bidirecional usado para tunnel SSH (direct-tcpip).
-pub trait CanalTunel: AsyncRead + AsyncWrite + Unpin + Send {}
+pub trait TunnelChannel: AsyncRead + AsyncWrite + Unpin + Send {}
 
-impl<T> CanalTunel for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T> TunnelChannel for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 
-/// Trait para cliente SSH que permite implementação real (russh) ou mock para testes.
+/// Trait para cliente SSH que permite implementação real (russh) ou mock para tests.
 ///
-/// Este trait abstrai as operações de conexão SSH para permitir testes unitários
+/// Este trait abstrai as operações de conexão SSH para permitir tests unitários
 /// sem necessidade de conexão de rede real.
 #[async_trait]
-pub trait ClienteSshTrait: Send + Sync + 'static {
+pub trait SshClientTrait: Send + Sync + 'static {
     /// Conecta a um servidor SSH e autentica com as credenciais fornecidas.
-    async fn conectar(cfg: ConfiguracaoConexao) -> Result<Box<Self>, ErroSshCli>
+    async fn connect(cfg: ConnectionConfig) -> Result<Box<Self>, SshCliError>
     where
         Self: Sized;
 
-    /// Executa um comando shell remoto e retorna a saída capturada.
+    /// Executa um command shell remoto e retorna a saída capturada.
     ///
     /// `stdin_data`, se presente, é escrito no canal após o `exec` e antes do loop
-    /// de leitura (GAP-SSH-SEC-001: senha sudo/su fora da argv remota).
-    async fn executar_comando(
+    /// de leitura (GAP-SSH-SEC-001: password sudo/su fora da argv remota).
+    async fn run_command(
         &mut self,
         cmd: &str,
         max_chars: usize,
         stdin_data: Option<Vec<u8>>,
-    ) -> Result<SaidaExecucao, ErroSshCli>;
+    ) -> Result<ExecutionOutput, SshCliError>;
 
     /// Faz upload de um arquivo local para o servidor remoto via SCP.
     async fn upload(
         &mut self,
         local: &Path,
         remote: &Path,
-    ) -> Result<TransferenciaResultado, ErroSshCli>;
+    ) -> Result<TransferResult, SshCliError>;
 
     /// Faz download de um arquivo remoto para o sistema local via SCP.
     async fn download(
         &mut self,
         remote: &Path,
         local: &Path,
-    ) -> Result<TransferenciaResultado, ErroSshCli>;
+    ) -> Result<TransferResult, SshCliError>;
 
     /// Abre um canal `direct-tcpip` para forwarding de tunnel.
-    async fn abrir_canal_tunel(
+    async fn open_tunnel_channel(
         &self,
-        host_remoto: &str,
-        porta_remota: u16,
+        remote_host: &str,
+        remote_port: u16,
         endereco_origem: &str,
         porta_origem: u16,
-    ) -> Result<Box<dyn CanalTunel>, ErroSshCli>;
+    ) -> Result<Box<dyn TunnelChannel>, SshCliError>;
 
     /// Encerra a conexão SSH de forma limpa.
-    async fn desconectar(&self) -> Result<(), ErroSshCli>;
+    async fn disconnect(&self) -> Result<(), SshCliError>;
 }
 
 #[cfg(test)]
-/// Mocks de cliente SSH usados em testes unitários.
+/// Mocks de cliente SSH usados em tests unitários.
 pub mod mocks {
     use super::*;
     use mockall::mock;
 
     mock! {
-        pub ClienteSsh {}
+        pub SshClient {}
 
     #[async_trait]
-    impl crate::ssh::cliente::ClienteSshTrait for ClienteSsh {
-            async fn conectar(cfg: ConfiguracaoConexao) -> Result<Box<Self>, ErroSshCli>;
-            async fn executar_comando(&mut self, cmd: &str, max_chars: usize, stdin_data: Option<Vec<u8>>) -> Result<SaidaExecucao, ErroSshCli>;
-            async fn upload(&mut self, local: &Path, remote: &Path) -> Result<TransferenciaResultado, ErroSshCli>;
-            async fn download(&mut self, remote: &Path, local: &Path) -> Result<TransferenciaResultado, ErroSshCli>;
-            async fn abrir_canal_tunel(
+    impl crate::ssh::client::SshClientTrait for SshClient {
+            async fn connect(cfg: ConnectionConfig) -> Result<Box<Self>, SshCliError>;
+            async fn run_command(&mut self, cmd: &str, max_chars: usize, stdin_data: Option<Vec<u8>>) -> Result<ExecutionOutput, SshCliError>;
+            async fn upload(&mut self, local: &Path, remote: &Path) -> Result<TransferResult, SshCliError>;
+            async fn download(&mut self, remote: &Path, local: &Path) -> Result<TransferResult, SshCliError>;
+            async fn open_tunnel_channel(
                 &self,
-                host_remoto: &str,
-                porta_remota: u16,
+                remote_host: &str,
+                remote_port: u16,
                 endereco_origem: &str,
                 porta_origem: u16,
-            ) -> Result<Box<dyn CanalTunel>, ErroSshCli>;
-            async fn desconectar(&self) -> Result<(), ErroSshCli>;
+            ) -> Result<Box<dyn TunnelChannel>, SshCliError>;
+            async fn disconnect(&self) -> Result<(), SshCliError>;
         }
     }
 }
@@ -218,9 +219,9 @@ pub mod mocks {
 #[cfg(feature = "ssh-real")]
 mod real {
     use super::{
-        CanalTunel, ClienteSshTrait, ConfiguracaoConexao, SaidaExecucao, TransferenciaResultado,
+        TunnelChannel, SshClientTrait, ConnectionConfig, ExecutionOutput, TransferResult,
     };
-    use crate::erros::{ErroSshCli, ResultadoSshCli};
+    use crate::erros::{SshCliError, SshCliResult};
     use async_trait::async_trait;
     use secrecy::ExposeSecret;
     use std::path::Path;
@@ -228,9 +229,9 @@ mod real {
     use std::time::{Duration, Instant};
 
     /// Handler russh com TOFU em known_hosts (ou always-trust se path ausente).
-    pub struct ManipuladorCliente {
+    pub struct ClientHandler {
         host: String,
-        porta: u16,
+        port: u16,
         known_hosts_path: Option<std::path::PathBuf>,
         replace_host_key: bool,
         /// Erro de host key capturado (russh Error não carrega nosso tipo).
@@ -238,11 +239,11 @@ mod real {
         detalhe_host_key: Option<String>,
     }
 
-    impl ManipuladorCliente {
-        fn novo(cfg: &ConfiguracaoConexao) -> Self {
+    impl ClientHandler {
+        fn new(cfg: &ConnectionConfig) -> Self {
             Self {
                 host: cfg.host.clone(),
-                porta: cfg.porta,
+                port: cfg.port,
                 known_hosts_path: cfg.known_hosts_path.clone(),
                 replace_host_key: cfg.replace_host_key,
                 host_key_rejeitada: false,
@@ -251,7 +252,7 @@ mod real {
         }
     }
 
-    impl russh::client::Handler for ManipuladorCliente {
+    impl russh::client::Handler for ClientHandler {
         type Error = russh::Error;
 
         async fn check_server_key(
@@ -281,7 +282,7 @@ mod real {
             match crate::ssh::known_hosts::verificar_tofu(
                 &mut kh,
                 &self.host,
-                self.porta,
+                self.port,
                 &fingerprint,
                 self.replace_host_key,
             ) {
@@ -298,18 +299,18 @@ mod real {
     }
 
     /// Cliente SSH ativo com sessão autenticada.
-    pub struct ClienteSsh {
+    pub struct SshClient {
         /// Sessão SSH autenticada para operações de baixo nível.
-        pub sessao: russh::client::Handle<ManipuladorCliente>,
-        cfg: ConfiguracaoConexao,
+        pub sessao: russh::client::Handle<ClientHandler>,
+        cfg: ConnectionConfig,
     }
 
-    impl std::fmt::Debug for ClienteSsh {
+    impl std::fmt::Debug for SshClient {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("ClienteSsh")
+            f.debug_struct("SshClient")
                 .field("host", &self.cfg.host)
-                .field("porta", &self.cfg.porta)
-                .field("usuario", &self.cfg.usuario)
+                .field("porta", &self.cfg.port)
+                .field("usuario", &self.cfg.username)
                 .field("timeout_ms", &self.cfg.timeout_ms)
                 .finish()
         }
@@ -319,7 +320,7 @@ mod real {
         i32::try_from(exit_status).unwrap_or(-1)
     }
 
-    fn processar_mensagem_exec(
+    fn process_exec_message(
         msg: russh::ChannelMsg,
         stdout_bytes: &mut Vec<u8>,
         stderr_bytes: &mut Vec<u8>,
@@ -393,9 +394,9 @@ mod real {
 
     /// Header `C` com mode octal (ex.: `0644`).
     fn formatar_header_upload_scp_com_modo(mode: u32, tamanho: u64, nome_arquivo: &str) -> String {
-        let nome = basename_scp(nome_arquivo);
+        let name = basename_scp(nome_arquivo);
         let mode = mode & 0o7777;
-        format!("C{mode:04o} {tamanho} {nome}\n")
+        format!("C{mode:04o} {tamanho} {name}\n")
     }
 
     /// Linha `T` do protocolo SCP (preserve times / `-p`).
@@ -404,35 +405,35 @@ mod real {
     }
 
     /// Parse da linha `T mtime 0 atime 0`.
-    fn parse_linha_t_scp(linha: &str) -> ResultadoSshCli<(u64, u64)> {
+    fn parse_linha_t_scp(linha: &str) -> SshCliResult<(u64, u64)> {
         let linha = linha.trim_end_matches(['\0', '\r', '\n']).trim();
         if !linha.starts_with('T') {
-            return Err(ErroSshCli::CanalFalhou(format!(
+            return Err(SshCliError::ChannelFailed(format!(
                 "linha T SCP inesperada: {linha}"
             )));
         }
         let resto = &linha[1..];
         let partes: Vec<&str> = resto.split_whitespace().collect();
         if partes.len() < 3 {
-            return Err(ErroSshCli::CanalFalhou(format!(
+            return Err(SshCliError::ChannelFailed(format!(
                 "linha T SCP mal formatada: {linha}"
             )));
         }
         let mtime: u64 = partes[0].parse().map_err(|_| {
-            ErroSshCli::CanalFalhou(format!("mtime inválido na linha T: {}", partes[0]))
+            SshCliError::ChannelFailed(format!("mtime inválido na linha T: {}", partes[0]))
         })?;
         let atime: u64 = partes[2].parse().map_err(|_| {
-            ErroSshCli::CanalFalhou(format!("atime inválido na linha T: {}", partes[2]))
+            SshCliError::ChannelFailed(format!("atime inválido na linha T: {}", partes[2]))
         })?;
         Ok((mtime, atime))
     }
 
     /// Parse do header `C0mmm size name` → `(mode, tamanho)`.
-    fn parse_header_scp(header: &str) -> ResultadoSshCli<(u32, u64)> {
+    fn parse_header_scp(header: &str) -> SshCliResult<(u32, u64)> {
         let header = header.trim_end_matches(['\0', '\r', '\n']).trim();
 
         if !header.starts_with('C') {
-            return Err(ErroSshCli::CanalFalhou(format!(
+            return Err(SshCliError::ChannelFailed(format!(
                 "header SCP inesperado: {}",
                 header
             )));
@@ -440,7 +441,7 @@ mod real {
 
         let partes: Vec<&str> = header.split_whitespace().collect();
         if partes.len() < 3 {
-            return Err(ErroSshCli::CanalFalhou(format!(
+            return Err(SshCliError::ChannelFailed(format!(
                 "header SCP mal formatado: {}",
                 header
             )));
@@ -449,16 +450,16 @@ mod real {
         // Campo mode: `C0644` (prefixo `C` + 4 dígitos octais).
         let mode_token = partes[0];
         if mode_token.len() < 2 {
-            return Err(ErroSshCli::CanalFalhou(format!(
+            return Err(SshCliError::ChannelFailed(format!(
                 "mode SCP ausente no header: {header}"
             )));
         }
         let mode_oct = &mode_token[1..];
         let mode: u32 = u32::from_str_radix(mode_oct, 8)
-            .map_err(|_| ErroSshCli::CanalFalhou(format!("mode SCP inválido: {mode_oct}")))?;
+            .map_err(|_| SshCliError::ChannelFailed(format!("mode SCP inválido: {mode_oct}")))?;
 
         let tamanho = partes[1].parse().map_err(|_| {
-            ErroSshCli::CanalFalhou(format!("tamanho inválido no header: {}", partes[1]))
+            SshCliError::ChannelFailed(format!("tamanho inválido no header: {}", partes[1]))
         })?;
         Ok((mode & 0o7777, tamanho))
     }
@@ -496,24 +497,24 @@ mod real {
     /// GAP-SSH-IO-010: classifica mensagem de erro SCP em missing-file (66) vs canal (74).
     ///
     /// OpenSSH emite tipicamente `scp: PATH: No such file or directory` no status `1`/`2`
-    /// ou em stderr. Permission denied / protocol errors permanecem `CanalFalhou`.
-    fn classificar_mensagem_scp(msg: &str) -> ErroSshCli {
+    /// ou em stderr. Permission denied / protocol errors permanecem `ChannelFailed`.
+    fn classify_scp_message(msg: &str) -> SshCliError {
         let lower = msg.to_ascii_lowercase();
         if lower.contains("no such file") || lower.contains("not found") {
-            ErroSshCli::ArquivoNaoEncontrado(msg.to_string())
+            SshCliError::FileNotFound(msg.to_string())
         } else if msg.is_empty() {
-            ErroSshCli::CanalFalhou("SCP rejeitou a transferência".to_string())
+            SshCliError::ChannelFailed("SCP rejeitou a transferência".to_string())
         } else if msg.starts_with("SCP:") || msg.starts_with("SCP ") {
-            ErroSshCli::CanalFalhou(msg.to_string())
+            SshCliError::ChannelFailed(msg.to_string())
         } else {
-            ErroSshCli::CanalFalhou(format!("SCP: {msg}"))
+            SshCliError::ChannelFailed(format!("SCP: {msg}"))
         }
     }
 
     /// Interpreta o primeiro byte de status SCP: `0`=OK, `1`/`2`=erro (+ mensagem).
-    fn interpretar_status_scp(bytes: &[u8]) -> ResultadoSshCli<()> {
+    fn interpretar_status_scp(bytes: &[u8]) -> SshCliResult<()> {
         if bytes.is_empty() {
-            return Err(ErroSshCli::CanalFalhou(
+            return Err(SshCliError::ChannelFailed(
                 "status SCP vazio (esperado ACK 0x00)".to_string(),
             ));
         }
@@ -522,17 +523,17 @@ mod real {
             1 | 2 => {
                 let msg = String::from_utf8_lossy(&bytes[1..]).trim().to_string();
                 if msg.is_empty() {
-                    Err(ErroSshCli::CanalFalhou(format!(
+                    Err(SshCliError::ChannelFailed(format!(
                         "SCP rejeitou a transferência (status {})",
                         bytes[0]
                     )))
                 } else {
                     // Prefixo estável para agentes; classificador olha o texto OpenSSH.
                     let full = format!("SCP: {msg}");
-                    Err(classificar_mensagem_scp(&full))
+                    Err(classify_scp_message(&full))
                 }
             }
-            other => Err(ErroSshCli::CanalFalhou(format!(
+            other => Err(SshCliError::ChannelFailed(format!(
                 "status SCP inesperado: 0x{other:02x}"
             ))),
         }
@@ -541,10 +542,10 @@ mod real {
     /// Monta `scp -t[p]/-f[p]` com path remoto escapado para o shell remoto.
     ///
     /// OpenSSH: source (`-f`) só emite linha `T` e mode honesto com **`-p`**.
-    /// Sink (`-t`) com `-p` aplica mode completo (sem mascarar umask sticky).
+    /// Sink (`-t`) com `-p` aplica mode completo (sem mask umask sticky).
     /// Sempre usamos `-p` (SCP-023 bi-direcional).
     fn comando_scp_remoto(modo: &str, remote: &std::path::Path) -> String {
-        let path = crate::ssh::packing::escapar_shell_single_quotes(&remote.display().to_string());
+        let path = crate::ssh::packing::escape_shell_single_quotes(&remote.display().to_string());
         // `modo` esperado: `-t` ou `-f` (sem `-p`); anexamos `p` explicitamente.
         let modo_p = if modo.contains('p') {
             modo.to_string()
@@ -556,12 +557,12 @@ mod real {
     }
 
     /// Aplica mode POSIX do header `C` no arquivo local (best-effort no Unix).
-    fn aplicar_mode_local(path: &std::path::Path, mode: u32) -> ResultadoSshCli<()> {
+    fn aplicar_mode_local(path: &std::path::Path, mode: u32) -> SshCliResult<()> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let perms = std::fs::Permissions::from_mode(mode & 0o7777);
-            std::fs::set_permissions(path, perms).map_err(ErroSshCli::Io)?;
+            std::fs::set_permissions(path, perms).map_err(SshCliError::Io)?;
         }
         #[cfg(not(unix))]
         {
@@ -571,7 +572,7 @@ mod real {
     }
 
     /// Lê o próximo `ChannelMsg::Data` não vazio do canal SCP.
-    async fn scp_ler_data<S>(canal: &mut russh::Channel<S>) -> ResultadoSshCli<Vec<u8>>
+    async fn scp_read_data<S>(canal: &mut russh::Channel<S>) -> SshCliResult<Vec<u8>>
     where
         S: From<(russh::ChannelId, russh::ChannelMsg)> + Send + Sync + 'static,
     {
@@ -591,15 +592,15 @@ mod real {
                     let msg = String::from_utf8_lossy(data.as_ref()).trim().to_string();
                     // GAP-SSH-IO-010: stderr OpenSSH "No such file" → 66, não 74.
                     let full = format!("SCP stderr: {msg}");
-                    return Err(classificar_mensagem_scp(&full));
+                    return Err(classify_scp_message(&full));
                 }
                 Some(ChannelMsg::ExitStatus { exit_status }) if exit_status != 0 => {
-                    return Err(ErroSshCli::CanalFalhou(format!(
+                    return Err(SshCliError::ChannelFailed(format!(
                         "scp encerrou com exit {exit_status}"
                     )));
                 }
                 Some(ChannelMsg::Close) | None => {
-                    return Err(ErroSshCli::CanalFalhou(
+                    return Err(SshCliError::ChannelFailed(
                         "canal SCP fechou prematuramente".to_string(),
                     ));
                 }
@@ -609,22 +610,22 @@ mod real {
     }
 
     /// Aguarda ACK de status SCP (`0x00`) ou propaga erro `1`/`2`.
-    async fn scp_aguardar_status<S>(canal: &mut russh::Channel<S>) -> ResultadoSshCli<()>
+    async fn scp_aguardar_status<S>(canal: &mut russh::Channel<S>) -> SshCliResult<()>
     where
         S: From<(russh::ChannelId, russh::ChannelMsg)> + Send + Sync + 'static,
     {
-        let data = scp_ler_data(canal).await?;
+        let data = scp_read_data(canal).await?;
         interpretar_status_scp(&data)
     }
 
     /// Lê bytes até incluir newline (header `C`/`T`) ou status de erro `1`/`2`.
-    async fn scp_ler_ate_newline<S>(canal: &mut russh::Channel<S>) -> ResultadoSshCli<Vec<u8>>
+    async fn scp_read_until_newline<S>(canal: &mut russh::Channel<S>) -> SshCliResult<Vec<u8>>
     where
         S: From<(russh::ChannelId, russh::ChannelMsg)> + Send + Sync + 'static,
     {
         let mut buf = Vec::new();
         loop {
-            let chunk = scp_ler_data(canal).await?;
+            let chunk = scp_read_data(canal).await?;
             if buf.is_empty() && matches!(chunk.first().copied(), Some(1 | 2)) {
                 return Ok(chunk);
             }
@@ -633,34 +634,34 @@ mod real {
                 return Ok(buf);
             }
             if buf.len() > 16_384 {
-                return Err(ErroSshCli::CanalFalhou(
+                return Err(SshCliError::ChannelFailed(
                     "header SCP excessivamente longo".to_string(),
                 ));
             }
         }
     }
 
-    impl ClienteSsh {
+    impl SshClient {
         /// Conecta e autentica. Todo o fluxo (TCP + handshake + auth) respeita
         /// o `timeout_ms` da configuração.
         ///
-        /// # Erros
-        /// - [`ErroSshCli::ArgumentoInvalido`] se a configuração for inválida.
-        /// - [`ErroSshCli::TimeoutSsh`] se exceder o timeout total.
-        /// - [`ErroSshCli::ConexaoFalhou`] em falhas TCP/handshake.
-        /// - [`ErroSshCli::AutenticacaoFalhou`] se o servidor rejeitar senha/chave
+        /// # Errors
+        /// - [`SshCliError::InvalidArgument`] se a configuração for inválida.
+        /// - [`SshCliError::SshTimeout`] se exceder o timeout total.
+        /// - [`SshCliError::ConnectionFailed`] em falhas TCP/handshake.
+        /// - [`SshCliError::AuthenticationFailed`] se o servidor rejeitar password/chave
         ///   (tente `--key`, `--password-stdin` ou `--key-passphrase-stdin`).
-        pub async fn conectar(cfg: ConfiguracaoConexao) -> ResultadoSshCli<Self> {
-            cfg.validar()?;
+        pub async fn connect(cfg: ConnectionConfig) -> SshCliResult<Self> {
+            cfg.validate()?;
 
             let timeout = Duration::from_millis(cfg.timeout_ms);
             let host = cfg.host.clone();
-            let porta = cfg.porta;
-            let usuario = cfg.usuario.clone();
-            let senha_segura = cfg.senha.clone();
+            let port = cfg.port;
+            let username = cfg.username.clone();
+            let senha_segura = cfg.password.clone();
             let key_path = cfg.key_path.clone();
             let key_passphrase = cfg.key_passphrase.clone();
-            let handler = ManipuladorCliente::novo(&cfg);
+            let handler = ClientHandler::new(&cfg);
 
             let config_cliente = Arc::new(russh::client::Config {
                 inactivity_timeout: Some(timeout),
@@ -669,23 +670,23 @@ mod real {
 
             tracing::info!(
                 host = %host,
-                porta,
-                usuario = %usuario,
+                port,
+                username = %username,
                 timeout_ms = cfg.timeout_ms,
-                tem_chave = key_path.is_some(),
+                has_key = key_path.is_some(),
                 "iniciando conexão SSH"
             );
 
             let resultado_conexao = tokio::time::timeout(timeout, async move {
                 let mut sessao = russh::client::connect(
                     config_cliente,
-                    (host.as_str(), porta),
+                    (host.as_str(), port),
                     handler,
                 )
                 .await
-                .map_err(|e| ErroSshCli::ConexaoFalhou(format!("falha TCP/handshake: {e}")))?;
+                .map_err(|e| SshCliError::ConnectionFailed(format!("falha TCP/handshake: {e}")))?;
 
-                // Preferência: chave privada primeiro; fallback senha se ambas presentes.
+                // Preferência: chave privada primeiro; fallback password se ambas presentes.
                 let mut autenticado = false;
 
                 if let Some(ref kp) = key_path {
@@ -693,7 +694,7 @@ mod real {
                         .as_ref()
                         .map(|s| s.expose_secret().to_string());
                     let chave = russh::keys::load_secret_key(kp, pass.as_deref()).map_err(|e| {
-                        ErroSshCli::AutenticacaoSsh(format!(
+                        SshCliError::SshAuthentication(format!(
                             "falha ao carregar chave {kp}: {e}"
                         ))
                     })?;
@@ -701,17 +702,17 @@ mod real {
                         .best_supported_rsa_hash()
                         .await
                         .map_err(|e| {
-                            ErroSshCli::ConexaoFalhou(format!("rsa hash: {e}"))
+                            SshCliError::ConnectionFailed(format!("rsa hash: {e}"))
                         })?
                         .flatten();
                     let auth = sessao
                         .authenticate_publickey(
-                            usuario.clone(),
+                            username.clone(),
                             russh::keys::PrivateKeyWithHashAlg::new(Arc::new(chave), hash),
                         )
                         .await
                         .map_err(|e| {
-                            ErroSshCli::ConexaoFalhou(format!("falha auth publickey: {e}"))
+                            SshCliError::ConnectionFailed(format!("falha auth publickey: {e}"))
                         })?;
                     autenticado = auth.success();
                     if !autenticado {
@@ -721,27 +722,27 @@ mod real {
 
                 if !autenticado && !senha_segura.expose_secret().is_empty() {
                     let auth = sessao
-                        .authenticate_password(usuario.clone(), senha_segura.expose_secret())
+                        .authenticate_password(username.clone(), senha_segura.expose_secret())
                         .await
                         .map_err(|e| {
-                            ErroSshCli::ConexaoFalhou(format!("falha auth password: {e}"))
+                            SshCliError::ConnectionFailed(format!("falha auth password: {e}"))
                         })?;
                     autenticado = auth.success();
                 }
 
                 if !autenticado {
-                    tracing::warn!(host = %host, usuario = %usuario, "autenticação SSH rejeitada");
-                    return Err(ErroSshCli::AutenticacaoFalhou);
+                    tracing::warn!(host = %host, username = %username, "autenticação SSH rejeitada");
+                    return Err(SshCliError::AuthenticationFailed);
                 }
 
-                Ok::<_, ErroSshCli>(sessao)
+                Ok::<_, SshCliError>(sessao)
             })
             .await;
 
             let sessao = match resultado_conexao {
                 Ok(Ok(s)) => s,
                 Ok(Err(erro)) => return Err(erro),
-                Err(_) => return Err(ErroSshCli::TimeoutSsh(cfg.timeout_ms)),
+                Err(_) => return Err(SshCliError::SshTimeout(cfg.timeout_ms)),
             };
 
             tracing::info!("conexão SSH autenticada com sucesso");
@@ -749,31 +750,31 @@ mod real {
             Ok(Self { sessao, cfg })
         }
 
-        /// Executa um comando shell remoto e captura stdout/stderr em paralelo.
+        /// Executa um command shell remoto e captura stdout/stderr em paralelo.
         ///
         /// Trunca cada stream em `max_chars` codepoints UTF-8. Respeita o
         /// `timeout_ms` da configuração para a execução inteira.
         ///
-        /// # Erros
-        /// - [`ErroSshCli::CanalFalhou`] em falha ao abrir canal ou enviar `exec`.
-        /// - [`ErroSshCli::TimeoutSsh`] se exceder o timeout.
-        pub async fn executar_comando(
+        /// # Errors
+        /// - [`SshCliError::ChannelFailed`] em falha ao abrir canal ou enviar `exec`.
+        /// - [`SshCliError::SshTimeout`] se exceder o timeout.
+        pub async fn run_command(
             &mut self,
-            comando: &str,
+            command: &str,
             max_chars: usize,
             stdin_data: Option<Vec<u8>>,
-        ) -> ResultadoSshCli<SaidaExecucao> {
-            self.executar_comando_interno(comando, max_chars, true, stdin_data)
+        ) -> SshCliResult<ExecutionOutput> {
+            self.run_command_internal(command, max_chars, true, stdin_data)
                 .await
         }
 
-        async fn executar_comando_interno(
+        async fn run_command_internal(
             &mut self,
-            comando: &str,
+            command: &str,
             max_chars: usize,
             abort_em_timeout: bool,
             stdin_data: Option<Vec<u8>>,
-        ) -> ResultadoSshCli<SaidaExecucao> {
+        ) -> SshCliResult<ExecutionOutput> {
             let inicio = Instant::now();
             let timeout = Duration::from_millis(self.cfg.timeout_ms);
 
@@ -782,23 +783,23 @@ mod real {
                     .sessao
                     .channel_open_session()
                     .await
-                    .map_err(|e| ErroSshCli::CanalFalhou(format!("abrir sessão: {e}")))?;
+                    .map_err(|e| SshCliError::ChannelFailed(format!("abrir sessão: {e}")))?;
 
                 canal
-                    .exec(true, comando)
+                    .exec(true, command)
                     .await
-                    .map_err(|e| ErroSshCli::CanalFalhou(format!("exec: {e}")))?;
+                    .map_err(|e| SshCliError::ChannelFailed(format!("exec: {e}")))?;
 
                 // Senha sudo/su no stdin do canal — nunca na cmdline remota (SEC-001).
                 if let Some(bytes) = stdin_data.as_ref() {
                     canal
                         .data(&bytes[..])
                         .await
-                        .map_err(|e| ErroSshCli::CanalFalhou(format!("stdin canal: {e}")))?;
+                        .map_err(|e| SshCliError::ChannelFailed(format!("stdin canal: {e}")))?;
                     canal
                         .eof()
                         .await
-                        .map_err(|e| ErroSshCli::CanalFalhou(format!("eof canal: {e}")))?;
+                        .map_err(|e| SshCliError::ChannelFailed(format!("eof canal: {e}")))?;
                 }
 
                 let mut stdout_bytes: Vec<u8> = Vec::new();
@@ -806,7 +807,7 @@ mod real {
                 let mut exit_code: Option<i32> = None;
 
                 while let Some(msg) = canal.wait().await {
-                    if processar_mensagem_exec(
+                    if process_exec_message(
                         msg,
                         &mut stdout_bytes,
                         &mut stderr_bytes,
@@ -816,7 +817,7 @@ mod real {
                     }
                 }
 
-                Ok::<_, ErroSshCli>((stdout_bytes, stderr_bytes, exit_code))
+                Ok::<_, SshCliError>((stdout_bytes, stderr_bytes, exit_code))
             })
             .await;
 
@@ -825,8 +826,8 @@ mod real {
                 Ok(Err(erro)) => return Err(erro),
                 Err(_) => {
                     if abort_em_timeout {
-                        if let Some(padrao) = crate::ssh::packing::padrao_abort_remoto(comando) {
-                            let abort_cmd = crate::ssh::packing::empacotar_abort_pkill(&padrao);
+                        if let Some(padrao) = crate::ssh::packing::remote_abort_pattern(command) {
+                            let abort_cmd = crate::ssh::packing::pack_abort_pkill(&padrao);
                             tracing::warn!(
                                 padrao = %padrao,
                                 "timeout local; tentando abort remoto best-effort"
@@ -834,25 +835,25 @@ mod real {
                             let _ = self.tentar_abort_remoto(&abort_cmd).await;
                         }
                     }
-                    return Err(ErroSshCli::TimeoutSsh(self.cfg.timeout_ms));
+                    return Err(SshCliError::SshTimeout(self.cfg.timeout_ms));
                 }
             };
 
             let stdout_str = String::from_utf8_lossy(&stdout_bytes).to_string();
             let stderr_str = String::from_utf8_lossy(&stderr_bytes).to_string();
 
-            let (stdout_truncado, truncado_stdout) = super::truncar_utf8(&stdout_str, max_chars);
-            let (stderr_truncado, truncado_stderr) = super::truncar_utf8(&stderr_str, max_chars);
+            let (stdout_truncado, truncated_stdout) = super::truncate_utf8(&stdout_str, max_chars);
+            let (stderr_truncado, truncated_stderr) = super::truncate_utf8(&stderr_str, max_chars);
 
-            let duracao_ms = u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);
+            let duration_ms = u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);
 
-            Ok(SaidaExecucao {
+            Ok(ExecutionOutput {
                 stdout: stdout_truncado,
                 stderr: stderr_truncado,
                 exit_code,
-                truncado_stdout,
-                truncado_stderr,
-                duracao_ms,
+                truncated_stdout,
+                truncated_stderr,
+                duration_ms,
             })
         }
 
@@ -860,16 +861,16 @@ mod real {
         ///
         /// One-shot: stream em chunks (sem carregar o arquivo inteiro em RAM).
         ///
-        /// # Erros
-        /// - [`ErroSshCli::ArquivoNaoEncontrado`] se o arquivo local não existir.
-        /// - [`ErroSshCli::ArgumentoInvalido`] se o path local não for arquivo regular.
-        /// - [`ErroSshCli::CanalFalhou`] em falha ao abrir canal SCP / status remoto.
-        /// - [`ErroSshCli::TimeoutSsh`] se exceder o timeout.
+        /// # Errors
+        /// - [`SshCliError::FileNotFound`] se o arquivo local não existir.
+        /// - [`SshCliError::InvalidArgument`] se o path local não for arquivo regular.
+        /// - [`SshCliError::ChannelFailed`] em falha ao abrir canal SCP / status remoto.
+        /// - [`SshCliError::SshTimeout`] se exceder o timeout.
         pub async fn upload(
             &mut self,
             local: &std::path::Path,
             remote: &std::path::Path,
-        ) -> ResultadoSshCli<TransferenciaResultado> {
+        ) -> SshCliResult<TransferResult> {
             use russh::ChannelMsg;
             use std::io::Read;
             use std::time::Instant;
@@ -877,22 +878,22 @@ mod real {
             let local_str = local.display().to_string();
 
             if local.is_dir() {
-                return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
-                    crate::i18n::Mensagem::ScpUploadSomenteArquivo,
+                return Err(SshCliError::InvalidArgument(crate::i18n::t(
+                    crate::i18n::Message::ScpUploadFileOnly,
                 )));
             }
 
             let metadados = std::fs::metadata(local).map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    ErroSshCli::ArquivoNaoEncontrado(local_str.clone())
+                    SshCliError::FileNotFound(local_str.clone())
                 } else {
-                    ErroSshCli::Io(e)
+                    SshCliError::Io(e)
                 }
             })?;
 
             if !metadados.is_file() {
-                return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
-                    crate::i18n::Mensagem::ScpUploadSomenteArquivo,
+                return Err(SshCliError::InvalidArgument(crate::i18n::t(
+                    crate::i18n::Message::ScpUploadFileOnly,
                 )));
             }
 
@@ -912,21 +913,21 @@ mod real {
             let resultado =
                 tokio::time::timeout(timeout, async {
                     if crate::signals::cancelado() {
-                        return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
-                            crate::i18n::Mensagem::OperacaoCancelada,
+                        return Err(SshCliError::InvalidArgument(crate::i18n::t(
+                            crate::i18n::Message::OperationCancelled,
                         )));
                     }
 
                     let mut canal =
                         self.sessao.channel_open_session().await.map_err(|e| {
-                            ErroSshCli::CanalFalhou(format!("abrir sessão SCP: {e}"))
+                            SshCliError::ChannelFailed(format!("abrir sessão SCP: {e}"))
                         })?;
 
-                    let comando = comando_scp_remoto("-t", remote);
+                    let command = comando_scp_remoto("-t", remote);
                     canal
-                        .exec(true, comando.as_str())
+                        .exec(true, command.as_str())
                         .await
-                        .map_err(|e| ErroSshCli::CanalFalhou(format!("exec SCP: {e}")))?;
+                        .map_err(|e| SshCliError::ChannelFailed(format!("exec SCP: {e}")))?;
 
                     // Sink remoto envia ACK (0x00) antes de aceitar o header.
                     scp_aguardar_status(&mut canal).await?;
@@ -936,31 +937,31 @@ mod real {
                     canal
                         .data(linha_t.as_bytes())
                         .await
-                        .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar linha T SCP: {e}")))?;
+                        .map_err(|e| SshCliError::ChannelFailed(format!("enviar linha T SCP: {e}")))?;
                     scp_aguardar_status(&mut canal).await?;
 
                     let header = formatar_header_upload_scp_com_modo(mode, tamanho, nome_arquivo);
                     canal
                         .data(header.as_bytes())
                         .await
-                        .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar header SCP: {e}")))?;
+                        .map_err(|e| SshCliError::ChannelFailed(format!("enviar header SCP: {e}")))?;
                     scp_aguardar_status(&mut canal).await?;
 
                     // SCP-018: stream do disco em chunks (sem fs::read total).
-                    let mut arquivo = std::fs::File::open(local).map_err(ErroSshCli::Io)?;
+                    let mut arquivo = std::fs::File::open(local).map_err(SshCliError::Io)?;
                     let mut buf = vec![0u8; 32_768];
                     loop {
                         if crate::signals::cancelado() {
-                            return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
-                                crate::i18n::Mensagem::OperacaoCancelada,
+                            return Err(SshCliError::InvalidArgument(crate::i18n::t(
+                                crate::i18n::Message::OperationCancelled,
                             )));
                         }
-                        let n = arquivo.read(&mut buf).map_err(ErroSshCli::Io)?;
+                        let n = arquivo.read(&mut buf).map_err(SshCliError::Io)?;
                         if n == 0 {
                             break;
                         }
                         canal.data(&buf[..n]).await.map_err(|e| {
-                            ErroSshCli::CanalFalhou(format!("enviar bloco SCP: {e}"))
+                            SshCliError::ChannelFailed(format!("enviar bloco SCP: {e}"))
                         })?;
                     }
 
@@ -968,7 +969,7 @@ mod real {
                     canal
                         .data([SCP_OK].as_slice())
                         .await
-                        .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar EOF SCP: {e}")))?;
+                        .map_err(|e| SshCliError::ChannelFailed(format!("enviar EOF SCP: {e}")))?;
                     scp_aguardar_status(&mut canal).await?;
 
                     let _ = canal.eof().await;
@@ -978,17 +979,17 @@ mod real {
                         }
                     }
 
-                    Ok::<_, ErroSshCli>(())
+                    Ok::<_, SshCliError>(())
                 })
                 .await;
 
-            resultado.map_err(|_| ErroSshCli::TimeoutSsh(self.cfg.timeout_ms))??;
+            resultado.map_err(|_| SshCliError::SshTimeout(self.cfg.timeout_ms))??;
 
-            let duracao_ms = u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);
+            let duration_ms = u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);
 
-            Ok(TransferenciaResultado {
-                bytes_transferidos: tamanho,
-                duracao_ms,
+            Ok(TransferResult {
+                bytes_transferred: tamanho,
+                duration_ms,
             })
         }
 
@@ -996,22 +997,22 @@ mod real {
         ///
         /// Escreve em `{local}.ssh-cli.partial` e faz rename atômico (SCP-022).
         ///
-        /// # Erros
-        /// - [`ErroSshCli::Io`] se não conseguir escrever o arquivo local.
-        /// - [`ErroSshCli::CanalFalhou`] em falha ao abrir canal SCP / status remoto.
-        /// - [`ErroSshCli::TimeoutSsh`] se exceder o timeout.
+        /// # Errors
+        /// - [`SshCliError::Io`] se não conseguir escrever o arquivo local.
+        /// - [`SshCliError::ChannelFailed`] em falha ao abrir canal SCP / status remoto.
+        /// - [`SshCliError::SshTimeout`] se exceder o timeout.
         pub async fn download(
             &mut self,
             remote: &std::path::Path,
             local: &std::path::Path,
-        ) -> ResultadoSshCli<TransferenciaResultado> {
+        ) -> SshCliResult<TransferResult> {
             use russh::ChannelMsg;
             use std::io::Write;
             use std::time::{Duration as StdDuration, Instant, UNIX_EPOCH};
 
             if local.is_dir() {
-                return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
-                    crate::i18n::Mensagem::ScpDownloadLocalNaoDiretorio,
+                return Err(SshCliError::InvalidArgument(crate::i18n::t(
+                    crate::i18n::Message::ScpDownloadLocalNotDirectory,
                 )));
             }
 
@@ -1021,8 +1022,8 @@ mod real {
 
             let resultado = tokio::time::timeout(timeout, async {
                 if crate::signals::cancelado() {
-                    return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
-                        crate::i18n::Mensagem::OperacaoCancelada,
+                    return Err(SshCliError::InvalidArgument(crate::i18n::t(
+                        crate::i18n::Message::OperationCancelled,
                     )));
                 }
 
@@ -1030,22 +1031,22 @@ mod real {
                     .sessao
                     .channel_open_session()
                     .await
-                    .map_err(|e| ErroSshCli::CanalFalhou(format!("abrir sessão SCP: {e}")))?;
+                    .map_err(|e| SshCliError::ChannelFailed(format!("abrir sessão SCP: {e}")))?;
 
-                let comando = comando_scp_remoto("-f", remote);
+                let command = comando_scp_remoto("-f", remote);
                 canal
-                    .exec(true, comando.as_str())
+                    .exec(true, command.as_str())
                     .await
-                    .map_err(|e| ErroSshCli::CanalFalhou(format!("exec SCP: {e}")))?;
+                    .map_err(|e| SshCliError::ChannelFailed(format!("exec SCP: {e}")))?;
 
                 // Source remoto só envia o header após o ACK inicial do sink local.
                 canal
                     .data([SCP_OK].as_slice())
                     .await
-                    .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar ack inicial: {e}")))?;
+                    .map_err(|e| SshCliError::ChannelFailed(format!("enviar ack inicial: {e}")))?;
 
                 let mut times: Option<(u64, u64)> = None;
-                let mut header_bytes = scp_ler_ate_newline(&mut canal).await?;
+                let mut header_bytes = scp_read_until_newline(&mut canal).await?;
                 // Erro remoto: status 1/2 no primeiro byte.
                 if !header_bytes.is_empty() && matches!(header_bytes[0], 1 | 2) {
                     interpretar_status_scp(&header_bytes)?;
@@ -1057,8 +1058,8 @@ mod real {
                     canal
                         .data([SCP_OK].as_slice())
                         .await
-                        .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar ack T: {e}")))?;
-                    header_bytes = scp_ler_ate_newline(&mut canal).await?;
+                        .map_err(|e| SshCliError::ChannelFailed(format!("enviar ack T: {e}")))?;
+                    header_bytes = scp_read_until_newline(&mut canal).await?;
                     if !header_bytes.is_empty() && matches!(header_bytes[0], 1 | 2) {
                         interpretar_status_scp(&header_bytes)?;
                     }
@@ -1069,7 +1070,7 @@ mod real {
                 canal
                     .data([SCP_OK].as_slice())
                     .await
-                    .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar ack header: {e}")))?;
+                    .map_err(|e| SshCliError::ChannelFailed(format!("enviar ack header: {e}")))?;
 
                 if let Some(pai) = local.parent() {
                     if !pai.as_os_str().is_empty() {
@@ -1078,32 +1079,32 @@ mod real {
                 }
 
                 // SCP-022: escrever no partial; rename só no sucesso.
-                let mut arquivo = std::fs::File::create(&partial).map_err(ErroSshCli::Io)?;
+                let mut arquivo = std::fs::File::create(&partial).map_err(SshCliError::Io)?;
                 let mut recebidos: u64 = 0;
                 let mut pendente: Vec<u8> = Vec::new();
 
                 while recebidos < tamanho {
                     if crate::signals::cancelado() {
-                        return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
-                            crate::i18n::Mensagem::OperacaoCancelada,
+                        return Err(SshCliError::InvalidArgument(crate::i18n::t(
+                            crate::i18n::Message::OperationCancelled,
                         )));
                     }
                     if pendente.is_empty() {
-                        let chunk = scp_ler_data(&mut canal).await?;
+                        let chunk = scp_read_data(&mut canal).await?;
                         pendente.extend_from_slice(&chunk);
                     }
                     let falta = (tamanho - recebidos) as usize;
                     let usar = falta.min(pendente.len());
                     arquivo
                         .write_all(&pendente[..usar])
-                        .map_err(ErroSshCli::Io)?;
+                        .map_err(SshCliError::Io)?;
                     recebidos += usar as u64;
                     pendente.drain(..usar);
                 }
 
                 // Após payload, source envia 0x00 final (pode já estar em `pendente`).
                 if pendente.is_empty() {
-                    match scp_ler_data(&mut canal).await {
+                    match scp_read_data(&mut canal).await {
                         Ok(trail) => pendente.extend_from_slice(&trail),
                         Err(_) if recebidos == tamanho => {}
                         Err(e) => return Err(e),
@@ -1112,20 +1113,20 @@ mod real {
                 if pendente.first() == Some(&SCP_OK) {
                     pendente.remove(0);
                 } else if !pendente.is_empty() {
-                    return Err(ErroSshCli::CanalFalhou(format!(
+                    return Err(SshCliError::ChannelFailed(format!(
                         "terminador SCP inesperado após payload (0x{:02x})",
                         pendente[0]
                     )));
                 }
 
-                arquivo.flush().map_err(ErroSshCli::Io)?;
+                arquivo.flush().map_err(SshCliError::Io)?;
                 let _ = arquivo.sync_data();
                 drop(arquivo);
 
                 canal
                     .data([SCP_OK].as_slice())
                     .await
-                    .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar ack final: {e}")))?;
+                    .map_err(|e| SshCliError::ChannelFailed(format!("enviar ack final: {e}")))?;
 
                 let _ = canal.eof().await;
                 while let Some(msg) = canal.wait().await {
@@ -1148,7 +1149,7 @@ mod real {
                     }
                 }
 
-                std::fs::rename(&partial, local).map_err(ErroSshCli::Io)?;
+                std::fs::rename(&partial, local).map_err(SshCliError::Io)?;
                 // GraphRAG escrita atômica: fsync do diretório pai após rename (best-effort).
                 if let Some(pai) = local.parent() {
                     if !pai.as_os_str().is_empty() {
@@ -1158,17 +1159,17 @@ mod real {
                     }
                 }
 
-                Ok::<_, ErroSshCli>(recebidos)
+                Ok::<_, SshCliError>(recebidos)
             })
             .await;
 
             match resultado {
                 Ok(Ok(recebidos)) => {
-                    let duracao_ms =
+                    let duration_ms =
                         u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);
-                    Ok(TransferenciaResultado {
-                        bytes_transferidos: recebidos,
-                        duracao_ms,
+                    Ok(TransferResult {
+                        bytes_transferred: recebidos,
+                        duration_ms,
                     })
                 }
                 Ok(Err(e)) => {
@@ -1179,18 +1180,18 @@ mod real {
                 }
                 Err(_) => {
                     let _ = std::fs::remove_file(&partial);
-                    Err(ErroSshCli::TimeoutSsh(self.cfg.timeout_ms))
+                    Err(SshCliError::SshTimeout(self.cfg.timeout_ms))
                 }
             }
         }
 
         /// Abort remoto best-effort: reconecta com timeout curto e executa pkill.
-        async fn tentar_abort_remoto(&self, abort_cmd: &str) -> ResultadoSshCli<()> {
-            // Implementação inline (sem chamar executar_comando_interno) evita
+        async fn tentar_abort_remoto(&self, abort_cmd: &str) -> SshCliResult<()> {
+            // Implementação inline (sem chamar run_command_internal) evita
             // recursão async detectada pelo compilador.
             let mut cfg_abort = self.cfg.clone();
             cfg_abort.timeout_ms = cfg_abort.timeout_ms.clamp(3_000, 10_000);
-            let outro = match Self::conectar(cfg_abort).await {
+            let outro = match Self::connect(cfg_abort).await {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::debug!(erro = %e, "abort remoto não pôde reconectar");
@@ -1203,28 +1204,28 @@ mod real {
                     .sessao
                     .channel_open_session()
                     .await
-                    .map_err(|e| ErroSshCli::CanalFalhou(format!("abort canal: {e}")))?;
+                    .map_err(|e| SshCliError::ChannelFailed(format!("abort canal: {e}")))?;
                 canal
                     .exec(true, abort_cmd)
                     .await
-                    .map_err(|e| ErroSshCli::CanalFalhou(format!("abort exec: {e}")))?;
+                    .map_err(|e| SshCliError::ChannelFailed(format!("abort exec: {e}")))?;
                 while let Some(msg) = canal.wait().await {
                     if matches!(msg, russh::ChannelMsg::Close) {
                         break;
                     }
                 }
-                Ok::<(), ErroSshCli>(())
+                Ok::<(), SshCliError>(())
             })
             .await;
-            let _ = outro.desconectar().await;
+            let _ = outro.disconnect().await;
             Ok(())
         }
 
         /// Encerra a sessão SSH de forma limpa.
         ///
-        /// # Erros
+        /// # Errors
         /// Propaga falha se `disconnect` retornar erro do transporte.
-        pub async fn desconectar(&self) -> ResultadoSshCli<()> {
+        pub async fn disconnect(&self) -> SshCliResult<()> {
             let resultado = self
                 .sessao
                 .disconnect(russh::Disconnect::ByApplication, "encerrando", "pt-BR")
@@ -1236,7 +1237,7 @@ mod real {
                 }
                 Err(e) => {
                     tracing::warn!(erro = %e, "falha ao encerrar sessão SSH");
-                    Err(ErroSshCli::ConexaoFalhou(format!(
+                    Err(SshCliError::ConnectionFailed(format!(
                         "falha ao desconectar: {e}"
                     )))
                 }
@@ -1244,26 +1245,26 @@ mod real {
         }
 
         /// Abre canal direct-tcpip para forwarding SSH.
-        pub async fn abrir_canal_tunel(
+        pub async fn open_tunnel_channel(
             &self,
-            host_remoto: &str,
-            porta_remota: u16,
+            remote_host: &str,
+            remote_port: u16,
             endereco_origem: &str,
             porta_origem: u16,
-        ) -> ResultadoSshCli<Box<dyn CanalTunel>> {
+        ) -> SshCliResult<Box<dyn TunnelChannel>> {
             let canal = self
                 .sessao
                 .channel_open_direct_tcpip(
-                    host_remoto.to_string(),
-                    u32::from(porta_remota),
+                    remote_host.to_string(),
+                    u32::from(remote_port),
                     endereco_origem.to_string(),
                     u32::from(porta_origem),
                 )
                 .await
                 .map_err(|e| {
-                    ErroSshCli::CanalFalhou(format!(
+                    SshCliError::ChannelFailed(format!(
                         "falha ao abrir canal direct-tcpip para {}:{}: {}",
-                        host_remoto, porta_remota, e
+                        remote_host, remote_port, e
                     ))
                 })?;
 
@@ -1272,25 +1273,25 @@ mod real {
     }
 
     #[async_trait]
-    impl ClienteSshTrait for ClienteSsh {
-        async fn conectar(cfg: ConfiguracaoConexao) -> Result<Box<Self>, ErroSshCli> {
-            Self::conectar(cfg).await.map(Box::new)
+    impl SshClientTrait for SshClient {
+        async fn connect(cfg: ConnectionConfig) -> Result<Box<Self>, SshCliError> {
+            Self::connect(cfg).await.map(Box::new)
         }
 
-        async fn executar_comando(
+        async fn run_command(
             &mut self,
             cmd: &str,
             max_chars: usize,
             stdin_data: Option<Vec<u8>>,
-        ) -> Result<SaidaExecucao, ErroSshCli> {
-            Self::executar_comando(self, cmd, max_chars, stdin_data).await
+        ) -> Result<ExecutionOutput, SshCliError> {
+            Self::run_command(self, cmd, max_chars, stdin_data).await
         }
 
         async fn upload(
             &mut self,
             local: &Path,
             remote: &Path,
-        ) -> Result<TransferenciaResultado, ErroSshCli> {
+        ) -> Result<TransferResult, SshCliError> {
             Self::upload(self, local, remote).await
         }
 
@@ -1298,41 +1299,41 @@ mod real {
             &mut self,
             remote: &Path,
             local: &Path,
-        ) -> Result<TransferenciaResultado, ErroSshCli> {
+        ) -> Result<TransferResult, SshCliError> {
             Self::download(self, remote, local).await
         }
 
-        async fn abrir_canal_tunel(
+        async fn open_tunnel_channel(
             &self,
-            host_remoto: &str,
-            porta_remota: u16,
+            remote_host: &str,
+            remote_port: u16,
             endereco_origem: &str,
             porta_origem: u16,
-        ) -> Result<Box<dyn CanalTunel>, ErroSshCli> {
-            Self::abrir_canal_tunel(
+        ) -> Result<Box<dyn TunnelChannel>, SshCliError> {
+            Self::open_tunnel_channel(
                 self,
-                host_remoto,
-                porta_remota,
+                remote_host,
+                remote_port,
                 endereco_origem,
                 porta_origem,
             )
             .await
         }
 
-        async fn desconectar(&self) -> Result<(), ErroSshCli> {
-            Self::desconectar(self).await
+        async fn disconnect(&self) -> Result<(), SshCliError> {
+            Self::disconnect(self).await
         }
     }
 
     #[cfg(test)]
     mod testes_real {
         use super::{
-            caminho_parcial_download, classificar_mensagem_scp, comando_scp_remoto,
+            caminho_parcial_download, classify_scp_message, comando_scp_remoto,
             formatar_header_upload_scp, formatar_header_upload_scp_com_modo, formatar_linha_t_scp,
             interpretar_status_scp, mapear_exit_status, parse_header_scp, parse_linha_t_scp,
-            processar_mensagem_exec, SCP_PARTIAL_SUFFIX,
+            process_exec_message, SCP_PARTIAL_SUFFIX,
         };
-        use crate::erros::ErroSshCli;
+        use crate::erros::SshCliError;
 
         #[test]
         fn mapear_exit_status_normal() {
@@ -1369,7 +1370,7 @@ mod real {
             let mut stderr = Vec::new();
             let mut exit_code = None;
 
-            let deve_parar = processar_mensagem_exec(
+            let deve_parar = process_exec_message(
                 russh::ChannelMsg::Data {
                     data: b"stdout".to_vec().into(),
                 },
@@ -1380,7 +1381,7 @@ mod real {
             assert!(!deve_parar);
             assert_eq!(stdout, b"stdout");
 
-            let deve_parar = processar_mensagem_exec(
+            let deve_parar = process_exec_message(
                 russh::ChannelMsg::ExtendedData {
                     data: b"stderr".to_vec().into(),
                     ext: 1,
@@ -1392,7 +1393,7 @@ mod real {
             assert!(!deve_parar);
             assert_eq!(stderr, b"stderr");
 
-            let _ = processar_mensagem_exec(
+            let _ = process_exec_message(
                 russh::ChannelMsg::ExitStatus { exit_status: 17 },
                 &mut stdout,
                 &mut stderr,
@@ -1400,7 +1401,7 @@ mod real {
             );
             assert_eq!(exit_code, Some(17));
 
-            let deve_parar = processar_mensagem_exec(
+            let deve_parar = process_exec_message(
                 russh::ChannelMsg::Close,
                 &mut stdout,
                 &mut stderr,
@@ -1434,33 +1435,33 @@ mod real {
             assert!(interpretar_status_scp(&[]).is_err());
         }
 
-        /// GAP-SSH-IO-010: remote missing → ArquivoNaoEncontrado (exit 66).
+        /// GAP-SSH-IO-010: remote missing → FileNotFound (exit 66).
         #[test]
         fn interpretar_status_scp_no_such_file_e_arquivo_nao_encontrado() {
             let mut payload = vec![1u8];
             payload.extend_from_slice(b"scp: /tmp/missing: No such file or directory\n");
             let err = interpretar_status_scp(&payload).unwrap_err();
             assert!(
-                matches!(err, ErroSshCli::ArquivoNaoEncontrado(_)),
-                "esperado ArquivoNaoEncontrado, got {err:?}"
+                matches!(err, SshCliError::FileNotFound(_)),
+                "esperado FileNotFound, got {err:?}"
             );
             assert_eq!(err.exit_code(), 66);
         }
 
         #[test]
         fn classificar_mensagem_scp_protocol_permanece_canal() {
-            let err = classificar_mensagem_scp("SCP: protocol error");
-            assert!(matches!(err, ErroSshCli::CanalFalhou(_)));
+            let err = classify_scp_message("SCP: protocol error");
+            assert!(matches!(err, SshCliError::ChannelFailed(_)));
             assert_eq!(err.exit_code(), 74);
-            let err2 = classificar_mensagem_scp("SCP stderr: Permission denied");
-            assert!(matches!(err2, ErroSshCli::CanalFalhou(_)));
+            let err2 = classify_scp_message("SCP stderr: Permission denied");
+            assert!(matches!(err2, SshCliError::ChannelFailed(_)));
             assert_eq!(err2.exit_code(), 74);
         }
 
         #[test]
         fn classificar_mensagem_scp_not_found_e_66() {
-            let err = classificar_mensagem_scp("SCP stderr: scp: foo: not found");
-            assert!(matches!(err, ErroSshCli::ArquivoNaoEncontrado(_)));
+            let err = classify_scp_message("SCP stderr: scp: foo: not found");
+            assert!(matches!(err, SshCliError::FileNotFound(_)));
             assert_eq!(err.exit_code(), 66);
         }
 
@@ -1509,7 +1510,7 @@ mod real {
             let mut stderr = Vec::new();
             let mut exit_code = None;
 
-            let deve_parar = processar_mensagem_exec(
+            let deve_parar = process_exec_message(
                 russh::ChannelMsg::ExtendedData {
                     data: b"nao-e-stderr".to_vec().into(),
                     ext: 2,
@@ -1531,7 +1532,7 @@ mod real {
             let mut stderr = Vec::new();
             let mut exit_code = Some(7);
 
-            let deve_parar_signal = processar_mensagem_exec(
+            let deve_parar_signal = process_exec_message(
                 russh::ChannelMsg::ExitSignal {
                     signal_name: russh::Sig::TERM,
                     core_dumped: false,
@@ -1543,7 +1544,7 @@ mod real {
                 &mut exit_code,
             );
 
-            let deve_parar_eof = processar_mensagem_exec(
+            let deve_parar_eof = process_exec_message(
                 russh::ChannelMsg::Eof,
                 &mut stdout,
                 &mut stderr,
@@ -1561,7 +1562,7 @@ mod real {
             let mut stderr = Vec::new();
             let mut exit_code = None;
 
-            let deve_parar = processar_mensagem_exec(
+            let deve_parar = process_exec_message(
                 russh::ChannelMsg::WindowAdjusted { new_size: 2048 },
                 &mut stdout,
                 &mut stderr,
@@ -1577,7 +1578,7 @@ mod real {
 }
 
 #[cfg(feature = "ssh-real")]
-pub use real::{ClienteSsh, ManipuladorCliente};
+pub use real::{SshClient, ClientHandler};
 
 // =========================================================================
 // Stub usado quando a feature `ssh-real` está DESATIVADA.
@@ -1585,32 +1586,32 @@ pub use real::{ClienteSsh, ManipuladorCliente};
 
 #[cfg(not(feature = "ssh-real"))]
 mod stub {
-    use super::{ConfiguracaoConexao, SaidaExecucao, TransferenciaResultado};
-    use crate::erros::ErroSshCli;
-    use crate::ssh::cliente::ClienteSshTrait;
+    use super::{ConnectionConfig, ExecutionOutput, TransferResult};
+    use crate::erros::SshCliError;
+    use crate::ssh::client::SshClientTrait;
     use async_trait::async_trait;
     use std::path::Path;
 
     /// Stub quando `ssh-real` está desativado: sempre retorna
-    /// [`ErroSshCli::ConexaoFalhou`].
+    /// [`SshCliError::ConnectionFailed`].
     #[derive(Debug)]
-    pub struct ClienteSsh;
+    pub struct SshClient;
 
     #[async_trait]
-    impl ClienteSshTrait for ClienteSsh {
-        async fn conectar(_cfg: ConfiguracaoConexao) -> Result<Box<Self>, ErroSshCli> {
-            Err(ErroSshCli::ConexaoFalhou(
+    impl SshClientTrait for SshClient {
+        async fn connect(_cfg: ConnectionConfig) -> Result<Box<Self>, SshCliError> {
+            Err(SshCliError::ConnectionFailed(
                 "feature `ssh-real` está desabilitada; recompile com --features ssh-real".into(),
             ))
         }
 
-        async fn executar_comando(
+        async fn run_command(
             &mut self,
             _cmd: &str,
             _max_chars: usize,
             _stdin_data: Option<Vec<u8>>,
-        ) -> Result<SaidaExecucao, ErroSshCli> {
-            Err(ErroSshCli::CanalFalhou(
+        ) -> Result<ExecutionOutput, SshCliError> {
+            Err(SshCliError::ChannelFailed(
                 "stub sem russh: feature `ssh-real` desabilitada".into(),
             ))
         }
@@ -1619,8 +1620,8 @@ mod stub {
             &mut self,
             _local: &Path,
             _remote: &Path,
-        ) -> Result<TransferenciaResultado, ErroSshCli> {
-            Err(ErroSshCli::CanalFalhou(
+        ) -> Result<TransferResult, SshCliError> {
+            Err(SshCliError::ChannelFailed(
                 "stub sem russh: feature `ssh-real` desabilitada".into(),
             ))
         }
@@ -1629,48 +1630,48 @@ mod stub {
             &mut self,
             _remote: &Path,
             _local: &Path,
-        ) -> Result<TransferenciaResultado, ErroSshCli> {
-            Err(ErroSshCli::CanalFalhou(
+        ) -> Result<TransferResult, SshCliError> {
+            Err(SshCliError::ChannelFailed(
                 "stub sem russh: feature `ssh-real` desabilitada".into(),
             ))
         }
 
-        async fn abrir_canal_tunel(
+        async fn open_tunnel_channel(
             &self,
             _host_remoto: &str,
             _porta_remota: u16,
             _endereco_origem: &str,
             _porta_origem: u16,
-        ) -> Result<Box<dyn super::CanalTunel>, ErroSshCli> {
-            Err(ErroSshCli::CanalFalhou(
+        ) -> Result<Box<dyn super::TunnelChannel>, SshCliError> {
+            Err(SshCliError::ChannelFailed(
                 "stub sem russh: feature `ssh-real` desabilitada".into(),
             ))
         }
 
-        async fn desconectar(&self) -> Result<(), ErroSshCli> {
+        async fn disconnect(&self) -> Result<(), SshCliError> {
             Ok(())
         }
     }
 }
 
 #[cfg(not(feature = "ssh-real"))]
-pub use stub::ClienteSsh;
+pub use stub::SshClient;
 
 // =========================================================================
 // Testes unitários (sem rede, sem feature gate).
 // =========================================================================
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
     use secrecy::SecretString;
 
-    fn cfg_valida() -> ConfiguracaoConexao {
-        ConfiguracaoConexao {
+    fn cfg_valida() -> ConnectionConfig {
+        ConnectionConfig {
             host: "127.0.0.1".to_string(),
-            porta: 22,
-            usuario: "root".to_string(),
-            senha: SecretString::from("senha-exemplo".to_string()),
+            port: 22,
+            username: "root".to_string(),
+            password: SecretString::from("senha-exemplo".to_string()),
             key_path: None,
             key_passphrase: None,
             timeout_ms: 5000,
@@ -1683,7 +1684,7 @@ mod testes {
     fn validar_host_vazio_retorna_erro() {
         let mut c = cfg_valida();
         c.host = String::new();
-        let r = c.validar();
+        let r = c.validate();
         assert!(r.is_err());
         let msg = r.unwrap_err().to_string();
         assert!(msg.contains("host"));
@@ -1693,14 +1694,14 @@ mod testes {
     fn validar_host_apenas_espacos_retorna_erro() {
         let mut c = cfg_valida();
         c.host = "   ".to_string();
-        assert!(c.validar().is_err());
+        assert!(c.validate().is_err());
     }
 
     #[test]
     fn validar_porta_zero_retorna_erro() {
         let mut c = cfg_valida();
-        c.porta = 0;
-        let r = c.validar();
+        c.port = 0;
+        let r = c.validate();
         assert!(r.is_err());
         let msg = r.unwrap_err().to_string();
         assert!(msg.contains("porta"));
@@ -1709,13 +1710,13 @@ mod testes {
     #[test]
     fn validar_usuario_vazio_retorna_erro() {
         let mut c = cfg_valida();
-        c.usuario = String::new();
-        assert!(c.validar().is_err());
+        c.username = String::new();
+        assert!(c.validate().is_err());
     }
 
     #[test]
     fn validar_configuracao_correta_retorna_ok() {
-        assert!(cfg_valida().validar().is_ok());
+        assert!(cfg_valida().validate().is_ok());
     }
 
     #[test]
@@ -1728,7 +1729,7 @@ mod testes {
 
     #[test]
     fn truncar_utf8_nao_trunca_se_cabe() {
-        let (s, t) = truncar_utf8("ola mundo", 100);
+        let (s, t) = truncate_utf8("ola mundo", 100);
         assert_eq!(s, "ola mundo");
         assert!(!t);
     }
@@ -1736,7 +1737,7 @@ mod testes {
     #[test]
     fn truncar_utf8_trunca_string_grande_ascii() {
         let entrada: String = "a".repeat(200);
-        let (s, t) = truncar_utf8(&entrada, 50);
+        let (s, t) = truncate_utf8(&entrada, 50);
         assert_eq!(s.chars().count(), 50);
         assert!(t);
     }
@@ -1745,7 +1746,7 @@ mod testes {
     fn truncar_utf8_preserva_grafemas_acentuados() {
         // 10 codepoints: "á" (1 char) * 10
         let entrada: String = "á".repeat(30);
-        let (s, t) = truncar_utf8(&entrada, 10);
+        let (s, t) = truncate_utf8(&entrada, 10);
         assert_eq!(s.chars().count(), 10);
         // Cada 'á' ocupa 2 bytes em UTF-8 → 10 chars = 20 bytes
         assert_eq!(s.len(), 20);
@@ -1757,27 +1758,27 @@ mod testes {
     #[test]
     fn truncar_utf8_com_emojis_nao_quebra() {
         let entrada = "🚀🔒🛡🔑✨🎉💎⚡🌟🔥🎨";
-        let (s, t) = truncar_utf8(entrada, 5);
+        let (s, t) = truncate_utf8(entrada, 5);
         assert_eq!(s.chars().count(), 5);
         assert!(t);
     }
 
     #[test]
     fn truncar_utf8_zero_retorna_vazio() {
-        let (s, t) = truncar_utf8("abc", 0);
+        let (s, t) = truncate_utf8("abc", 0);
         assert_eq!(s, "");
         assert!(t);
     }
 
     #[test]
     fn saida_execucao_debug_nao_crasha() {
-        let s = SaidaExecucao {
+        let s = ExecutionOutput {
             stdout: "ok".into(),
             stderr: String::new(),
             exit_code: Some(0),
-            truncado_stdout: false,
-            truncado_stderr: false,
-            duracao_ms: 42,
+            truncated_stdout: false,
+            truncated_stderr: false,
+            duration_ms: 42,
         };
         let _ = format!("{s:?}");
     }

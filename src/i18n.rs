@@ -1,23 +1,24 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Sistema de internacionalização do ssh-cli.
 //!
-//! Fornece o enum `Idioma` bilíngue com enum `Mensagem` como única fonte de
+//! Fornece o enum `Language` bilíngue com enum `Message` como única fonte de
 //! strings de UI. A detecção de locale é delegada ao módulo `locale`.
 //!
 //! Precedência de seleção de idioma:
 //! 1. Flag `--lang` da CLI
 //! 2. Variável de ambiente `SSH_CLI_LANG`
 //! 3. Locale do sistema via `sys_locale::get_locale()`
-//! 4. Fallback: `Idioma::English`
+//! 4. Fallback: `Language::English`
 
 use anyhow::Result;
 
-/// Idioma suportado pelo sistema de internacionalização.
+/// Language suportado pelo sistema de internacionalização.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Idioma {
+pub enum Language {
     /// Inglês americano (en-US) — idioma padrão.
     English,
     /// Português brasileiro (pt-BR).
-    Portugues,
+    Portuguese,
 }
 
 /// Todas as mensagens de UI do sistema.
@@ -25,298 +26,347 @@ pub enum Idioma {
 /// ÚNICA fonte de strings visíveis ao usuário. Cada variante possui tradução
 /// exaustiva em `en()` e `pt()`. PROIBIDO usar string literal de UI fora deste enum.
 ///
-/// Variantes com campos dinâmicos (ex.: `{ nome: String }`) permitem incluir
-/// dados contextuais na mensagem. Mensagem não implementa `Copy` pois campos
+/// Variantes com campos dinâmicos (ex.: `{ name: String }`) permitem incluir
+/// dados contextuais na mensagem. Message não implementa `Copy` pois campos
 /// `String` não são `Copy`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Mensagem {
+pub enum Message {
     // VPS
     /// Nenhuma VPS cadastrada no arquivo de configuração.
-    VpsRegistroVazio,
+    VpsRegistryEmpty,
     /// Cabeçalho da listagem de VPS registradas.
-    VpsListaTitulo,
+    VpsListTitle,
     /// VPS adicionada com sucesso ao registro.
-    VpsAdicionada {
+    VpsAdded {
         /// Nome da VPS adicionada.
-        nome: String,
+        name: String,
     },
     /// VPS removida com sucesso do registro.
-    VpsRemovida {
+    VpsRemoved {
         /// Nome da VPS removida.
-        nome: String,
+        name: String,
     },
     /// Tentativa de adicionar VPS já existente no registro.
-    VpsDuplicada {
+    VpsDuplicate {
         /// Nome da VPS duplicada.
-        nome: String,
+        name: String,
     },
     /// VPS solicitada não foi encontrada no registro.
-    VpsNaoEncontrada {
+    VpsNotFound {
         /// Nome da VPS não encontrada.
-        nome: String,
+        name: String,
     },
     /// VPS ativa selecionada para operações subsequentes.
-    VpsAtivaSelecionada {
+    VpsActiveSelected {
         /// Nome da VPS selecionada.
-        nome: String,
+        name: String,
     },
     // Config
-    /// Rótulo do caminho do arquivo de configuração.
-    ConfigCaminhoLabel,
+    /// Rótulo do path do arquivo de configuração.
+    ConfigPathLabel,
     /// Caminho atual do arquivo de configuração.
-    ConfigCaminho {
+    ConfigPath {
         /// Caminho absoluto do arquivo de configuração.
-        caminho: String,
+        path: String,
     },
     /// Nenhuma chave de API configurada no sistema.
-    ConfigSemChaves,
+    ConfigNoKeys,
     // Erros
     /// Falha ao carregar o arquivo de configuração.
-    ErroCarregarConfig,
+    ErrorLoadConfig,
     /// Falha ao salvar o arquivo de configuração.
-    ErroSalvarConfig,
+    ErrorSaveConfig,
     /// Erro ao estabelecer conexão SSH com o servidor remoto.
-    ErroConexaoSsh,
-    /// Falha na execução de comando remoto via SSH.
-    ErroComandoFalhou,
+    ErrorSshConnection,
+    /// Falha na execução de command remoto via SSH.
+    ErrorCommandFailed,
     /// Argumento inválido fornecido à operação.
-    ErroArgumentoInvalido {
+    ErrorInvalidArgument {
         /// Detalhe do argumento inválido.
-        detalhe: String,
+        detail: String,
     },
     /// Erro genérico com descrição textual.
-    ErroGenerico {
+    ErrorGeneric {
         /// Descrição do erro.
-        detalhe: String,
+        detail: String,
+    },
+    /// VPS record edited successfully.
+    VpsEdited {
+        /// VPS name.
+        name: String,
+    },
+    /// Export completed.
+    ExportCompleted {
+        /// Destination path.
+        path: String,
+    },
+    /// Import completed.
+    ImportCompleted,
+    /// Primary key ready.
+    PrimaryKeyReady {
+        /// Key source identifier.
+        source: String,
+        /// Key file path.
+        key_file: String,
+    },
+    /// Re-encrypt completed.
+    ReencryptCompleted {
+        /// Host count.
+        hosts: usize,
+    },
+    /// Generic human success line (already localized payload).
+    Success {
+        /// Success text.
+        detail: String,
     },
     // Tunnel
-    /// Tunnel SSH ativo com informações de porta e host.
-    TunnelAtivo {
+    /// Tunnel SSH ativo com informações de port e host.
+    TunnelActive {
         /// Porta local do tunnel.
-        porta_local: u16,
+        local_port: u16,
         /// Host remoto destino.
-        host_remoto: String,
+        remote_host: String,
         /// Porta remota destino.
-        porta_remota: u16,
+        remote_port: u16,
         /// Nome da VPS usada como relay.
-        vps_nome: String,
+        vps_name: String,
     },
     /// Instrução para encerrar o tunnel via Ctrl+C.
-    TunnelPressioneCtrlC,
+    TunnelPressCtrlC,
     // Health Check
     /// Verificação de conectividade com VPS bem-sucedida.
     HealthCheckOk {
         /// Nome da VPS verificada.
-        nome: String,
+        name: String,
     },
     /// Nenhuma VPS ativa selecionada para health check.
-    HealthCheckSemVps,
+    HealthCheckNoVps,
     /// Falha na verificação de conectividade com VPS.
-    HealthCheckFalhou {
+    HealthCheckFailed {
         /// Nome da VPS verificada.
-        nome: String,
+        name: String,
         /// Detalhe do erro.
-        detalhe: String,
+        detail: String,
     },
     /// Resultado de health check com latência.
-    HealthCheckLatencia {
+    HealthCheckLatency {
         /// Nome da VPS verificada.
-        nome: String,
+        name: String,
         /// Latência em milissegundos.
-        latencia_ms: u64,
+        latency_ms: u64,
     },
     /// Operação cancelada por sinal do usuário (Ctrl+C ou SIGTERM).
-    OperacaoCancelada,
+    OperationCancelled,
     // SCP (GAP-SSH-SCP-020)
     /// Upload SCP concluído.
-    ScpUploadConcluido {
+    ScpUploadCompleted {
         /// Bytes transferidos.
         bytes: u64,
         /// Duração em milissegundos.
         ms: u64,
     },
     /// Download SCP concluído.
-    ScpDownloadConcluido {
+    ScpDownloadCompleted {
         /// Bytes transferidos.
         bytes: u64,
         /// Duração em milissegundos.
         ms: u64,
     },
     /// Upload recusado: path local é diretório (file-only, sem -r).
-    ScpUploadSomenteArquivo,
+    ScpUploadFileOnly,
     /// Download recusado: path local já é diretório.
-    ScpDownloadLocalNaoDiretorio,
+    ScpDownloadLocalNotDirectory,
 }
 
-impl Mensagem {
+impl Message {
     /// Retorna a string da mensagem no idioma especificado.
     ///
-    /// Método determinístico para uso em testes — não depende de estado global.
-    pub fn texto(&self, idioma: Idioma) -> String {
+    /// Método determinístico para uso em tests — não depende de estado global.
+    pub fn text(&self, idioma: Language) -> String {
         match idioma {
-            Idioma::English => en(self),
-            Idioma::Portugues => pt(self),
+            Language::English => en(self),
+            Language::Portuguese => pt(self),
         }
     }
 }
 
 /// Inicializa o sistema de i18n detectando o locale do SO.
 ///
-/// Se `forcar` for `Some(...)`, esse idioma sobrescreve a detecção automática.
-pub fn inicializar_idioma(forcar: Option<&str>) -> Result<()> {
-    let idioma = crate::locale::resolver_idioma(forcar);
-    crate::locale::definir_idioma(idioma);
+/// Se `force_lang` for `Some(...)`, esse idioma sobrescreve a detecção automática.
+pub fn initialize_language(force_lang: Option<&str>) -> Result<()> {
+    let idioma = crate::locale::resolve_language(force_lang);
+    crate::locale::set_language(idioma);
     Ok(())
 }
 
 /// Retorna o idioma atualmente configurado.
 #[must_use]
-pub fn idioma_atual() -> Idioma {
-    crate::locale::idioma_atual()
+pub fn current_language() -> Language {
+    crate::locale::current_language()
 }
 
 /// Retorna a string da mensagem no idioma global atual.
 ///
-/// Usa o estado global inicializado por `inicializar_idioma`.
-/// Em testes, prefira `Mensagem::texto(idioma)` para determinismo.
+/// Usa o estado global inicializado por `initialize_language`.
+/// Em tests, prefira `Message::texto(idioma)` para determinismo.
 ///
 /// # Examples
 ///
 /// ```
-/// use ssh_cli::i18n::{t, inicializar_idioma, Mensagem};
+/// use ssh_cli::i18n::{t, initialize_language, Message};
 ///
-/// inicializar_idioma(Some("en-US")).unwrap();
-/// let texto = t(Mensagem::VpsRegistroVazio);
+/// initialize_language(Some("en-US")).unwrap();
+/// let texto = t(Message::VpsRegistryEmpty);
 /// assert!(!texto.is_empty());
 /// ```
 #[must_use]
-pub fn t(msg: Mensagem) -> String {
-    msg.texto(idioma_atual())
+pub fn t(msg: Message) -> String {
+    msg.text(current_language())
 }
 
 /// Traduções para inglês americano.
-fn en(msg: &Mensagem) -> String {
+fn en(msg: &Message) -> String {
     match msg {
-        Mensagem::VpsRegistroVazio => "No VPS registered.".to_string(),
-        Mensagem::VpsListaTitulo => "Registered VPS:".to_string(),
-        Mensagem::VpsAdicionada { nome } => format!("VPS '{nome}' added successfully."),
-        Mensagem::VpsRemovida { nome } => format!("VPS '{nome}' removed successfully."),
-        Mensagem::VpsDuplicada { nome } => format!("VPS '{nome}' is already registered."),
-        Mensagem::VpsNaoEncontrada { nome } => format!("VPS '{nome}' not found."),
-        Mensagem::VpsAtivaSelecionada { nome } => format!("Active VPS: '{nome}'."),
-        Mensagem::ConfigCaminhoLabel => "Configuration file:".to_string(),
-        Mensagem::ConfigCaminho { caminho } => caminho.clone(),
-        Mensagem::ConfigSemChaves => "No API keys configured.".to_string(),
-        Mensagem::ErroCarregarConfig => "Failed to load configuration.".to_string(),
-        Mensagem::ErroSalvarConfig => "Failed to save configuration.".to_string(),
-        Mensagem::ErroConexaoSsh => "SSH connection error.".to_string(),
-        Mensagem::ErroComandoFalhou => "Command execution failed.".to_string(),
-        Mensagem::ErroArgumentoInvalido { detalhe } => format!("Invalid argument: {detalhe}"),
-        Mensagem::ErroGenerico { detalhe } => detalhe.clone(),
-        Mensagem::TunnelAtivo {
-            porta_local,
-            host_remoto,
-            porta_remota,
-            vps_nome,
+        Message::VpsRegistryEmpty => "No VPS registered.".to_string(),
+        Message::VpsListTitle => "Registered VPS:".to_string(),
+        Message::VpsAdded { name } => format!("VPS '{name}' added successfully."),
+        Message::VpsRemoved { name } => format!("VPS '{name}' removed successfully."),
+        Message::VpsDuplicate { name } => format!("VPS '{name}' is already registered."),
+        Message::VpsNotFound { name } => format!("VPS '{name}' not found."),
+        Message::VpsActiveSelected { name } => format!("Active VPS: '{name}'."),
+        Message::ConfigPathLabel => "Configuration file:".to_string(),
+        Message::ConfigPath { path } => path.clone(),
+        Message::ConfigNoKeys => "No API keys configured.".to_string(),
+        Message::ErrorLoadConfig => "Failed to load configuration.".to_string(),
+        Message::ErrorSaveConfig => "Failed to save configuration.".to_string(),
+        Message::ErrorSshConnection => "SSH connection error.".to_string(),
+        Message::ErrorCommandFailed => "Command execution failed.".to_string(),
+        Message::ErrorInvalidArgument { detail } => format!("Invalid argument: {detail}"),
+        Message::ErrorGeneric { detail } => detail.clone(),
+        Message::VpsEdited { name } => format!("VPS '{name}' edited."),
+        Message::ExportCompleted { path } => format!("exported to {path}"),
+        Message::ImportCompleted => "import completed".to_string(),
+        Message::PrimaryKeyReady { source, key_file } => {
+            format!("primary-key ready (source={source}; key_file={key_file})")
+        }
+        Message::ReencryptCompleted { hosts } => {
+            format!("re-encrypt completed for {hosts} host(s)")
+        }
+        Message::Success { detail } => detail.clone(),
+        Message::TunnelActive {
+            local_port,
+            remote_host,
+            remote_port,
+            vps_name,
         } => format!(
-            "SSH tunnel active: localhost:{porta_local} -> {host_remoto}:{porta_remota} via {vps_nome}"
+            "SSH tunnel active: localhost:{local_port} -> {remote_host}:{remote_port} via {vps_name}"
         ),
-        Mensagem::TunnelPressioneCtrlC => "Press Ctrl+C to terminate.".to_string(),
-        Mensagem::HealthCheckOk { nome } => format!("Health check passed for '{nome}'."),
-        Mensagem::HealthCheckSemVps => {
+        Message::TunnelPressCtrlC => "Press Ctrl+C to terminate.".to_string(),
+        Message::HealthCheckOk { name } => format!("Health check passed for '{name}'."),
+        Message::HealthCheckNoVps => {
             "No active VPS. Use 'ssh-cli connect <NAME>' first.".to_string()
         }
-        Mensagem::HealthCheckFalhou { nome, detalhe } => {
-            format!("Health check FAILED for '{nome}': {detalhe}")
+        Message::HealthCheckFailed { name, detail } => {
+            format!("Health check FAILED for '{name}': {detail}")
         }
-        Mensagem::HealthCheckLatencia { nome, latencia_ms } => {
-            format!("Health check OK for '{nome}' ({latencia_ms}ms)")
+        Message::HealthCheckLatency { name, latency_ms } => {
+            format!("Health check OK for '{name}' ({latency_ms}ms)")
         }
-        Mensagem::OperacaoCancelada => "Operation cancelled by user.".to_string(),
-        Mensagem::ScpUploadConcluido { bytes, ms } => {
+        Message::OperationCancelled => "Operation cancelled by user.".to_string(),
+        Message::ScpUploadCompleted { bytes, ms } => {
             format!("Upload completed: {bytes} bytes in {ms}ms")
         }
-        Mensagem::ScpDownloadConcluido { bytes, ms } => {
+        Message::ScpDownloadCompleted { bytes, ms } => {
             format!("Download completed: {bytes} bytes in {ms}ms")
         }
-        Mensagem::ScpUploadSomenteArquivo => {
+        Message::ScpUploadFileOnly => {
             "upload only supports regular files (no directories / no -r)".to_string()
         }
-        Mensagem::ScpDownloadLocalNaoDiretorio => {
+        Message::ScpDownloadLocalNotDirectory => {
             "download local path must be a file path, not an existing directory".to_string()
         }
     }
 }
 
 /// Traduções para português brasileiro.
-fn pt(msg: &Mensagem) -> String {
+fn pt(msg: &Message) -> String {
     match msg {
-        Mensagem::VpsRegistroVazio => "Nenhum VPS cadastrado.".to_string(),
-        Mensagem::VpsListaTitulo => "VPS cadastrados:".to_string(),
-        Mensagem::VpsAdicionada { nome } => format!("VPS '{nome}' adicionada com sucesso."),
-        Mensagem::VpsRemovida { nome } => format!("VPS '{nome}' removida com sucesso."),
-        Mensagem::VpsDuplicada { nome } => format!("VPS '{nome}' já está cadastrada."),
-        Mensagem::VpsNaoEncontrada { nome } => format!("VPS '{nome}' não encontrada."),
-        Mensagem::VpsAtivaSelecionada { nome } => format!("VPS ativa: '{nome}'."),
-        Mensagem::ConfigCaminhoLabel => "Arquivo de configuração:".to_string(),
-        Mensagem::ConfigCaminho { caminho } => caminho.clone(),
-        Mensagem::ConfigSemChaves => "Nenhuma chave de API configurada.".to_string(),
-        Mensagem::ErroCarregarConfig => "Falha ao carregar configuração.".to_string(),
-        Mensagem::ErroSalvarConfig => "Falha ao salvar configuração.".to_string(),
-        Mensagem::ErroConexaoSsh => "Erro de conexão SSH.".to_string(),
-        Mensagem::ErroComandoFalhou => "Falha na execução do comando.".to_string(),
-        Mensagem::ErroArgumentoInvalido { detalhe } => format!("Argumento inválido: {detalhe}"),
-        Mensagem::ErroGenerico { detalhe } => detalhe.clone(),
-        Mensagem::TunnelAtivo {
-            porta_local,
-            host_remoto,
-            porta_remota,
-            vps_nome,
+        Message::VpsRegistryEmpty => "Nenhum VPS cadastrado.".to_string(),
+        Message::VpsListTitle => "VPS cadastrados:".to_string(),
+        Message::VpsAdded { name } => format!("VPS '{name}' adicionada com sucesso."),
+        Message::VpsRemoved { name } => format!("VPS '{name}' removida com sucesso."),
+        Message::VpsDuplicate { name } => format!("VPS '{name}' já está cadastrada."),
+        Message::VpsNotFound { name } => format!("VPS '{name}' não encontrada."),
+        Message::VpsActiveSelected { name } => format!("VPS ativa: '{name}'."),
+        Message::ConfigPathLabel => "Arquivo de configuração:".to_string(),
+        Message::ConfigPath { path } => path.clone(),
+        Message::ConfigNoKeys => "Nenhuma chave de API configurada.".to_string(),
+        Message::ErrorLoadConfig => "Falha ao carregar configuração.".to_string(),
+        Message::ErrorSaveConfig => "Falha ao salvar configuração.".to_string(),
+        Message::ErrorSshConnection => "Erro de conexão SSH.".to_string(),
+        Message::ErrorCommandFailed => "Falha na execução do comando.".to_string(),
+        Message::ErrorInvalidArgument { detail } => format!("Argumento inválido: {detail}"),
+        Message::ErrorGeneric { detail } => detail.clone(),
+        Message::VpsEdited { name } => format!("VPS '{name}' editada."),
+        Message::ExportCompleted { path } => format!("exportado para {path}"),
+        Message::ImportCompleted => "importação concluída".to_string(),
+        Message::PrimaryKeyReady { source, key_file } => {
+            format!("primary-key pronta (source={source}; key_file={key_file})")
+        }
+        Message::ReencryptCompleted { hosts } => {
+            format!("re-cifragem concluída para {hosts} host(s)")
+        }
+        Message::Success { detail } => detail.clone(),
+        Message::TunnelActive {
+            local_port,
+            remote_host,
+            remote_port,
+            vps_name,
         } => format!(
-            "Tunnel SSH: localhost:{porta_local} -> {host_remoto}:{porta_remota} via {vps_nome}"
+            "Tunnel SSH: localhost:{local_port} -> {remote_host}:{remote_port} via {vps_name}"
         ),
-        Mensagem::TunnelPressioneCtrlC => "Pressione Ctrl+C para encerrar.".to_string(),
-        Mensagem::HealthCheckOk { nome } => format!("Health check bem-sucedido para '{nome}'."),
-        Mensagem::HealthCheckSemVps => {
+        Message::TunnelPressCtrlC => "Pressione Ctrl+C para encerrar.".to_string(),
+        Message::HealthCheckOk { name } => format!("Health check bem-sucedido para '{name}'."),
+        Message::HealthCheckNoVps => {
             "Nenhuma VPS ativa. Use 'ssh-cli connect <NOME>' primeiro.".to_string()
         }
-        Mensagem::HealthCheckFalhou { nome, detalhe } => {
-            format!("Health check FALHOU para '{nome}': {detalhe}")
+        Message::HealthCheckFailed { name, detail } => {
+            format!("Health check FALHOU para '{name}': {detail}")
         }
-        Mensagem::HealthCheckLatencia { nome, latencia_ms } => {
-            format!("Health check OK para '{nome}' ({latencia_ms}ms)")
+        Message::HealthCheckLatency { name, latency_ms } => {
+            format!("Health check OK para '{name}' ({latency_ms}ms)")
         }
-        Mensagem::OperacaoCancelada => "Operação cancelada pelo usuário.".to_string(),
-        Mensagem::ScpUploadConcluido { bytes, ms } => {
+        Message::OperationCancelled => "Operação cancelada pelo usuário.".to_string(),
+        Message::ScpUploadCompleted { bytes, ms } => {
             format!("Upload concluído: {bytes} bytes em {ms}ms")
         }
-        Mensagem::ScpDownloadConcluido { bytes, ms } => {
+        Message::ScpDownloadCompleted { bytes, ms } => {
             format!("Download concluído: {bytes} bytes em {ms}ms")
         }
-        Mensagem::ScpUploadSomenteArquivo => {
+        Message::ScpUploadFileOnly => {
             "upload só suporta arquivos regulares (sem diretórios / sem -r)".to_string()
         }
-        Mensagem::ScpDownloadLocalNaoDiretorio => {
+        Message::ScpDownloadLocalNotDirectory => {
             "caminho local de download deve ser arquivo, não diretório existente".to_string()
         }
     }
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
     #[test]
     fn idioma_enum_e_copy() {
-        let a = Idioma::English;
+        let a = Language::English;
         let b = a;
         assert_eq!(a, b);
     }
 
     #[test]
     fn mensagem_nao_e_copy_mas_e_clone() {
-        let m = Mensagem::VpsAdicionada {
-            nome: "vps-01".to_string(),
+        let m = Message::VpsAdded {
+            name: "vps-01".to_string(),
         };
         let m2 = m.clone();
         assert_eq!(m, m2);
@@ -325,7 +375,7 @@ mod testes {
     #[test]
     fn vps_registro_vazio_en() {
         assert_eq!(
-            Mensagem::VpsRegistroVazio.texto(Idioma::English),
+            Message::VpsRegistryEmpty.text(Language::English),
             "No VPS registered."
         );
     }
@@ -333,69 +383,69 @@ mod testes {
     #[test]
     fn vps_registro_vazio_pt() {
         assert_eq!(
-            Mensagem::VpsRegistroVazio.texto(Idioma::Portugues),
+            Message::VpsRegistryEmpty.text(Language::Portuguese),
             "Nenhum VPS cadastrado."
         );
     }
 
     #[test]
     fn vps_adicionada_inclui_nome_en() {
-        let msg = Mensagem::VpsAdicionada {
-            nome: "prod-01".to_string(),
+        let msg = Message::VpsAdded {
+            name: "prod-01".to_string(),
         };
         assert_eq!(
-            msg.texto(Idioma::English),
+            msg.text(Language::English),
             "VPS 'prod-01' added successfully."
         );
     }
 
     #[test]
     fn vps_adicionada_inclui_nome_pt() {
-        let msg = Mensagem::VpsAdicionada {
-            nome: "prod-01".to_string(),
+        let msg = Message::VpsAdded {
+            name: "prod-01".to_string(),
         };
         assert_eq!(
-            msg.texto(Idioma::Portugues),
+            msg.text(Language::Portuguese),
             "VPS 'prod-01' adicionada com sucesso."
         );
     }
 
     #[test]
     fn vps_removida_inclui_nome() {
-        let msg = Mensagem::VpsRemovida {
-            nome: "dev-01".to_string(),
+        let msg = Message::VpsRemoved {
+            name: "dev-01".to_string(),
         };
-        assert!(msg.texto(Idioma::English).contains("dev-01"));
-        assert!(msg.texto(Idioma::Portugues).contains("dev-01"));
+        assert!(msg.text(Language::English).contains("dev-01"));
+        assert!(msg.text(Language::Portuguese).contains("dev-01"));
     }
 
     #[test]
     fn vps_duplicada_inclui_nome() {
-        let msg = Mensagem::VpsDuplicada {
-            nome: "staging".to_string(),
+        let msg = Message::VpsDuplicate {
+            name: "staging".to_string(),
         };
-        assert!(msg.texto(Idioma::English).contains("staging"));
-        assert!(msg.texto(Idioma::Portugues).contains("staging"));
+        assert!(msg.text(Language::English).contains("staging"));
+        assert!(msg.text(Language::Portuguese).contains("staging"));
     }
 
     #[test]
     fn vps_nao_encontrada_inclui_nome() {
-        let msg = Mensagem::VpsNaoEncontrada {
-            nome: "inexistente".to_string(),
+        let msg = Message::VpsNotFound {
+            name: "inexistente".to_string(),
         };
-        assert!(msg.texto(Idioma::English).contains("inexistente"));
-        assert!(msg.texto(Idioma::Portugues).contains("inexistente"));
+        assert!(msg.text(Language::English).contains("inexistente"));
+        assert!(msg.text(Language::Portuguese).contains("inexistente"));
     }
 
     #[test]
     fn tunnel_ativo_inclui_todos_os_campos() {
-        let msg = Mensagem::TunnelAtivo {
-            porta_local: 8080,
-            host_remoto: "1.2.3.4".to_string(),
-            porta_remota: 22,
-            vps_nome: "meu-servidor".to_string(),
+        let msg = Message::TunnelActive {
+            local_port: 8080,
+            remote_host: "1.2.3.4".to_string(),
+            remote_port: 22,
+            vps_name: "meu-servidor".to_string(),
         };
-        let en = msg.texto(Idioma::English);
+        let en = msg.text(Language::English);
         assert!(en.contains("8080"));
         assert!(en.contains("1.2.3.4"));
         assert!(en.contains("22"));
@@ -404,43 +454,43 @@ mod testes {
 
     #[test]
     fn erro_argumento_invalido_inclui_detalhe() {
-        let msg = Mensagem::ErroArgumentoInvalido {
-            detalhe: "porta fora do intervalo".to_string(),
+        let msg = Message::ErrorInvalidArgument {
+            detail: "porta fora do intervalo".to_string(),
         };
         assert!(msg
-            .texto(Idioma::English)
+            .text(Language::English)
             .contains("porta fora do intervalo"));
         assert!(msg
-            .texto(Idioma::Portugues)
+            .text(Language::Portuguese)
             .contains("porta fora do intervalo"));
     }
 
     #[test]
     fn health_check_ok_inclui_nome() {
-        let msg = Mensagem::HealthCheckOk {
-            nome: "prod-01".to_string(),
+        let msg = Message::HealthCheckOk {
+            name: "prod-01".to_string(),
         };
-        assert!(msg.texto(Idioma::English).contains("prod-01"));
-        assert!(msg.texto(Idioma::Portugues).contains("prod-01"));
+        assert!(msg.text(Language::English).contains("prod-01"));
+        assert!(msg.text(Language::Portuguese).contains("prod-01"));
     }
 
     #[test]
     fn todas_variantes_unitarias_en_nao_vazias() {
         let unitarias = [
-            Mensagem::VpsRegistroVazio,
-            Mensagem::VpsListaTitulo,
-            Mensagem::ConfigCaminhoLabel,
-            Mensagem::ConfigSemChaves,
-            Mensagem::ErroCarregarConfig,
-            Mensagem::ErroSalvarConfig,
-            Mensagem::ErroConexaoSsh,
-            Mensagem::ErroComandoFalhou,
-            Mensagem::TunnelPressioneCtrlC,
-            Mensagem::HealthCheckSemVps,
-            Mensagem::OperacaoCancelada,
+            Message::VpsRegistryEmpty,
+            Message::VpsListTitle,
+            Message::ConfigPathLabel,
+            Message::ConfigNoKeys,
+            Message::ErrorLoadConfig,
+            Message::ErrorSaveConfig,
+            Message::ErrorSshConnection,
+            Message::ErrorCommandFailed,
+            Message::TunnelPressCtrlC,
+            Message::HealthCheckNoVps,
+            Message::OperationCancelled,
         ];
         for v in &unitarias {
-            let texto = v.texto(Idioma::English);
+            let texto = v.text(Language::English);
             assert!(!texto.is_empty(), "EN vazia para {:?}", v);
         }
     }
@@ -448,20 +498,20 @@ mod testes {
     #[test]
     fn todas_variantes_unitarias_pt_nao_vazias() {
         let unitarias = [
-            Mensagem::VpsRegistroVazio,
-            Mensagem::VpsListaTitulo,
-            Mensagem::ConfigCaminhoLabel,
-            Mensagem::ConfigSemChaves,
-            Mensagem::ErroCarregarConfig,
-            Mensagem::ErroSalvarConfig,
-            Mensagem::ErroConexaoSsh,
-            Mensagem::ErroComandoFalhou,
-            Mensagem::TunnelPressioneCtrlC,
-            Mensagem::HealthCheckSemVps,
-            Mensagem::OperacaoCancelada,
+            Message::VpsRegistryEmpty,
+            Message::VpsListTitle,
+            Message::ConfigPathLabel,
+            Message::ConfigNoKeys,
+            Message::ErrorLoadConfig,
+            Message::ErrorSaveConfig,
+            Message::ErrorSshConnection,
+            Message::ErrorCommandFailed,
+            Message::TunnelPressCtrlC,
+            Message::HealthCheckNoVps,
+            Message::OperationCancelled,
         ];
         for v in &unitarias {
-            let texto = v.texto(Idioma::Portugues);
+            let texto = v.text(Language::Portuguese);
             assert!(!texto.is_empty(), "PT vazia para {:?}", v);
         }
     }
@@ -469,57 +519,57 @@ mod testes {
     #[test]
     fn traducoes_pt_diferentes_de_en_para_unitarias() {
         let pares = [
-            (Mensagem::VpsRegistroVazio, Mensagem::VpsRegistroVazio),
-            (Mensagem::ErroConexaoSsh, Mensagem::ErroConexaoSsh),
-            (Mensagem::HealthCheckSemVps, Mensagem::HealthCheckSemVps),
-            (Mensagem::OperacaoCancelada, Mensagem::OperacaoCancelada),
+            (Message::VpsRegistryEmpty, Message::VpsRegistryEmpty),
+            (Message::ErrorSshConnection, Message::ErrorSshConnection),
+            (Message::HealthCheckNoVps, Message::HealthCheckNoVps),
+            (Message::OperationCancelled, Message::OperationCancelled),
         ];
         for (a, b) in &pares {
-            let en = a.texto(Idioma::English);
-            let pt = b.texto(Idioma::Portugues);
+            let en = a.text(Language::English);
+            let pt = b.text(Language::Portuguese);
             assert_ne!(en, pt, "EN == PT para {:?}", a);
         }
     }
 
     #[test]
     fn health_check_falhou_inclui_nome_e_detalhe() {
-        let msg = Mensagem::HealthCheckFalhou {
-            nome: "prod-01".to_string(),
-            detalhe: "timeout".to_string(),
+        let msg = Message::HealthCheckFailed {
+            name: "prod-01".to_string(),
+            detail: "timeout".to_string(),
         };
-        assert!(msg.texto(Idioma::English).contains("prod-01"));
-        assert!(msg.texto(Idioma::English).contains("timeout"));
-        assert!(msg.texto(Idioma::Portugues).contains("prod-01"));
-        assert!(msg.texto(Idioma::Portugues).contains("timeout"));
+        assert!(msg.text(Language::English).contains("prod-01"));
+        assert!(msg.text(Language::English).contains("timeout"));
+        assert!(msg.text(Language::Portuguese).contains("prod-01"));
+        assert!(msg.text(Language::Portuguese).contains("timeout"));
     }
 
     #[test]
     fn health_check_latencia_inclui_nome_e_ms() {
-        let msg = Mensagem::HealthCheckLatencia {
-            nome: "relay-01".to_string(),
-            latencia_ms: 42,
+        let msg = Message::HealthCheckLatency {
+            name: "relay-01".to_string(),
+            latency_ms: 42,
         };
-        assert!(msg.texto(Idioma::English).contains("relay-01"));
-        assert!(msg.texto(Idioma::English).contains("42"));
-        assert!(msg.texto(Idioma::Portugues).contains("relay-01"));
-        assert!(msg.texto(Idioma::Portugues).contains("42"));
+        assert!(msg.text(Language::English).contains("relay-01"));
+        assert!(msg.text(Language::English).contains("42"));
+        assert!(msg.text(Language::Portuguese).contains("relay-01"));
+        assert!(msg.text(Language::Portuguese).contains("42"));
     }
 
     #[test]
     fn inicializar_idioma_sem_forcar_nao_panic() {
-        let resultado = inicializar_idioma(None);
+        let resultado = initialize_language(None);
         assert!(resultado.is_ok());
     }
 
     #[test]
     fn inicializar_idioma_com_pt_br_funciona() {
-        let resultado = inicializar_idioma(Some("pt-BR"));
+        let resultado = initialize_language(Some("pt-BR"));
         assert!(resultado.is_ok());
     }
 
     #[test]
     fn idioma_atual_retorna_valor_valido() {
-        let idioma = idioma_atual();
-        assert!(idioma == Idioma::English || idioma == Idioma::Portugues);
+        let idioma = current_language();
+        assert!(idioma == Language::English || idioma == Language::Portuguese);
     }
 }

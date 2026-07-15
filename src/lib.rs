@@ -1,39 +1,44 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! # ssh-cli
 //!
-//! CLI Rust full-stack que dá a uma LLM (Claude Code, Cursor, Windsurf) a capacidade
-//! de operar servidores remotos via SSH em um fluxo de subprocesso via stdin/stdout.
+//! Full-stack Rust CLI that gives an LLM (Claude Code, Cursor, Windsurf) the ability
+//! to operate remote servers over SSH in a subprocess flow via stdin/stdout.
 //!
-//! ## Módulos
+//! ## Modules
 //!
-//! | Módulo          | Responsabilidade                                              |
+//! | Module          | Responsibility                                                |
 //! |-----------------|---------------------------------------------------------------|
-//! | `cli`           | Definição de argumentos via `clap` derive e dispatcher        |
-//! | `vps`           | CRUD e persistência de registros de VPS (XDG + TOML + 0o600)  |
-//! | `secrets`       | Master-key e cifragem at-rest default (ChaCha20-Poly1305)      |
-//! | `ssh`           | Cliente SSH one-shot real via `russh` (auth senha/chave, TOFU) |
-//! | `i18n`          | Internacionalização com enum `Mensagem` bilíngue              |
-//! | `locale`        | Detecção e resolução de locale do sistema operacional         |
-//! | `platform`      | Ajustes de plataforma (UTF-8 Windows, detecção TTY)           |
-//! | `mascaramento`  | Mascaramento Unicode-safe de valores sensíveis                |
-//! | `erros`         | Tipos de erro estruturados via `thiserror`                    |
-//! | `output`        | Único módulo autorizado a `println!` (formatação CRUD)        |
-//! | `paths`         | Validação e normalização de caminhos (anti-traversal, NFC)    |
-//! | `signals`       | Handler de Ctrl+C com flag de cancelamento via `AtomicBool`   |
-//! | `terminal`      | Detecção de TTY e escolha de cor via `termcolor`              |
+//! | `cli`           | Clap derive argument definitions and dispatcher               |
+//! | `vps`           | CRUD and persistence of VPS records (XDG + TOML + 0o600)      |
+//! | `secrets`       | Primary key and default at-rest encryption (ChaCha20-Poly1305)|
+//! | `ssh`           | Real one-shot SSH client via `russh` (password/key, TOFU)     |
+//! | `i18n`          | Internationalization with bilingual `Message` enum            |
+//! | `locale`        | OS locale detection and resolution                            |
+//! | `platform`      | Platform adjustments (Windows UTF-8, TTY detection)           |
+//! | `masking`       | Unicode-safe masking of sensitive values                      |
+//! | `errors`        | Structured error types via `thiserror`                        |
+//! | `output`        | Sole module authorized for `println!` (CRUD formatting)       |
+//! | `paths`         | Path validation and normalization (anti-traversal, NFC)       |
+//! | `signals`       | Ctrl+C handler with cancellation flag via `AtomicBool`        |
+//! | `terminal`      | TTY detection and color choice via `termcolor`                |
 //!
 //! ## Entry point
 //!
-//! A função pública [`run`] é o ponto de entrada chamado por `main.rs`.
+//! The public [`run`] function is the entry point called by `main.rs`.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
+#![warn(clippy::undocumented_unsafe_blocks)]
+#![warn(clippy::multiple_unsafe_ops_per_block)]
+#![warn(unsafe_op_in_unsafe_fn)]
 
 pub mod cli;
+pub mod errors;
 pub mod erros;
 pub mod i18n;
 pub mod locale;
-pub mod mascaramento;
+pub mod masking;
 pub mod output;
 pub mod paths;
 pub mod platform;
@@ -47,28 +52,28 @@ pub mod vps;
 
 use anyhow::Result;
 
-/// Executa o ssh-cli a partir dos argumentos da linha de comando.
+/// Runs ssh-cli from the command-line arguments.
 ///
-/// Esta é a função pública chamada por `main.rs`. Ela:
-/// 1. Registra o handler de Ctrl+C para cancelamento gracioso.
-/// 2. Inicializa a plataforma (codepage Windows UTF-8, detecção de TTY).
-/// 3. Faz parsing dos argumentos via clap.
-/// 4. Inicializa logs via `tracing-subscriber`.
-/// 5. Inicializa configuração de cor do terminal.
-/// 6. Inicializa i18n com o idioma detectado.
-/// 7. Despacha para o subcomando apropriado (`vps`, `connect`, `exec`, `sudo-exec`, `scp`, `tunnel`).
+/// Entry point called by `main.rs`. It:
+/// 1. Registers the Ctrl+C handler for graceful cancellation.
+/// 2. Initializes the platform (Windows UTF-8 code page, TTY detection).
+/// 3. Parses arguments via clap.
+/// 4. Initializes logging via `tracing-subscriber`.
+/// 5. Initializes terminal color configuration.
+/// 6. Initializes i18n with the detected language.
+/// 7. Dispatches to the appropriate subcommand (`vps`, `connect`, `exec`, `sudo-exec`, `scp`, `tunnel`).
 pub async fn run() -> Result<()> {
-    signals::registrar_handler()?;
+    signals::register_handler()?;
 
-    platform::inicializar_plataforma()?;
+    platform::initialize_platform()?;
 
     let argumentos = cli::parse_args();
 
-    cli::inicializar_logs(&argumentos);
+    cli::initialize_logs(&argumentos);
 
-    terminal::inicializar(argumentos.no_color)?;
+    terminal::initialize(argumentos.no_color)?;
 
-    i18n::inicializar_idioma(argumentos.lang.as_deref())?;
+    i18n::initialize_language(argumentos.lang.as_deref())?;
 
-    cli::executar(argumentos).await
+    cli::dispatch(argumentos).await
 }

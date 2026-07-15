@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Testes E2E da CLI via `assert_cmd`.
 //!
-//! TODOS os testes usam `--config-dir <TempDir>` para isolar completamente o
+//! TODOS os tests usam `--config-dir <TempDir>` para isolar completamente o
 //! estado do sistema real. Testes que escrevem/leem env vars são marcados
 //! com `#[serial]`.
 
