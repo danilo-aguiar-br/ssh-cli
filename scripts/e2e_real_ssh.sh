@@ -258,6 +258,46 @@ else
   fail E13
 fi
 
+# E14: SCP-023 preserve mode+mtime on upload AND download (OpenSSH -p / linha T)
+PRESERVE_LOCAL="$TMP/preserve-src.bin"
+PRESERVE_REMOTE="/tmp/ssh-cli-e2e-preserve-$$.bin"
+PRESERVE_DOWN="$TMP/preserve-down.bin"
+printf 'preserve-payload\n' >"$PRESERVE_LOCAL"
+chmod 600 "$PRESERVE_LOCAL"
+# Epoch seconds (portable): avoid TZ ambiguity of touch -d strings
+python3 - "$PRESERVE_LOCAL" <<'PY' || true
+import os, sys, time
+path = sys.argv[1]
+epoch = 1_579_089_600  # 2020-01-15 12:00:00 UTC
+os.utime(path, (epoch, epoch))
+PY
+LOCAL_MODE="$(stat -c '%a' "$PRESERVE_LOCAL" 2>/dev/null || stat -f '%OLp' "$PRESERVE_LOCAL")"
+LOCAL_MTIME="$(stat -c '%Y' "$PRESERVE_LOCAL" 2>/dev/null || stat -f '%m' "$PRESERVE_LOCAL")"
+if cli scp upload e2e --timeout 60000 "$PRESERVE_LOCAL" "$PRESERVE_REMOTE" >/dev/null 2>&1 \
+  && cli scp download e2e --timeout 60000 "$PRESERVE_REMOTE" "$PRESERVE_DOWN" >/dev/null 2>&1; then
+  # Non-TTY default is JSON envelope — extract stdout field (text format has banners).
+  REMOTE_JSON="$(cli exec e2e --json --timeout 30000 "stat -c '%a %Y' $(printf '%q' "$PRESERVE_REMOTE")" 2>/dev/null || true)"
+  REMOTE_LINE="$(printf '%s' "$REMOTE_JSON" | python3 -c 'import sys,json
+try:
+  d=json.load(sys.stdin)
+  print((d.get("stdout") or "").strip().splitlines()[0] if (d.get("stdout") or "").strip() else "")
+except Exception:
+  print("")' 2>/dev/null || true)"
+  REMOTE_MODE="$(printf '%s\n' "$REMOTE_LINE" | awk '{print $1}')"
+  REMOTE_MTIME="$(printf '%s\n' "$REMOTE_LINE" | awk '{print $2}')"
+  DOWN_MODE="$(stat -c '%a' "$PRESERVE_DOWN" 2>/dev/null || stat -f '%OLp' "$PRESERVE_DOWN")"
+  DOWN_MTIME="$(stat -c '%Y' "$PRESERVE_DOWN" 2>/dev/null || stat -f '%m' "$PRESERVE_DOWN")"
+  if [[ "$REMOTE_MODE" == "$LOCAL_MODE" && "$REMOTE_MTIME" == "$LOCAL_MTIME" \
+    && "$DOWN_MODE" == "$LOCAL_MODE" && "$DOWN_MTIME" == "$LOCAL_MTIME" ]]; then
+    pass E14
+  else
+    fail E14
+  fi
+else
+  fail E14
+fi
+cli exec e2e --json "rm -f $(printf '%q' "$PRESERVE_REMOTE")" >/dev/null 2>&1 || true
+
 # Best-effort remote cleanup (never print paths with secrets)
 cli exec e2e "rm -f $(printf '%q' "$REMOTE_SCP") $(printf '%q' "$REMOTE_SPACE") $(printf '%q' "${REMOTE_SCP}.1m")" >/dev/null 2>&1 || true
 

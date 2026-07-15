@@ -427,7 +427,8 @@ mod real {
         Ok((mtime, atime))
     }
 
-    fn parse_header_scp(header: &str) -> ResultadoSshCli<u64> {
+    /// Parse do header `C0mmm size name` → `(mode, tamanho)`.
+    fn parse_header_scp(header: &str) -> ResultadoSshCli<(u32, u64)> {
         let header = header.trim_end_matches(['\0', '\r', '\n']).trim();
 
         if !header.starts_with('C') {
@@ -445,9 +446,22 @@ mod real {
             )));
         }
 
-        partes[1].parse().map_err(|_| {
+        // Campo mode: `C0644` (prefixo `C` + 4 dígitos octais).
+        let mode_token = partes[0];
+        if mode_token.len() < 2 {
+            return Err(ErroSshCli::CanalFalhou(format!(
+                "mode SCP ausente no header: {header}"
+            )));
+        }
+        let mode_oct = &mode_token[1..];
+        let mode: u32 = u32::from_str_radix(mode_oct, 8).map_err(|_| {
+            ErroSshCli::CanalFalhou(format!("mode SCP inválido: {mode_oct}"))
+        })?;
+
+        let tamanho = partes[1].parse().map_err(|_| {
             ErroSshCli::CanalFalhou(format!("tamanho inválido no header: {}", partes[1]))
-        })
+        })?;
+        Ok((mode & 0o7777, tamanho))
     }
 
     /// Mode octal para o header `C` a partir de metadata local.
@@ -503,12 +517,36 @@ mod real {
         }
     }
 
-    /// Monta `scp -t/-f` com path remoto escapado para o shell remoto.
+    /// Monta `scp -t[p]/-f[p]` com path remoto escapado para o shell remoto.
+    ///
+    /// OpenSSH: source (`-f`) só emite linha `T` e mode honesto com **`-p`**.
+    /// Sink (`-t`) com `-p` aplica mode completo (sem mascarar umask sticky).
+    /// Sempre usamos `-p` (SCP-023 bi-direcional).
     fn comando_scp_remoto(modo: &str, remote: &std::path::Path) -> String {
         let path = crate::ssh::packing::escapar_shell_single_quotes(&remote.display().to_string());
-        // Sem `-p`: preservaria mtime e exigiria linha `T` no protocolo.
-        // Path já está em single-quotes (sem `--` para máxima compatibilidade OpenSSH).
-        format!("scp {modo} {path}")
+        // `modo` esperado: `-t` ou `-f` (sem `-p`); anexamos `p` explicitamente.
+        let modo_p = if modo.contains('p') {
+            modo.to_string()
+        } else {
+            format!("{modo}p")
+        };
+        // Path em single-quotes (sem `--` para máxima compatibilidade OpenSSH scp legado).
+        format!("scp {modo_p} {path}")
+    }
+
+    /// Aplica mode POSIX do header `C` no arquivo local (best-effort no Unix).
+    fn aplicar_mode_local(path: &std::path::Path, mode: u32) -> ResultadoSshCli<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(mode & 0o7777);
+            std::fs::set_permissions(path, perms).map_err(ErroSshCli::Io)?;
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (path, mode);
+        }
+        Ok(())
     }
 
     /// Lê o próximo `ChannelMsg::Data` não vazio do canal SCP.
@@ -1004,7 +1042,7 @@ mod real {
                     }
                     header = String::from_utf8_lossy(&header_bytes).into_owned();
                 }
-                let tamanho = parse_header_scp(&header)?;
+                let (mode_remoto, tamanho) = parse_header_scp(&header)?;
 
                 canal
                     .data([SCP_OK].as_slice())
@@ -1075,7 +1113,17 @@ mod real {
                 }
 
                 std::fs::rename(&partial, local).map_err(ErroSshCli::Io)?;
+                // GraphRAG escrita atômica: fsync do diretório pai após rename (best-effort).
+                if let Some(pai) = local.parent() {
+                    if !pai.as_os_str().is_empty() {
+                        if let Ok(dir) = std::fs::File::open(pai) {
+                            let _ = dir.sync_all();
+                        }
+                    }
+                }
 
+                // SCP-023: mode do header C + mtime/atime da linha T (se o source enviou com -p).
+                aplicar_mode_local(local, mode_remoto)?;
                 if let Some((mtime, atime)) = times {
                     let mtime_st = UNIX_EPOCH + StdDuration::from_secs(mtime);
                     let atime_st = UNIX_EPOCH + StdDuration::from_secs(atime);
@@ -1272,9 +1320,13 @@ mod real {
         }
 
         #[test]
-        fn parse_header_scp_valido_retorna_tamanho() {
-            let tamanho = parse_header_scp("C0644 42 arquivo.txt\n").expect("header válido");
+        fn parse_header_scp_valido_retorna_mode_e_tamanho() {
+            let (mode, tamanho) =
+                parse_header_scp("C0644 42 arquivo.txt\n").expect("header válido");
+            assert_eq!(mode, 0o644);
             assert_eq!(tamanho, 42);
+            let (mode2, _) = parse_header_scp("C0600 1 x\n").expect("600");
+            assert_eq!(mode2, 0o600);
         }
 
         #[test]
@@ -1282,6 +1334,7 @@ mod real {
             assert!(parse_header_scp("ERRO").is_err());
             assert!(parse_header_scp("C0644 sem_tamanho").is_err());
             assert!(parse_header_scp("C0644 abc arquivo").is_err());
+            assert!(parse_header_scp("Czzzz 1 x\n").is_err());
         }
 
         #[test]
@@ -1356,9 +1409,16 @@ mod real {
         }
 
         #[test]
-        fn comando_scp_remoto_escapa_path() {
+        fn comando_scp_remoto_escapa_path_e_usa_p() {
             let cmd = comando_scp_remoto("-t", std::path::Path::new("/tmp/a b.txt"));
-            assert_eq!(cmd, "scp -t '/tmp/a b.txt'");
+            assert_eq!(cmd, "scp -tp '/tmp/a b.txt'");
+            let cmd_f = comando_scp_remoto("-f", std::path::Path::new("/var/log/a.log"));
+            assert_eq!(cmd_f, "scp -fp '/var/log/a.log'");
+            // Idempotente se já contiver p.
+            assert_eq!(
+                comando_scp_remoto("-fp", std::path::Path::new("/x")),
+                "scp -fp '/x'"
+            );
         }
 
         #[test]

@@ -2,6 +2,8 @@
 target/
 Cargo.lock.bak
 *.rs.bk
+# Cópia local acidental do binário release (polui git describe dirty)
+/rust_out
 
 # Logs
 logs/

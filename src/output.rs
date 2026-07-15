@@ -370,6 +370,31 @@ pub fn imprimir_transferencia_json(
     }
 }
 
+/// Evento JSON quando o listener local do tunnel sobe (GAP-SSH-IO-008).
+pub fn imprimir_tunnel_listening_json(
+    vps: &str,
+    local_port: u16,
+    remote_host: &str,
+    remote_port: u16,
+    timeout_ms: u64,
+) {
+    let v = json!({
+        "ok": true,
+        "event": "tunnel_listening",
+        "vps": vps,
+        "local_port": local_port,
+        "remote_host": remote_host,
+        "remote_port": remote_port,
+        "timeout_ms": timeout_ms,
+    });
+    match serde_json::to_string_pretty(&v) {
+        Ok(s) => {
+            let _ = escrever_linha(&s);
+        }
+        Err(e) => eprintln!("erro ao serializar JSON: {e}"),
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

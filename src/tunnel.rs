@@ -21,6 +21,7 @@ pub async fn executar_tunnel(
     key_override: Option<String>,
     timeout_ms: u64,
     replace_host_key: bool,
+    json: bool,
 ) -> Result<()> {
     if timeout_ms == 0 {
         return Err(ErroSshCli::ArgumentoInvalido(
@@ -52,19 +53,31 @@ pub async fn executar_tunnel(
     );
 
     // GAP-SSH-IO-006: banners só em TTY humano; agentes/pipes não poluem stdout.
-    let banner = format!(
-        "Tunnel SSH: localhost:{} -> {}:{} via {} (timeout {}ms)",
-        porta_local, host_remoto, porta_remota, vps_nome, timeout_ms
-    );
-    tracing::info!("{banner}");
-    output::imprimir_banner_humano(&banner);
-    output::imprimir_banner_humano("Pressione Ctrl+C para encerrar antes do deadline.");
+    // GAP-SSH-IO-008: em JSON, zero prosa — evento estruturado após bind.
+    if !json {
+        let banner = format!(
+            "Tunnel SSH: localhost:{} -> {}:{} via {} (timeout {}ms)",
+            porta_local, host_remoto, porta_remota, vps_nome, timeout_ms
+        );
+        tracing::info!("{banner}");
+        output::imprimir_banner_humano(&banner);
+        output::imprimir_banner_humano("Pressione Ctrl+C para encerrar antes do deadline.");
+    }
 
     // GAP-SSH-TUN-001: deadline cobre connect + loop (não só o accept loop).
     let resultado = tokio::time::timeout(Duration::from_millis(timeout_ms), async {
         let cliente: Box<dyn ClienteSshTrait> =
             <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
-        executar_tunnel_with_client(vps_nome, porta_local, host_remoto, porta_remota, cliente).await
+        executar_tunnel_with_client(
+            vps_nome,
+            porta_local,
+            host_remoto,
+            porta_remota,
+            timeout_ms,
+            json,
+            cliente,
+        )
+        .await
     })
     .await;
 
@@ -78,11 +91,14 @@ pub async fn executar_tunnel(
 }
 
 /// Versão testável do loop de tunnel.
+#[allow(clippy::too_many_arguments)]
 pub async fn executar_tunnel_with_client(
     vps_nome: &str,
     porta_local: u16,
     host_remoto: &str,
     porta_remota: u16,
+    timeout_ms: u64,
+    json: bool,
     cliente: Box<dyn ClienteSshTrait>,
 ) -> Result<()> {
     let cliente: std::sync::Arc<dyn ClienteSshTrait> = std::sync::Arc::from(cliente);
@@ -94,6 +110,17 @@ pub async fn executar_tunnel_with_client(
         })?;
 
     tracing::info!(porta = %porta_local, vps = %vps_nome, "listener TCP local iniciado");
+
+    // GAP-SSH-IO-008: agente recebe confirmação estruturada de que o bind local subiu.
+    if json {
+        output::imprimir_tunnel_listening_json(
+            vps_nome,
+            porta_local,
+            host_remoto,
+            porta_remota,
+            timeout_ms,
+        );
+    }
 
     loop {
         if crate::signals::cancelado() || crate::signals::terminado() {

@@ -203,7 +203,48 @@ fn gap_e2e_script_e10_e12() {
     assert!(script.contains("pass E10") || script.contains("PASS E10") || script.contains("E10"));
     assert!(script.contains("E11"));
     assert!(script.contains("E12"));
+    assert!(script.contains("E13"));
+    assert!(
+        script.contains("E14") && script.contains("preserve"),
+        "e2e must cover SCP-023 mode/mtime preserve (E14)"
+    );
     assert!(script.contains("scp upload") || script.contains("scp download"));
+}
+
+#[test]
+fn gap_scp_023_comando_remoto_usa_p() {
+    let src = std::fs::read_to_string(root().join("src/ssh/cliente.rs")).unwrap();
+    assert!(
+        src.contains("modo_p") || src.contains("-tp") || src.contains("format!(\"{modo}p\")"),
+        "remote scp must request -p (OpenSSH source emits T only with -p)"
+    );
+    assert!(
+        src.contains("aplicar_mode_local") || src.contains("set_permissions"),
+        "download must apply remote mode from C-header"
+    );
+}
+
+#[test]
+fn gap_io_008_tunnel_json_flag() {
+    let help = Command::new(env!("CARGO_BIN_EXE_ssh-cli"))
+        .args(["tunnel", "--help"])
+        .output()
+        .expect("tunnel --help");
+    let stdout = String::from_utf8_lossy(&help.stdout);
+    assert!(
+        stdout.contains("--json"),
+        "tunnel must expose --json (GAP-SSH-IO-008): {stdout}"
+    );
+    let src = std::fs::read_to_string(root().join("src/tunnel.rs")).unwrap();
+    assert!(
+        src.contains("imprimir_tunnel_listening_json") || src.contains("tunnel_listening"),
+        "tunnel must emit structured listening JSON"
+    );
+    let out = std::fs::read_to_string(root().join("src/output.rs")).unwrap();
+    assert!(
+        out.contains("imprimir_tunnel_listening_json"),
+        "output must define tunnel listening JSON printer"
+    );
 }
 
 #[test]

@@ -19,10 +19,11 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Upload não carrega o arquivo inteiro em RAM (`fs::read`); stream em chunks de 32 KiB (SCP-018)
 
 ### Adicionado
-- E2E oficial E10–E13 SCP em `scripts/e2e_real_ssh.sh` (upload, download, integridade `cmp`, remoto ausente) (SCP-016)
+- E2E oficial E10–E14 SCP em `scripts/e2e_real_ssh.sh` (upload, download, `cmp`, remoto ausente, preserve mode/mtime) (SCP-016, SCP-023)
 - Paridade de flags scp com exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (SCP-017)
 - JSON estruturado de sucesso SCP + `docs/schemas/scp-transfer.schema.json` (IO-007, SCP-021)
-- Preserve mtime/atime via linha `T`; mode unix no header `C` quando disponível (SCP-023)
+- Preserve mtime/mode bi-direcional: remoto `scp -tp`/`-fp`, linha `T` + parse mode `C`, set_permissions + set_times (SCP-023/023b; e2e E14)
+- `tunnel --json` emite evento estruturado `tunnel_listening` após bind local (IO-008)
 - Mensagens i18n EN/PT de sucesso SCP (SCP-020)
 - Suite `tests/gaps_v040_integration.rs` (TEST-004)
 

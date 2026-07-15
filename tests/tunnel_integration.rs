@@ -31,7 +31,9 @@ fn tunnel_help_exibe_usage() {
         .success()
         .stdout(predicate::str::contains("tunnel"))
         .stdout(predicate::str::contains("VPS_NOME"))
-        .stdout(predicate::str::contains("PORTA_LOCAL"));
+        .stdout(predicate::str::contains("PORTA_LOCAL"))
+        // GAP-SSH-IO-008
+        .stdout(predicate::str::contains("--json"));
 }
 
 #[test]

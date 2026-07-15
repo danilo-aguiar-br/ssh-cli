@@ -230,6 +230,9 @@ pub enum Comando {
         /// Override de chave.
         #[arg(long)]
         key: Option<String>,
+        /// Saída JSON agent-first quando o listener local sobe (GAP-SSH-IO-008).
+        #[arg(long)]
+        json: bool,
     },
 
     /// Verifica conectividade SSH com uma VPS.
@@ -790,7 +793,13 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             timeout_ms,
             password,
             key,
+            json,
         } => {
+            // GAP-SSH-IO-008: --json local ou --format json global.
+            let json_efetivo = json || formato == FormatoSaida::Json;
+            if json_efetivo {
+                crate::output::definir_json_erros(true);
+            }
             crate::tunnel::executar_tunnel(
                 &vps_nome,
                 porta_local,
@@ -801,6 +810,7 @@ pub async fn executar(args: Argumentos) -> Result<()> {
                 key,
                 timeout_ms,
                 replace_host_key,
+                json_efetivo,
             )
             .await
         }
@@ -846,16 +856,19 @@ mod testes {
             "5432",
             "--timeout-ms",
             "5000",
+            "--json",
         ])
         .expect("tunnel");
         match args.comando {
             Comando::Tunnel {
                 timeout_ms,
                 porta_local,
+                json,
                 ..
             } => {
                 assert_eq!(timeout_ms, 5000);
                 assert_eq!(porta_local, 8080);
+                assert!(json);
             }
             _ => panic!("esperado tunnel"),
         }
