@@ -1,4 +1,4 @@
-//! Cliente SSH real via `russh` 0.60.x.
+//! Cliente SSH real via `russh` 0.62.2.
 //!
 //! Conexão one-shot: TCP + handshake + auth (senha e/ou chave) + exec com
 //! timeout, truncagem de saída e abort remoto best-effort.
