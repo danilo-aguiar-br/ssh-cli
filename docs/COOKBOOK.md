@@ -3,7 +3,7 @@
 > Copy executable recipes that solve real multi-host SSH agent problems.
 
 - Read this document in [Portuguese (pt-BR)](COOKBOOK.pt-BR.md).
-- Product line: **0.4.2**.
+- Product line: **0.5.0**.
 
 
 ## Latency Note
@@ -23,7 +23,7 @@
 - Install: `cargo install ssh-cli --locked`
 - Supply chain: russh 0.62.2; `cargo deny` with `yanked=deny`, `multiple-versions=warn`
 - SCP: regular files only (no `-r` / no directories / no SFTP); download partial suffix `.ssh-cli.partial`; success JSON requires `event: "scp-transfer"`
-- SCP wire: require **0.4.2+** (crates.io **0.3.9** advertised SCP but was inoperant)
+- SCP wire: require **0.5.0+** (crates.io **0.3.9** advertised SCP but was inoperant)
 - Redacted export: empty secrets stay `""` (never `sshcli-enc:` blobs)
 - Tunnel post-bind: one-shot deadline exits **0** after `tunnel_listening` (TUN-002); pre-bind timeout remains **74**
 - Tunnel/health auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`
@@ -188,7 +188,7 @@ printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
 ## How To Transfer a Release Artifact (regular file only)
 
 ```bash
-# Require 0.4.2+ — crates.io 0.3.9 SCP wire was broken (0-byte remote / timeout)
+# Require 0.5.0+ — crates.io 0.3.9 SCP wire was broken (0-byte remote / timeout)
 # No directories / no -r / no SFTP
 ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
   --timeout 120000 --json

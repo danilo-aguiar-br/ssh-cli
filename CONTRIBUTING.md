@@ -28,7 +28,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Never bump MSRV without an explicit issue discussion.
 
 ### Dependency pinning
-- Product line **0.4.2** uses **russh 0.62.2** (since 0.3.8) without the older COMPAT RC crypto pins; do not reintroduce dead RC pins without an issue.
+- Product line **0.5.0** uses **russh 0.62.2** (since 0.3.8) without the older COMPAT RC crypto pins; do not reintroduce dead RC pins without an issue.
 - Never run blind `cargo update` on the crypto graph.
 - Run `scripts/verify_install_resolve.sh` after any dependency change.
 

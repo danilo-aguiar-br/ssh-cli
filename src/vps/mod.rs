@@ -51,7 +51,7 @@ pub fn default_config_path() -> SshCliResult<PathBuf> {
     if let Ok(home) = std::env::var("SSH_CLI_HOME") {
         if home.contains("..") {
             return Err(SshCliError::InvalidArgument(
-                "SSH_CLI_HOME não pode conter '..'".to_string(),
+                "SSH_CLI_HOME must not contain '..'".to_string(),
             ));
         }
         return Ok(PathBuf::from(home).join("config.toml"));
@@ -93,6 +93,9 @@ pub fn winning_layer(override_path: Option<PathBuf>) -> SshCliResult<ConfigLayer
 }
 
 /// Loads the configuration file (returns empty if missing).
+///
+/// # Errors
+/// Returns an error if the file cannot be read or TOML/secret decryption fails.
 pub fn load(path: &PathBuf) -> SshCliResult<ConfigFile> {
     if !path.exists() {
         return Ok(ConfigFile {
@@ -137,6 +140,9 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> SshCliResult<()> {
 }
 
 /// Saves the configuration file atomically with flock and 0o600.
+///
+/// # Errors
+/// Returns an error if serialization, atomic write, or permission hardening fails.
 pub fn save(path: &Path, file: &ConfigFile) -> SshCliResult<()> {
     if let Some(parent_dir) = path.parent() {
         std::fs::create_dir_all(parent_dir)?;
@@ -229,18 +235,18 @@ fn validate_key_path_exists_with_passphrase(
     }
 }
 
-/// JSON efetivo a partir de flag local e formato global (IO-001/002).
+/// JSON efetivo a partir de flag local e format global (IO-001/002).
 #[must_use]
-pub fn usar_json(json_local: bool, formato: OutputFormat) -> bool {
-    json_local || formato == OutputFormat::Json
+pub fn use_json(json_local: bool, format: OutputFormat) -> bool {
+    json_local || format == OutputFormat::Json
 }
 
 #[cfg(unix)]
 fn apply_permissions_600(path: &Path) -> SshCliResult<()> {
     use std::os::unix::fs::PermissionsExt;
-    let mut permissoes = std::fs::metadata(path)?.permissions();
-    permissoes.set_mode(0o600);
-    std::fs::set_permissions(path, permissoes)?;
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    permissions.set_mode(0o600);
+    std::fs::set_permissions(path, permissions)?;
     Ok(())
 }
 
@@ -307,7 +313,7 @@ fn validate_command_length(command: &str, max_command_chars: usize) -> SshCliRes
 pub async fn run_vps_command(
     action: VpsAction,
     config_override: Option<PathBuf>,
-    formato: OutputFormat,
+    format: OutputFormat,
 ) -> Result<()> {
     let path = resolve_config_path(config_override.clone())?;
 
@@ -334,14 +340,14 @@ pub async fn run_vps_command(
         } => {
             // GAP-SSH-VAL-001: validate na fronteira de escrita.
             let name = crate::paths::validate_and_normalize(&name)
-                .map_err(|e| SshCliError::InvalidArgument(format!("nome de VPS inválido: {e}")))?;
+                .map_err(|e| SshCliError::InvalidArgument(format!("invalid VPS name: {e}")))?;
             let mut file = load(&path)?;
             if file.hosts.contains_key(&name) {
                 return Err(SshCliError::VpsDuplicate(name).into());
             }
             if password_stdin && (sudo_password_stdin || su_password_stdin) {
                 return Err(SshCliError::InvalidArgument(
-                    "apenas um --*-stdin por invocação one-shot; rode vps edit para sudo/su".into(),
+                    "only one --*-stdin per one-shot invocation; use vps edit for sudo/su".into(),
                 )
                 .into());
             }
@@ -398,7 +404,7 @@ pub async fn run_vps_command(
                 run_health_check(
                     Some(&name),
                     config_override,
-                    formato,
+                    format,
                     false,
                     None,
                     None,
@@ -412,8 +418,8 @@ pub async fn run_vps_command(
         VpsAction::List { json } => {
             let file = load(&path)?;
             let records: Vec<_> = file.hosts.values().cloned().collect();
-            // GAP-SSH-IO-001: respeitar formato global.
-            if usar_json(json, formato) {
+            // GAP-SSH-IO-001: respeitar format global.
+            if use_json(json, format) {
                 crate::output::print_list_json(&records);
             } else {
                 crate::output::print_list_text(&records);
@@ -506,7 +512,7 @@ pub async fn run_vps_command(
                 .hosts
                 .get(&name)
                 .ok_or_else(|| SshCliError::VpsNotFound(name.clone()))?;
-            if usar_json(json, formato) {
+            if use_json(json, format) {
                 crate::output::print_details_json(registro);
             } else {
                 crate::output::print_details_text(registro);
@@ -516,7 +522,7 @@ pub async fn run_vps_command(
             crate::output::write_line(&path.display().to_string())?;
         }
         VpsAction::Doctor { json } => {
-            run_doctor(config_override, usar_json(json, formato))?;
+            run_doctor(config_override, use_json(json, format))?;
         }
         VpsAction::Export {
             include_secrets,
@@ -528,7 +534,7 @@ pub async fn run_vps_command(
                 &path,
                 include_secrets,
                 output.as_deref(),
-                usar_json(json, formato),
+                use_json(json, format),
             )?;
         }
         VpsAction::Import {
@@ -581,7 +587,7 @@ fn run_doctor(config_override: Option<PathBuf>, json: bool) -> Result<()> {
             "n/a".to_string()
         }
     } else {
-        "ausente".to_string()
+        "missing".to_string()
     };
 
     let seg = crate::secrets::secrets_status()?;
@@ -691,7 +697,7 @@ fn run_import(path: &PathBuf, file: &Path, allow_incomplete: bool) -> Result<()>
     for (k, mut v) in imported.hosts {
         // VAL-001 no import.
         let name = crate::paths::validate_and_normalize(&k).map_err(|e| {
-            SshCliError::InvalidArgument(format!("nome de VPS inválido no import '{k}': {e}"))
+            SshCliError::InvalidArgument(format!("invalid VPS name in import '{k}': {e}"))
         })?;
         v.name = name.clone();
         if let Some(ref key) = v.key_path {
@@ -704,23 +710,23 @@ fn run_import(path: &PathBuf, file: &Path, allow_incomplete: bool) -> Result<()>
                 current.hosts.insert(name, v);
             }
             Err(msg) if allow_incomplete => {
-                // GAP-SSH-IMP-001: esqueleto incompleto permitido.
-                tracing::warn!(host = %name, %msg, "import incomplete permitido");
+                // GAP-SSH-IMP-001: incomplete skeleton allowed.
+                tracing::warn!(host = %name, %msg, "import incomplete allowed");
                 current.hosts.insert(name, v);
             }
             Err(msg) => {
-                // Detectar export redacted.
+                // Detect redacted export.
                 let redacted = !v.has_password() && !v.has_key();
                 if redacted {
                     return Err(SshCliError::InvalidArgument(format!(
-                        "host '{name}' parece export redacted (sem password/key). \
-                         Use `vps export --include-secrets`, complete com `vps edit`, \
-                         ou `vps import --allow-incomplete`. Detalhe: {msg}"
+                        "host '{name}' looks like a redacted export (no password/key). \
+                         Use `vps export --include-secrets`, complete with `vps edit`, \
+                         or `vps import --allow-incomplete`. Detail: {msg}"
                     ))
                     .into());
                 }
                 return Err(SshCliError::InvalidArgument(format!(
-                    "host '{name}' inválido no import: {msg}"
+                    "host '{name}' invalid in import: {msg}"
                 ))
                 .into());
             }
@@ -736,15 +742,15 @@ fn run_import(path: &PathBuf, file: &Path, allow_incomplete: bool) -> Result<()>
 pub async fn run_secrets_command(
     action: SecretsAction,
     config_override: Option<PathBuf>,
-    formato: OutputFormat,
+    format: OutputFormat,
 ) -> Result<()> {
     // Garante alinhamento do secrets.key com --config-dir.
     crate::secrets::set_config_dir(config_override.clone());
     match action {
         SecretsAction::Status { json } => {
             let seg = crate::secrets::secrets_status()?;
-            let usar_json = json || formato == OutputFormat::Json;
-            if usar_json {
+            let use_json = json || format == OutputFormat::Json;
+            if use_json {
                 let v = serde_json::json!({
                     "encryption_active": seg.encryption_active,
                     "key_source": seg.source.as_str(),
@@ -769,12 +775,31 @@ pub async fn run_secrets_command(
             Ok(())
         }
         SecretsAction::Init { keyring, force } => {
+            // GAP-AUD-SEC-001: rotating the primary key without re-encrypting hosts
+            // permanently loses at-rest secrets. Load/decrypt BEFORE overwriting the key,
+            // then save under the new key after rotation.
+            let path = resolve_config_path(config_override.clone())?;
+            let hosts_to_reencrypt = if force && path.is_file() {
+                Some(load(&path)?)
+            } else {
+                None
+            };
+
             let seg = crate::secrets::init_primary_key(keyring, force)?;
-            crate::output::print_success(&format!(
-                "primary-key pronta (source={}; key_file={})",
-                seg.source.as_str(),
-                seg.key_file_path.display()
-            ));
+
+            if let Some(file) = hosts_to_reencrypt {
+                save(&path, &file).map_err(|e| {
+                    SshCliError::Generic(format!(
+                        "primary key was rotated but re-encrypting config failed: {e}; \
+                         restore secrets.key.bak if present and re-run `secrets reencrypt`"
+                    ))
+                })?;
+            }
+
+            crate::output::print_success(&crate::i18n::t(crate::i18n::Message::PrimaryKeyReady {
+                source: seg.source.as_str().to_string(),
+                key_file: seg.key_file_path.display().to_string(),
+            }));
             Ok(())
         }
         SecretsAction::Reencrypt => {
@@ -787,10 +812,10 @@ pub async fn run_secrets_command(
 
 /// Reloads and rewrites config, re-encrypting secrets with the current key.
 fn run_reencrypt(path: &PathBuf) -> Result<()> {
-    let (key, source) = crate::secrets::ensure_key_for_write()?;
+    let (key, _source) = crate::secrets::ensure_key_for_write()?;
     if key.is_none() {
         return Err(SshCliError::InvalidArgument(
-            "sem primary-key; rode `ssh-cli secrets init` ou remova SSH_CLI_ALLOW_PLAINTEXT_SECRETS"
+            "no primary-key; run `ssh-cli secrets init` or unset SSH_CLI_ALLOW_PLAINTEXT_SECRETS"
                 .to_string(),
         )
         .into());
@@ -800,12 +825,11 @@ fn run_reencrypt(path: &PathBuf) -> Result<()> {
         k.zeroize();
     }
     let file = load(path)?;
+    let hosts = file.hosts.len();
     save(path, &file)?;
-    crate::output::print_success(&format!(
-        "reencrypt ok (source={}; hosts={})",
-        source.as_str(),
-        file.hosts.len()
-    ));
+    crate::output::print_success(&crate::i18n::t(crate::i18n::Message::ReencryptCompleted {
+        hosts,
+    }));
     Ok(())
 }
 
@@ -910,7 +934,7 @@ pub async fn run_exec(
     vps_name: &str,
     command: &str,
     config_override: Option<PathBuf>,
-    formato: OutputFormat,
+    format: OutputFormat,
     json: bool,
     opts: ExecOptions,
 ) -> Result<()> {
@@ -940,7 +964,7 @@ pub async fn run_exec(
     validate_command_length(&cmd, vps.max_command_chars)?;
     let cfg = build_connection_config(&vps, Some(&path), opts.replace_host_key);
     let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
-    run_exec_with_client(&vps, &cmd, client, formato, json).await
+    run_exec_with_client(&vps, &cmd, client, format, json).await
 }
 
 /// Testable version of run_exec.
@@ -948,7 +972,7 @@ pub async fn run_exec_with_client(
     vps: &VpsRecord,
     command: &str,
     mut client: Box<dyn SshClientTrait>,
-    formato: OutputFormat,
+    format: OutputFormat,
     json: bool,
 ) -> Result<()> {
     if crate::signals::is_cancelled() || crate::signals::is_terminated() {
@@ -959,7 +983,7 @@ pub async fn run_exec_with_client(
     let max_out = effective_limit(vps.max_output_chars);
     let output = client.run_command(command, max_out, None).await?;
     client.disconnect().await?;
-    if formato == OutputFormat::Json || json {
+    if format == OutputFormat::Json || json {
         output::print_execution_output_json(&output);
     } else {
         output::print_execution_output(&output);
@@ -981,7 +1005,7 @@ pub async fn run_sudo_exec(
     vps_name: &str,
     command: &str,
     config_override: Option<PathBuf>,
-    formato: OutputFormat,
+    format: OutputFormat,
     json: bool,
     opts: ExecOptions,
 ) -> Result<()> {
@@ -1014,7 +1038,7 @@ pub async fn run_sudo_exec(
     validate_command_length(&cmd, vps.max_command_chars)?;
     let cfg = build_connection_config(&vps, Some(&path), opts.replace_host_key);
     let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
-    run_sudo_exec_with_client(&vps, &cmd, client, formato, json).await
+    run_sudo_exec_with_client(&vps, &cmd, client, format, json).await
 }
 
 /// Testable version of sudo-exec.
@@ -1022,7 +1046,7 @@ pub async fn run_sudo_exec_with_client(
     vps: &VpsRecord,
     command: &str,
     mut client: Box<dyn SshClientTrait>,
-    formato: OutputFormat,
+    format: OutputFormat,
     json: bool,
 ) -> Result<()> {
     if crate::signals::is_cancelled() || crate::signals::is_terminated() {
@@ -1039,7 +1063,7 @@ pub async fn run_sudo_exec_with_client(
         .run_command(&pack.command, max_out, pack.stdin)
         .await?;
     client.disconnect().await?;
-    if formato == OutputFormat::Json || json {
+    if format == OutputFormat::Json || json {
         output::print_execution_output_json(&output);
     } else {
         output::print_execution_output(&output);
@@ -1061,7 +1085,7 @@ pub async fn run_su_exec(
     vps_name: &str,
     command: &str,
     config_override: Option<PathBuf>,
-    formato: OutputFormat,
+    format: OutputFormat,
     json: bool,
     opts: ExecOptions,
 ) -> Result<()> {
@@ -1102,7 +1126,7 @@ pub async fn run_su_exec(
         .run_command(&pack.command, max_out, pack.stdin)
         .await?;
     client.disconnect().await?;
-    if formato == OutputFormat::Json || json {
+    if format == OutputFormat::Json || json {
         output::print_execution_output_json(&output);
     } else {
         output::print_execution_output(&output);
@@ -1125,7 +1149,7 @@ pub async fn run_su_exec(
 pub async fn run_health_check(
     vps_name: Option<&str>,
     config_override: Option<PathBuf>,
-    formato: OutputFormat,
+    format: OutputFormat,
     json_local: bool,
     password_override: Option<String>,
     timeout_override: Option<u64>,
@@ -1133,8 +1157,8 @@ pub async fn run_health_check(
     key_passphrase_override: Option<String>,
     replace_host_key: bool,
 ) -> Result<()> {
-    // M2: --json local ou formato global → envelope de err JSON em falha.
-    if json_local || formato == OutputFormat::Json {
+    // M2: --json local ou format global → envelope de err JSON em falha.
+    if json_local || format == OutputFormat::Json {
         crate::output::set_json_errors(true);
     }
     if crate::signals::is_cancelled() || crate::signals::is_terminated() {
@@ -1171,12 +1195,12 @@ pub async fn run_health_check(
     );
     // M1: honra --replace-host-key global (paridade exec/scp/tunnel).
     let cfg = build_connection_config(&vps, Some(&path), replace_host_key);
-    let inicio = std::time::Instant::now();
+    let start = std::time::Instant::now();
     let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
-    let latency_ms = u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let latency_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     client.disconnect().await?;
 
-    if usar_json(json_local, formato) {
+    if use_json(json_local, format) {
         output::print_health_check_json(&resolved_name, latency_ms);
     } else {
         output::print_health_check(&resolved_name, latency_ms);

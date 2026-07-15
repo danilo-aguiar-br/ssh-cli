@@ -9,14 +9,14 @@ use anyhow::{bail, Result};
 use unicode_normalization::UnicodeNormalization;
 
 /// Names reserved by the Windows file system (case-insensitive).
-const NOMES_RESERVADOS_WINDOWS: &[&str] = &[
+const WINDOWS_RESERVED_NAMES: &[&str] = &[
     "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// Characters forbidden in file names (forbidden on Windows or problematic
 /// em sistemas Unix).
-const CHARS_PROIBIDOS: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\0'];
+const FORBIDDEN_CHARS: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\0'];
 
 /// Validates a file name (no path separators).
 ///
@@ -36,19 +36,22 @@ const CHARS_PROIBIDOS: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|',
 /// assert!(validate_name("../etc/passwd").is_err());
 /// assert!(validate_name("CON").is_err());
 /// ```
+///
+/// # Errors
+/// Returns an error if the name is empty, contains traversal/forbidden characters/whitespace, or is Windows-reserved.
 pub fn validate_name(name: &str) -> Result<()> {
     if name.is_empty() {
-        bail!("nome de file não pode ser vazio");
+        bail!("file name cannot be empty");
     }
 
     if name.contains("..") {
-        bail!("nome de file contém componente de path traversal: '{name}'");
+        bail!("file name contains path traversal component: '{name}'");
     }
 
-    for c in CHARS_PROIBIDOS {
+    for c in FORBIDDEN_CHARS {
         if name.contains(*c) {
             bail!(
-                "nome de file contém caractere proibido '{}': '{name}'",
+                "file name contains forbidden character '{}': '{name}'",
                 c.escape_default()
             );
         }
@@ -56,13 +59,19 @@ pub fn validate_name(name: &str) -> Result<()> {
 
     let name_upper = name.to_uppercase();
     // Also checks without extension (e.g. "NUL.txt" is forbidden on Windows)
-    let raiz = name_upper.split('.').next().unwrap_or(&name_upper);
-    if NOMES_RESERVADOS_WINDOWS.contains(&raiz) {
-        bail!("nome de file usa nome reservado do Windows: '{name}'");
+    let root = name_upper.split('.').next().unwrap_or(&name_upper);
+    if WINDOWS_RESERVED_NAMES.contains(&root) {
+        bail!("file name uses a Windows reserved name: '{name}'");
     }
 
     if name.ends_with('.') || name.ends_with(' ') {
-        bail!("nome de file não pode terminar com ponto ou espaço: '{name}'");
+        bail!("file name cannot end with a dot or space: '{name}'");
+    }
+
+    // GAP-AUD-VAL-001: reject any internal whitespace (spaces/tabs) so VPS registry
+    // keys stay shell/TOML/agent-safe single tokens.
+    if name.chars().any(|c| c.is_whitespace()) {
+        bail!("file name cannot contain whitespace: '{name}'");
     }
 
     Ok(())
@@ -80,6 +89,9 @@ pub fn normalize_nfc(name: &str) -> String {
 /// Validates and normalizes a file name in one operation.
 ///
 /// Returns the NFC-normalized name if all validations pass.
+///
+/// # Errors
+/// Returns an error if [`validate_name`] fails.
 pub fn validate_and_normalize(name: &str) -> Result<String> {
     validate_name(name)?;
     Ok(normalize_nfc(name))
@@ -90,13 +102,13 @@ pub fn validate_and_normalize(name: &str) -> Result<String> {
 /// Checks all path segments separated by `/` or `\`.
 pub fn validate_no_traversal(path: &str) -> Result<()> {
     if path.is_empty() {
-        bail!("caminho não pode ser vazio");
+        bail!("path cannot be empty");
     }
 
-    let segmentos = path.split(['/', '\\']);
-    for segmento in segmentos {
-        if segmento == ".." {
-            bail!("caminho contém componente de path traversal: '{path}'");
+    let segments = path.split(['/', '\\']);
+    for segment in segments {
+        if segment == ".." {
+            bail!("path contains path traversal component: '{path}'");
         }
     }
 
@@ -147,6 +159,12 @@ mod tests {
     #[test]
     fn name_ending_with_dot_rejected() {
         assert!(validate_name("file.").is_err());
+    }
+
+    #[test]
+    fn name_with_internal_space_rejected() {
+        assert!(validate_name("a b").is_err());
+        assert!(validate_name("a\tb").is_err());
     }
 
     #[test]

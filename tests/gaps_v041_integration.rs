@@ -32,8 +32,8 @@ fn cmd(tmp: &TempDir) -> Command {
 fn gap_version_041() {
     let v = env!("CARGO_PKG_VERSION");
     assert!(
-        v.starts_with("0.4."),
-        "product line 0.4.x (suite closed at 0.4.1)"
+        v.starts_with("0.5.") || v.starts_with("0.4."),
+        "product line 0.5.x (suite closed historically at 0.4.1; got {v})"
     );
 }
 
@@ -45,7 +45,7 @@ fn gap_version_cli_contem_041() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("0.4."));
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
 }
 
 // --- CLI-005 tunnel auth parity ---

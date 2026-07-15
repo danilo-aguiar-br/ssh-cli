@@ -28,7 +28,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Nunca suba MSRV sem issue explícita de discussão.
 
 ### Pins de dependência
-- A linha de produto **0.4.2** usa **russh 0.62.2** (desde 0.3.8) sem os pins COMPAT RC antigos; não reintroduza pins RC mortos sem issue.
+- A linha de produto **0.5.0** usa **russh 0.62.2** (desde 0.3.8) sem os pins COMPAT RC antigos; não reintroduza pins RC mortos sem issue.
 - Nunca rode `cargo update` cego no grafo crypto.
 - Rode `scripts/verify_install_resolve.sh` após qualquer mudança de dependência.
 

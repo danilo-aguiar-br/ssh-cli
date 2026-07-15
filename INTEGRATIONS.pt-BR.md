@@ -16,7 +16,7 @@
 
 ## Novas flags por versão
 ### Acompanhe o crescimento da superfície sem ler o código
-- `0.4.2` AUD-POST + SCP **somente arquivos regulares** (herda wire 0.4.0; sem `-r` / sem SFTP): wire SCP sólido (evite crates.io **0.3.9** SCP quebrado); flags scp `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → `docs/schemas/scp-transfer.schema.json` com `event: "scp-transfer"` obrigatório (IO-009); download grava `{path}.ssh-cli.partial` e faz rename; preserve mtime/mode bi-dir; upload em stream 32 KiB; `tunnel --json` emite `tunnel_listening` após bind e deadline pós-bind sai **0** (TUN-002); export redacted não emite `sshcli-enc:` para secret vazio (EXP-001); paridade auth `tunnel` (CLI-005: `--password-stdin`, `--key-passphrase` / `--key-passphrase-stdin`) e `health-check` (CLI-006: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`); envelope JSON de erro scp em stderr com `--json`.
+- `0.5.0` AUD-POST + SCP **somente arquivos regulares** (herda wire 0.4.0; sem `-r` / sem SFTP): wire SCP sólido (evite crates.io **0.3.9** SCP quebrado); flags scp `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → `docs/schemas/scp-transfer.schema.json` com `event: "scp-transfer"` obrigatório (IO-009); download grava `{path}.ssh-cli.partial` e faz rename; preserve mtime/mode bi-dir; upload em stream 32 KiB; `tunnel --json` emite `tunnel_listening` após bind e deadline pós-bind sai **0** (TUN-002); export redacted não emite `sshcli-enc:` para secret vazio (EXP-001); paridade auth `tunnel` (CLI-005: `--password-stdin`, `--key-passphrase` / `--key-passphrase-stdin`) e `health-check` (CLI-006: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`); envelope JSON de erro scp em stderr com `--json`.
 - `0.3.9` filtro de tracing default `error` (agent-first); senha vazia serializa como JSON `null` em hosts só-chave; `health-check --timeout <ms>`; auditoria de docs de product line.
 - `0.3.8` russh 0.62.2; stdout de tunnel limpo para agentes; sem VPS ativa sai com `66` (`EX_NOINPUT`); `cargo deny` com `yanked=deny`.
 - `0.3.7` `--output-format` no CRUD VPS; `health-check --json`; `--quiet`; envelope JSON de erro; timeout do tunnel cobre connect.
@@ -24,7 +24,7 @@
 - `0.3.5` adiciona caminhos de passphrase stdin, JSON auto em non-TTY, doctor `secrets_at_rest`, export atômico residual.
 - `0.3.4` adiciona `--key`, `--key-passphrase`, `--password-stdin`, `--sudo-password-stdin`, `--su-password-stdin`, `--timeout-ms` (tunnel), `--disable-sudo`, `--description`, `--replace-host-key`, `max_command_chars`, `max_output_chars`, `vps doctor`, `vps export`, `vps import`, `su-exec`.
 - `0.2.0` adiciona overrides runtime `--password`, `--sudo-password`, `--timeout` e aliases camelCase.
-- Prefira **0.4.2+** para SCP funcional + `tunnel --json`, automação SSH completa, cifragem default e supply-chain limpa.
+- Prefira **0.5.0+** para SCP funcional + `tunnel --json`, automação SSH completa, cifragem default e supply-chain limpa.
 
 
 ## Tabela resumo

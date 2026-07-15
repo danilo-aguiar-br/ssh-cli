@@ -180,7 +180,7 @@ pub async fn run_tunnel_with_client(
                         });
                     }
                     Err(e) => {
-                        tracing::error!(err = %e, "accept falhou");
+                        tracing::error!(err = %e, "accept failed");
                         break;
                     }
                 }
@@ -243,7 +243,7 @@ mod tests {
             .await
             .expect("bind efêmero");
         let port = listener.local_addr().expect("local_addr").port();
-        assert_ne!(port, 0, "SO deve atribuir porta > 0 após bind :0");
+        assert_ne!(port, 0, "OS must assign port > 0 after bind :0");
         assert!(
             (1..=65535).contains(&port),
             "effective port out of 1..=65535: {port}"

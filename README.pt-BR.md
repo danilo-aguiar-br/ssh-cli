@@ -17,7 +17,7 @@
 - Siga o primeiro uso em [docs/HOW_TO_USE.pt-BR.md](docs/HOW_TO_USE.pt-BR.md).
 - Copie receitas de [docs/COOKBOOK.pt-BR.md](docs/COOKBOOK.pt-BR.md).
 - Confira plataformas em [docs/CROSS_PLATFORM.pt-BR.md](docs/CROSS_PLATFORM.pt-BR.md).
-- Migre de 0.3.3+ em [docs/MIGRATION.pt-BR.md](docs/MIGRATION.pt-BR.md) (linha alvo **0.4.2**).
+- Migre de 0.3.3+ em [docs/MIGRATION.pt-BR.md](docs/MIGRATION.pt-BR.md) (linha alvo **0.5.0**).
 - Execute testes via [docs/TESTING.pt-BR.md](docs/TESTING.pt-BR.md).
 - Consuma contratos JSON em [docs/schemas/README.md](docs/schemas/README.md).
 - Ensine LLMs com [skills/ssh-cli-pt/SKILL.md](skills/ssh-cli-pt/SKILL.md).
@@ -53,7 +53,7 @@
 - Limites dual `max_command_chars` e `max_output_chars`
 - Timeout com abort remoto best-effort
 - Tunnel limitado via `--timeout-ms` obrigatório
-- SCP upload e download de **arquivos regulares apenas** (sem diretórios recursivos / sem SFTP; wire sólido em **0.4.0**; patch **0.4.2** — evite SCP do crates.io 0.3.9)
+- SCP upload e download de **arquivos regulares apenas** (sem diretórios recursivos / sem SFTP; wire sólido em **0.4.0**; patch **0.5.0** — evite SCP do crates.io 0.3.9)
 - Paridade de flags scp com exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (contrato `docs/schemas/scp-transfer.schema.json`; JSON de sucesso exige `event: "scp-transfer"`)
 - Download SCP grava `{path}.ssh-cli.partial` e rename atômico; preserve mtime/mode bi-direcional; upload em stream de 32 KiB
 - `tunnel --json` emite `tunnel_listening` estruturado após bind local; deadline pós-bind sai com exit **0** (não 74) após o agente receber `tunnel_listening`
@@ -89,7 +89,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Instalação
 ### Escolha o caminho de install do seu ambiente
-- Prefira crates.io com lockfile: `cargo install ssh-cli --locked` (**0.4.2+** no crates.io; evite **0.3.9** para SCP).
+- Prefira crates.io com lockfile: `cargo install ssh-cli --locked` (**0.5.0+** no crates.io; evite **0.3.9** para SCP).
 - Rebuild a partir do checkout: `cargo install --path . --locked`
 - **Não** use install sem `--locked` salvo se validou o resolve crypto com os pins.
 - Force upgrade após release: `cargo install ssh-cli --locked --force`
@@ -207,7 +207,7 @@ ssh-cli exec prod "hostname" --json
 
 ## FAQ de troubleshooting
 ### Corrija falhas comuns de install e runtime
-- Install falha em drift crypto RC: rode com `--locked` ou use a linha **0.4.2+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
+- Install falha em drift crypto RC: rode com `--locked` ou use a linha **0.5.0+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
 - Auth falha em hosts só-chave: defina `--key` em `vps add` ou passe `--key` / `--password-stdin` no `exec`.
 - Auth falha com chave com passphrase: use `--key-passphrase-stdin`.
 - Host key mudou: confirme legitimidade e rode com `--replace-host-key`.
@@ -215,8 +215,8 @@ ssh-cli exec prod "hostname" --json
 - Config com secrets cifrados sem chave: rode `ssh-cli secrets init` ou restaure `secrets.key` / env.
 - sudo-exec desabilitado: remova `--disable-sudo` e defina `disable_sudo=false` no host.
 - Ruído inesperado em stderr em pipelines JSON: o nível default já é `error`; defina `RUST_LOG` só como `debug` (ou `-v`) ao diagnosticar.
-- SCP do crates.io **0.3.9** falha ou grava remoto 0 bytes: atualize para **0.4.2+** (fix de wire); só arquivos regulares, não diretórios.
-- Instalou **0.4.0** e `vps export` redacted mostra ciphertext `sshcli-enc:` para senha vazia, ou tunnel emite `ok:true` e depois exit **74**: atualize para **0.4.2+** (EXP-001 / TUN-002).
+- SCP do crates.io **0.3.9** falha ou grava remoto 0 bytes: atualize para **0.5.0+** (fix de wire); só arquivos regulares, não diretórios.
+- Instalou **0.4.0** e `vps export` redacted mostra ciphertext `sshcli-enc:` para senha vazia, ou tunnel emite `ok:true` e depois exit **74**: atualize para **0.5.0+** (EXP-001 / TUN-002).
 - Download SCP falha no meio: destino ausente ou arquivo anterior intacto (parcial usa `.ssh-cli.partial`).
 - macOS Gatekeeper bloqueia o binário: rode `xattr -d com.apple.quarantine /path/to/ssh-cli`.
 - Permissão negada no config: garanta `chmod 600` no `config.toml` e no `secrets.key` XDG.

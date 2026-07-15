@@ -7,6 +7,21 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-15
+
+### Corrigido
+- **CRÍTICO**: `secrets init --force` reencripta hosts existentes e grava `secrets.key.bak` (GAP-AUD-SEC-001).
+- Doctor `permissions` em inglês (`"missing"`).
+- Mensagens técnicas, help clap e identificadores residualmente em EN.
+- Nomes de VPS com whitespace interno rejeitados (GAP-AUD-VAL-001).
+
+### Alterado
+- Semver **0.5.0** por renomeações de API em inglês. Wire TOML permanece PT via `serde(rename)`.
+- `secrets init` / `reencrypt` via `Message` i18n.
+
+### Notas
+- Sem publish crates.io/GitHub sem OK explícito.
+
 ## [Unreleased]
 ## [0.4.2] - 2026-07-15
 
@@ -266,7 +281,8 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 Release inicial.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.9...v0.4.0

@@ -105,35 +105,38 @@ impl KnownHosts {
 ///
 /// - Sem entrada: aceita e grava (TOFU).
 /// - Com entrada igual: aceita.
-/// - Com entrada diferente: recusa, a menos que `substituir` seja true.
-pub fn verificar_tofu(
+/// - Com entrada diferente: recusa, a menos que `replace` seja true.
+///
+/// # Errors
+/// Returns an error if the host key changed and replacement was not allowed, or if persistence fails.
+pub fn verify_tofu(
     kh: &mut KnownHosts,
     host: &str,
     port: u16,
     fingerprint: &str,
-    substituir: bool,
+    replace: bool,
 ) -> SshCliResult<bool> {
     match kh.get(host, port) {
         None => {
             kh.store(host, port, fingerprint)?;
             Ok(true)
         }
-        Some(existente) if existente == fingerprint => Ok(true),
-        Some(existente) if substituir => {
+        Some(existing) if existing == fingerprint => Ok(true),
+        Some(existing) if replace => {
             tracing::warn!(
                 host,
                 port,
-                antigo = %existente,
+                old = %existing,
                 novo = %fingerprint,
-                "substituindo host key (--replace-host-key)"
+                "replacing host key (--replace-host-key)"
             );
             kh.store(host, port, fingerprint)?;
             Ok(true)
         }
-        Some(existente) => Err(SshCliError::HostKeyChanged {
+        Some(existing) => Err(SshCliError::HostKeyChanged {
             host: host.to_string(),
             port,
-            expected: existente.to_string(),
+            expected: existing.to_string(),
             obtained: fingerprint.to_string(),
         }),
     }
@@ -149,8 +152,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("known_hosts");
         let mut kh = KnownHosts::load(path).unwrap();
-        assert!(verificar_tofu(&mut kh, "h", 22, "fp1", false).unwrap());
-        assert!(verificar_tofu(&mut kh, "h", 22, "fp1", false).unwrap());
+        assert!(verify_tofu(&mut kh, "h", 22, "fp1", false).unwrap());
+        assert!(verify_tofu(&mut kh, "h", 22, "fp1", false).unwrap());
     }
 
     #[test]
@@ -158,8 +161,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("known_hosts");
         let mut kh = KnownHosts::load(path).unwrap();
-        verificar_tofu(&mut kh, "h", 22, "fp1", false).unwrap();
-        let err = verificar_tofu(&mut kh, "h", 22, "fp2", false).unwrap_err();
+        verify_tofu(&mut kh, "h", 22, "fp1", false).unwrap();
+        let err = verify_tofu(&mut kh, "h", 22, "fp2", false).unwrap_err();
         assert!(matches!(err, SshCliError::HostKeyChanged { .. }));
     }
 
@@ -168,8 +171,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("known_hosts");
         let mut kh = KnownHosts::load(path).unwrap();
-        verificar_tofu(&mut kh, "h", 22, "fp1", false).unwrap();
-        assert!(verificar_tofu(&mut kh, "h", 22, "fp2", true).unwrap());
+        verify_tofu(&mut kh, "h", 22, "fp1", false).unwrap();
+        assert!(verify_tofu(&mut kh, "h", 22, "fp2", true).unwrap());
         assert_eq!(kh.get("h", 22), Some("fp2"));
     }
 }

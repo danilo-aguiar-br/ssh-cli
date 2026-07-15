@@ -2,7 +2,7 @@
 
 > CLI SSH multi-host one-shot para agentes de IA com storage XDG e sem daemon Node
 
-ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores remotos via stdin/stdout. Substitui processos long-lived Node SSH daemons persistentes por invocações nascer-executar-morrer, inventário multi-host XDG, auth por senha ou chave, packing seguro de sudo, su-exec, tunnels limitados, known_hosts TOFU, limites dual de comando/saída e **cifragem at-rest de segredos por padrão** (ChaCha20-Poly1305 + `secrets.key`). Telemetria é proibida. Prefira `cargo install ssh-cli --locked`. Linha de produto atual: **0.4.2** (inventário Fechado; russh 0.62.2; AUD-POST: export empty, tunnel exit 0, paridade auth tunnel/health, event scp-transfer).
+ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores remotos via stdin/stdout. Substitui processos long-lived Node SSH daemons persistentes por invocações nascer-executar-morrer, inventário multi-host XDG, auth por senha ou chave, packing seguro de sudo, su-exec, tunnels limitados, known_hosts TOFU, limites dual de comando/saída e **cifragem at-rest de segredos por padrão** (ChaCha20-Poly1305 + `secrets.key`). Telemetria é proibida. Prefira `cargo install ssh-cli --locked`. Linha de produto atual: **0.5.0** (inventário Fechado; russh 0.62.2; AUD-POST: export empty, tunnel exit 0, paridade auth tunnel/health, event scp-transfer).
 
 - Read this document in [English](llms.txt).
 - Índice expandido: [llms-full.txt](llms-full.txt)
@@ -13,7 +13,7 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - [HOW_TO_USE](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/HOW_TO_USE.pt-BR.md): primeiro comando em 60 segundos
 - [COOKBOOK](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/COOKBOOK.pt-BR.md): receitas executáveis
 - [AGENTS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/AGENTS.pt-BR.md): economia do agente e contrato JSON
-- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.pt-BR.md): upgrade de 0.3.3 para **0.4.2**
+- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.pt-BR.md): upgrade de 0.3.3 para **0.5.0**
 - [INTEGRATIONS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/INTEGRATIONS.pt-BR.md): catálogo de agentes e IDEs
 - [CHANGELOG](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.pt-BR.md): histórico de releases
 - [CONTRIBUTING](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CONTRIBUTING.pt-BR.md): fluxo de contribuição
@@ -29,7 +29,7 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - `exec` roda comando remoto one-shot
 - `sudo-exec` eleva com packing seguro `sh -c`
 - `su-exec` eleva com `su -` one-shot
-- `scp upload|download` transfere **somente arquivos regulares** (sem `-r` / sem SFTP; wire SCP do crates.io **0.3.9** estava quebrado — use **0.4.2**); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → contrato `docs/schemas/scp-transfer.schema.json` com `event: "scp-transfer"` obrigatório; download usa `.ssh-cli.partial` e rename; preserve mtime/mode; upload em stream 32 KiB
+- `scp upload|download` transfere **somente arquivos regulares** (sem `-r` / sem SFTP; wire SCP do crates.io **0.3.9** estava quebrado — use **0.5.0**); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → contrato `docs/schemas/scp-transfer.schema.json` com `event: "scp-transfer"` obrigatório; download usa `.ssh-cli.partial` e rename; preserve mtime/mode; upload em stream 32 KiB
 - `tunnel` abre port-forward local limitado com `--timeout-ms` obrigatório; `--json` opcional emite `tunnel_listening` após bind; deadline pós-bind sai **0** (não 74); auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`
 - `health-check [--timeout]` sonda conectividade e latência; auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`
 - `vps export` redacted limpa segredos; secret vazio serializa como `""` e nunca blob `sshcli-enc:`

@@ -4,7 +4,7 @@
 
 - Read this document in [Portuguese (pt-BR)](HOW_TO_USE.pt-BR.md).
 - Return to [README.md](../README.md) for the full command map.
-- Product line documented here: **0.4.2** (GAP-001–014 closed; residual LOG/JSON/CLI closed; AUD-SCP wire fix + agent JSON for scp/tunnel; AUD-POST EXP-001/TUN-002/CLI-005/006/IO-009 closed).
+- Product line documented here: **0.5.0** (GAP-001–014 closed; residual LOG/JSON/CLI closed; AUD-SCP wire fix + agent JSON for scp/tunnel; AUD-POST EXP-001/TUN-002/CLI-005/006/IO-009 closed).
 
 
 ## Prerequisites

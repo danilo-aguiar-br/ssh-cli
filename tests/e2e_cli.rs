@@ -354,3 +354,76 @@ fn testa_list_vazio_mostra_mensagem() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp).args(["vps", "list"]).assert().success();
 }
+
+#[test]
+#[serial]
+fn secrets_init_force_reencrypts_hosts() {
+    // GAP-AUD-SEC-001: --force must re-encrypt existing host secrets under the new key.
+    let tmp = TempDir::new().unwrap();
+    cmd(&tmp).args(["secrets", "init"]).assert().success();
+    cmd(&tmp)
+        .args([
+            "vps",
+            "add",
+            "--name",
+            "rotate-me",
+            "--host",
+            "1.2.3.4",
+            "--user",
+            "root",
+            "--password",
+            "rotate-secret-password-zzz-999",
+        ])
+        .assert()
+        .success();
+
+    let cfg = tmp.path().join("config.toml");
+    let before = std::fs::read_to_string(&cfg).unwrap();
+    assert!(before.contains("sshcli-enc:v1:"));
+
+    cmd(&tmp)
+        .args(["secrets", "init", "--force"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("primary-key ready").or(predicate::str::contains("primary-key pronta")));
+
+    // Config remains readable (not stuck on wrong key).
+    cmd(&tmp)
+        .args(["vps", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("rotate-me"))
+        .stdout(predicate::str::contains("rotate-secret-password-zzz-999").not());
+
+    let after = std::fs::read_to_string(&cfg).unwrap();
+    assert!(after.contains("sshcli-enc:v1:"));
+    // Ciphertext must change under new key (nonce+key differ).
+    assert_ne!(before, after);
+
+    // Backup of previous primary key is created.
+    assert!(tmp.path().join("secrets.key.bak").is_file());
+}
+
+#[test]
+#[serial]
+fn vps_add_rejects_whitespace_name() {
+    // GAP-AUD-VAL-001
+    let tmp = TempDir::new().unwrap();
+    cmd(&tmp)
+        .args([
+            "vps",
+            "add",
+            "--name",
+            "a b",
+            "--host",
+            "1.2.3.4",
+            "--user",
+            "root",
+            "--password",
+            "long-enough-password-xyz",
+        ])
+        .assert()
+        .failure()
+        .code(64);
+}
+

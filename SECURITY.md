@@ -2,19 +2,18 @@
 
 - Read this document in [Portuguese (pt-BR)](SECURITY.pt-BR.md).
 
-
 ## Supported Versions
 - The table below lists which ssh-cli versions currently receive security patches.
 - Users on unsupported lines must upgrade to the current release line.
 
 | Version | Status | Security Patches |
 | --- | --- | --- |
-| 0.4.x | Supported | Yes, **current line** |
-| 0.3.x | Limited | Critical only when feasible; crates.io **0.3.9** SCP wire was inoperant — upgrade to **0.4.2+** for transfers |
+| 0.5.x | Supported | Yes, **current line** |
+| 0.4.x | Supported | Critical / high when feasible; prefer upgrade to **0.5.x** |
+| 0.3.x | Limited | Critical only when feasible; crates.io **0.3.9** SCP wire was inoperant — upgrade to **0.5.0+** for transfers |
 | 0.2.x | Limited | Critical fixes only when feasible |
 | 0.1.x | Unsupported | No patches |
 | < 0.1 | Unsupported | No patches |
-
 
 ## Reporting a Vulnerability
 - Report security issues through GitHub Security Advisories in the public `ssh-cli` repository as the preferred private channel.
@@ -75,6 +74,6 @@
 - Disable elevation with `--disable-sudo` when a workflow must not escalate.
 - Run one-shot commands only; never expect a long-lived SSH daemon from this CLI.
 - Install with `--locked` to avoid accidental crypto re-resolve drift.
-- Prefer current **0.4.2+** for the supply-chain floor (russh 0.62.2) and for a working SCP wire (crates.io **0.3.9** SCP was inoperant).
+- Prefer current **0.5.0+** for the supply-chain floor (russh 0.62.2) and for a working SCP wire (crates.io **0.3.9** SCP was inoperant).
 - Historical honesty: **0.4.1** fixed empty-secret redacted export (never `sshcli-enc:` of empty) and tunnel post-bind exit 0.
 - Default redacted `vps export` clears secrets; empty secrets must serialize as empty strings, never encrypted `sshcli-enc:` blobs of empty values (0.4.2 EXP-001).

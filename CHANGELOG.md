@@ -7,6 +7,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-15
+
+### Fixed
+- **CRITICAL**: `secrets init --force` now re-encrypts existing host secrets under the new primary key and writes `secrets.key.bak` (GAP-AUD-SEC-001).
+- Doctor `permissions` field uses English `"missing"` instead of Portuguese `"ausente"`.
+- Technical error messages, clap help residual PT, and product identifiers standardized to English.
+- VPS names with internal whitespace are rejected (GAP-AUD-VAL-001).
+
+### Changed
+- Semver **0.5.0**: English renames of public/lib identifiers and residual API surface (`generate_completions`, `plaintext_allowed`, `ENC_PREFIX`, `verify_tofu`, etc.). Wire TOML keys remain Portuguese via `serde(rename)`.
+- `secrets init` / `secrets reencrypt` success lines go through `Message` i18n.
+
+### Notes
+- No crates.io/GitHub publish in this change set without explicit maintainer OK.
+
 ## [Unreleased]
 ## [0.4.2] - 2026-07-15
 
@@ -270,7 +285,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.9...v0.4.0

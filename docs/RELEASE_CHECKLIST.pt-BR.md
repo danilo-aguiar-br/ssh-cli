@@ -3,7 +3,7 @@
 > Gates obrigatórios antes de marcar release e inventário `gaps.md` como Fechado.
 
 - Leia este documento em [inglês](RELEASE_CHECKLIST.md).
-- Alvo de release / linha de produto: **0.4.2**.
+- Alvo de release / linha de produto: **0.5.0**.
 - Inventário canônico: [../gaps.md](../gaps.md).
 - Suites residuais: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG); `tests/gaps_v040_integration.rs` (SCP-010..023, DOC-004, IO-007/007b/008, REL-004, TEST-004); `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006).
 
@@ -31,7 +31,7 @@
 13. Sem telemetria — `vps doctor --json` reporta `"telemetry": false`; sem SDKs de métricas/telemetria na tree.
 14. Probes temporários removidos — sem artefatos `_probe_*` sobrando na tree.
 15. Tracing default error (LOG-001) — nível default é error (não info); stderr em modo tunnel/JSON é só envelope (sem banners INFO como "Tunnel SSH:" / "iniciando tunnel").
-16. Docs de product line = versão Cargo (DOC-003) — toda superfície de product line declara **0.4.2**, incluindo:
+16. Docs de product line = versão Cargo (DOC-003) — toda superfície de product line declara **0.5.0**, incluindo:
     - `llms.txt`, `llms.pt-BR.txt`, `llms-full.txt`
     - `README.md`, `README.pt-BR.md`
     - `INTEGRATIONS.md`, `INTEGRATIONS.pt-BR.md`

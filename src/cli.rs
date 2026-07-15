@@ -281,7 +281,7 @@ pub enum Command {
 
     /// Generates shell completions.
     Completions {
-        /// Shell alvo.
+        /// Target shell.
         #[arg(value_enum)]
         shell: Shell,
     },
@@ -350,7 +350,7 @@ pub enum VpsAction {
         /// Reads the su password from stdin.
         #[arg(long)]
         su_password_stdin: bool,
-        /// Desabilita sudo/su neste host.
+        /// Disables sudo/su on this host.
         #[arg(long, default_value_t = false)]
         disable_sudo: bool,
         /// Runs health-check after add.
@@ -375,40 +375,40 @@ pub enum VpsAction {
     Edit {
         /// VPS name to edit.
         name: String,
-        /// Novo hostname/IP.
+        /// New hostname/IP.
         #[arg(long)]
         host: Option<String>,
-        /// Nova port SSH.
+        /// New SSH port.
         #[arg(long)]
         port: Option<u16>,
         /// New username.
         #[arg(long)]
         user: Option<String>,
-        /// Nova password.
+        /// New password.
         #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
         /// Reads the password from stdin.
         #[arg(long)]
         password_stdin: bool,
-        /// Nova key.
+        /// New private key path.
         #[arg(long)]
         key: Option<String>,
-        /// Nova passphrase.
+        /// New key passphrase.
         #[arg(long)]
         key_passphrase: Option<String>,
-        /// Novo timeout.
+        /// New timeout.
         #[arg(long)]
         timeout: Option<u64>,
-        /// Novo max command chars.
+        /// New max command chars.
         #[arg(long)]
         max_command_chars: Option<String>,
-        /// Novo max output chars.
+        /// New max output chars.
         #[arg(long)]
         max_output_chars: Option<String>,
         /// Legacy alias maxChars → command.
         #[arg(long, alias = "maxChars")]
         max_chars: Option<String>,
-        /// Nova password sudo.
+        /// New sudo password.
         #[arg(
             long,
             alias = "sudoPassword",
@@ -419,7 +419,7 @@ pub enum VpsAction {
         /// Reads the sudo password from stdin.
         #[arg(long)]
         sudo_password_stdin: bool,
-        /// Nova password su.
+        /// New su password.
         #[arg(
             long,
             alias = "suPassword",
@@ -601,7 +601,7 @@ pub fn initialize_logs(args: &CliArgs) {
 /// Writes shell completions to stdout.
 ///
 /// GAP-SSH-CLI-003: broken pipe (EPIPE) does not panic — Unix pipe behavior.
-pub fn gerar_completions(shell: Shell) {
+pub fn generate_completions(shell: Shell) {
     use clap::CommandFactory;
     use std::io::Write;
     let mut cmd = CliArgs::command();
@@ -617,7 +617,7 @@ pub fn gerar_completions(shell: Shell) {
     }
 }
 
-fn ler_stdin_se(flag: bool, value: Option<String>) -> Result<Option<String>> {
+fn read_stdin_if(flag: bool, value: Option<String>) -> Result<Option<String>> {
     if flag {
         Ok(Some(crate::vps::read_secret_stdin()?))
     } else {
@@ -671,8 +671,8 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
             timeout,
             description,
         } => {
-            let password = ler_stdin_se(password_stdin, password)?;
-            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
+            let password = read_stdin_if(password_stdin, password)?;
+            let key_passphrase = read_stdin_if(key_passphrase_stdin, key_passphrase)?;
             let opts = crate::vps::ExecOptions {
                 password,
                 key,
@@ -700,9 +700,9 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
             timeout,
             description,
         } => {
-            let password = ler_stdin_se(password_stdin, password)?;
-            let sudo_password = ler_stdin_se(sudo_password_stdin, sudo_password)?;
-            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
+            let password = read_stdin_if(password_stdin, password)?;
+            let sudo_password = read_stdin_if(sudo_password_stdin, sudo_password)?;
+            let key_passphrase = read_stdin_if(key_passphrase_stdin, key_passphrase)?;
             let opts = crate::vps::ExecOptions {
                 password,
                 sudo_password,
@@ -738,9 +738,9 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
             timeout,
             description,
         } => {
-            let password = ler_stdin_se(password_stdin, password)?;
-            let su_password = ler_stdin_se(su_password_stdin, su_password)?;
-            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
+            let password = read_stdin_if(password_stdin, password)?;
+            let su_password = read_stdin_if(su_password_stdin, su_password)?;
+            let key_passphrase = read_stdin_if(key_passphrase_stdin, key_passphrase)?;
             let opts = crate::vps::ExecOptions {
                 password,
                 su_password,
@@ -794,8 +794,8 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
                     *json,
                 ),
             };
-            let password = ler_stdin_se(password_stdin, password)?;
-            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
+            let password = read_stdin_if(password_stdin, password)?;
+            let key_passphrase = read_stdin_if(key_passphrase_stdin, key_passphrase)?;
             // GAP-SSH-IO-007b: local --json or global --format json → JSON error envelope.
             let json_efetivo = json_local || formato == OutputFormat::Json;
             if json_efetivo {
@@ -834,8 +834,8 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
                 crate::output::set_json_errors(true);
             }
             // GAP-SSH-CLI-005: auth parity with exec/scp (stdin + passphrase).
-            let password = ler_stdin_se(password_stdin, password)?;
-            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
+            let password = read_stdin_if(password_stdin, password)?;
+            let key_passphrase = read_stdin_if(key_passphrase_stdin, key_passphrase)?;
             crate::tunnel::run_tunnel(
                 &vps_name,
                 local_port,
@@ -862,8 +862,8 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
             timeout,
         } => {
             // GAP-SSH-CLI-006: auth parity with exec/scp (stdin + key + passphrase).
-            let password = ler_stdin_se(password_stdin, password)?;
-            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
+            let password = read_stdin_if(password_stdin, password)?;
+            let key_passphrase = read_stdin_if(key_passphrase_stdin, key_passphrase)?;
             crate::vps::run_health_check(
                 vps_name.as_deref(),
                 config_override,
@@ -881,7 +881,7 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
             crate::vps::run_secrets_command(action, config_override, formato).await
         }
         Command::Completions { shell } => {
-            gerar_completions(shell);
+            generate_completions(shell);
             Ok(())
         }
     }

@@ -1,8 +1,10 @@
 # ssh-cli
 
+- Historical note: patch line **0.4.2** preceded **0.5.0** (EN/API rename + secrets force-init reencrypt).
+
 > One-shot multi-host SSH CLI for AI agents with XDG storage and no Node daemon
 
-ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers through stdin/stdout. It replaces persistent long-lived Node SSH daemons processes with birth-execute-die invocations, multi-host XDG registries, password or key auth, safe sudo packing, su-exec, bounded tunnels, TOFU known_hosts, dual command/output char limits, and **default at-rest secret encryption** (ChaCha20-Poly1305 + `secrets.key`). Telemetry is forbidden. Prefer `cargo install ssh-cli --locked`. Current product line: **0.4.2** (inventory closed; russh 0.62.2; residual audit gaps closed).
+ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers through stdin/stdout. It replaces persistent long-lived Node SSH daemons processes with birth-execute-die invocations, multi-host XDG registries, password or key auth, safe sudo packing, su-exec, bounded tunnels, TOFU known_hosts, dual command/output char limits, and **default at-rest secret encryption** (ChaCha20-Poly1305 + `secrets.key`). Telemetry is forbidden. Prefer `cargo install ssh-cli --locked`. Current product line: **0.5.0** (inventory closed; russh 0.62.2; residual audit gaps closed).
 
 - Read this document in [Portuguese (pt-BR)](llms.pt-BR.txt).
 - Expanded index: [llms-full.txt](llms-full.txt)
@@ -13,7 +15,7 @@ ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers throu
 - [HOW_TO_USE](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/HOW_TO_USE.md): first command in 60 seconds
 - [COOKBOOK](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/COOKBOOK.md): executable recipes for hosts and remote ops
 - [AGENTS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/AGENTS.md): agent economics plus JSON contract
-- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.md): upgrade path from 0.3.3 to **0.4.2**
+- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.md): upgrade path from 0.3.3 to **0.5.0**
 - [INTEGRATIONS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/INTEGRATIONS.md): agent and IDE catalog
 - [CHANGELOG](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.md): release history
 - [CONTRIBUTING](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CONTRIBUTING.md): contribution workflow

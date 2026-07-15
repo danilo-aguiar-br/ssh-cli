@@ -231,7 +231,7 @@ mod tests {
                     duration_ms: 10,
                 })
             } else {
-                Err(SshCliError::ChannelFailed("upload falhou".to_string()))
+                Err(SshCliError::ChannelFailed("upload failed".to_string()))
             }
         }
 
@@ -246,7 +246,7 @@ mod tests {
                     duration_ms: 20,
                 })
             } else {
-                Err(SshCliError::ChannelFailed("download falhou".to_string()))
+                Err(SshCliError::ChannelFailed("download failed".to_string()))
             }
         }
 

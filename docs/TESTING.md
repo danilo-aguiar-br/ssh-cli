@@ -3,7 +3,7 @@
 > Run the right ssh-cli test profile without hanging on remote networks.
 
 - Read this document in [Portuguese (pt-BR)](TESTING.pt-BR.md).
-- Product line: **0.4.2**.
+- Product line: **0.5.0**.
 
 
 ## Why Categorized Tests
@@ -21,7 +21,7 @@
 - Agent I/O residual suite under `tests/gaps_v037_integration.rs`
 - Post-0.3.7 residual suite under `tests/gaps_v038_integration.rs`
 - Post-0.3.8 residual suite under `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC/DENY/CHG)
-- Post-0.3.9 / **0.4.0** suite `tests/gaps_v040_integration.rs`; AUD-POST **0.4.1** suite `tests/gaps_v041_integration.rs`; AUD-E2E **0.4.2** suite `tests/gaps_v042_integration.rs` (TUN-003, IO-010, UX-001, REL-007, ENV-001, DOC-042, SCP-024)
+- Post-0.3.9 / **0.4.0** suite `tests/gaps_v040_integration.rs`; AUD-POST **0.4.1** suite `tests/gaps_v041_integration.rs`; AUD-E2E **0.5.0** suite `tests/gaps_v042_integration.rs` (TUN-003, IO-010, UX-001, REL-007, ENV-001, DOC-042, SCP-024)
 - Storage integration under `tests/storage_integration.rs`
 - Snapshot tests under `tests/snapshot_tests.rs`
 - SCP surface under `tests/scp_integration.rs`

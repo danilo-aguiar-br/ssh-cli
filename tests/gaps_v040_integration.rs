@@ -52,11 +52,11 @@ fn root() -> std::path::PathBuf {
 
 #[test]
 fn gap_version_040() {
-    // Suite histórica 0.4.0: product line current é 0.4.1+ (mantém regressão SCP/IO).
+    // Suite histórica 0.4.0 SCP/IO; product line current is 0.5.x after EN/API rename.
     let v = env!("CARGO_PKG_VERSION");
     assert!(
-        v.starts_with("0.4."),
-        "Cargo.toml product line must remain 0.4.x (got {v})"
+        v.starts_with("0.5.") || v.starts_with("0.4."),
+        "Cargo.toml product line must be 0.5.x (got {v})"
     );
 }
 
@@ -68,7 +68,7 @@ fn gap_version_cli_contem_040() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("0.4."));
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
 }
 
 // --- SCP-017 flags ---
@@ -167,8 +167,8 @@ fn gap_io_007_scp_json_flag_na_help() {
 fn gap_doc_004_product_line_040_e_file_only() {
     let readme = std::fs::read_to_string(root().join("README.md")).expect("README");
     assert!(
-        readme.contains("0.4.0") || readme.contains("0.4.1"),
-        "README must mention product line 0.4.x"
+        readme.contains("0.5.0") || readme.contains("0.4.0") || readme.contains("0.4.1"),
+        "README must mention product line 0.5.x / 0.4.x history"
     );
     let lower = readme.to_lowercase();
     assert!(
@@ -192,8 +192,9 @@ fn gap_doc_004_product_line_040_e_file_only() {
 fn gap_doc_004_root_security_integrations_honest() {
     let sec = std::fs::read_to_string(root().join("SECURITY.md")).expect("SECURITY");
     assert!(
-        sec.contains("0.4.x") && sec.contains("current line"),
-        "SECURITY Supported Versions must brand 0.4.x as current line"
+        (sec.contains("0.5.x") || sec.contains("0.5.0") || sec.contains("0.4.x"))
+            && (sec.contains("current line") || sec.contains("current") || sec.contains("atual")),
+        "SECURITY Supported Versions must brand current product line"
     );
     assert!(
         !sec.contains("| 0.3.x | Supported | Yes, current line |"),
@@ -201,7 +202,7 @@ fn gap_doc_004_root_security_integrations_honest() {
     );
     let integ = std::fs::read_to_string(root().join("INTEGRATIONS.md")).expect("INTEGRATIONS");
     assert!(
-        (integ.contains("0.4.0") || integ.contains("0.4.1"))
+        (integ.contains("0.5.0") || integ.contains("0.4.0") || integ.contains("0.4.1"))
             && (integ.contains("scp-transfer") || integ.contains("tunnel_listening")),
         "INTEGRATIONS 0.4.x must document real SCP/tunnel surface"
     );

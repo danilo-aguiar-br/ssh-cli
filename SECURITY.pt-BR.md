@@ -1,30 +1,21 @@
 # Política de Segurança
 
-- Read this document in [English](SECURITY.md).
+- Leia este documento em [English](SECURITY.md).
 
+Linha de produto atual: **0.5.x**.
 
 ## Versões suportadas
 - A tabela abaixo lista quais versões do ssh-cli recebem patches de segurança.
-- Usuários em linhas não suportadas devem atualizar para a linha atual.
+- Usuários em linhas sem suporte devem atualizar para a linha atual.
 
-| Versão | Status | Correções de segurança |
+| Versão | Status | Patches de segurança |
 | --- | --- | --- |
-| 0.4.x | Suportada | Sim, **linha atual** |
-| 0.3.x | Limitada | Só críticas quando viável; no crates.io **0.3.9** o SCP anunciado tinha wire inoperante — atualize para **0.4.2+** para transferências |
-| 0.2.x | Limitada | Só correções críticas quando viável |
+| 0.5.x | Suportada | Sim, **linha atual** |
+| 0.4.x | Suportada | Críticas/altas quando viável; prefira **0.5.x** |
+| 0.3.x | Limitada | Só críticas quando viável; no crates.io **0.3.9** o SCP era inoperante — atualize para **0.5.0+** |
+| 0.2.x | Limitada | Só críticas quando viável |
 | 0.1.x | Sem suporte | Sem patches |
 | < 0.1 | Sem suporte | Sem patches |
-
-
-## Reportar uma vulnerabilidade
-- Reporte issues de segurança via GitHub Security Advisories no repositório público `ssh-cli` como canal privado preferencial.
-- Use e-mail daniloaguiarbr@proton.me apenas como fallback quando o reporte privado do GitHub estiver indisponível.
-- Nunca abra issue, pull request ou discussion pública para reportes de segurança.
-- Inclua reprodução mínima, versões afetadas e esperado versus atual.
-- Inclua detalhes de ambiente como OS, arquitetura e versão do rustc.
-- Inclua estimativa CVSS 3.1 quando possível para acelerar a triagem.
-- Omita ou mascare credenciais vivas de todo anexo e trecho de log.
-
 
 ## SLA de resposta
 - A triagem de cada advisory começa em até 72 horas úteis após o envio.
@@ -76,4 +67,4 @@
 - Desabilite elevação com `--disable-sudo` quando o workflow não deve escalar.
 - Rode apenas comandos one-shot; nunca espere um daemon SSH de longa duração desta CLI.
 - Instale com `--locked` para evitar drift de re-resolve crypto.
-- Prefira a linha atual **0.4.2+** para o piso de supply-chain (russh 0.62.2) e para SCP com wire funcional (crates.io **0.3.9** SCP era inoperante).
+- Prefira a linha atual **0.5.0+** para o piso de supply-chain (russh 0.62.2) e para SCP com wire funcional (crates.io **0.3.9** SCP era inoperante).

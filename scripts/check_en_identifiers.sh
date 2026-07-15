@@ -20,4 +20,16 @@ if rg -n --type rust '"(erro ao |Senha:|\\(não definida\\)|falha ao )' src/ | r
   exit 1
 fi
 
+# Hardcoded PT product literals that must go through Message or EN technical errors
+if rg -n --type rust 'primary-key pronta|"ausente"\|nome de file|nome de VPS inválido' src/ | rg -v 'src/i18n.rs'; then
+  echo "GAP: Portuguese product literals outside i18n" >&2
+  exit 1
+fi
+
+# Residual PT function/const names in product code
+if rg -n --type rust -e '\\b(fn|const|pub fn|async fn)\\s+(verificar_tofu|comando_scp_remoto|plaintext_permitido|PREFIXO_ENC|gerar_completions|ler_stdin_se|cifrar|decifrar|mapear_exit_status|interpretar_status_scp|parse_linha_t_scp)\\b' src/ 2>/dev/null; then
+  echo "GAP: residual Portuguese function/const names in src/" >&2
+  exit 1
+fi
+
 echo "EN identifier gate: OK"

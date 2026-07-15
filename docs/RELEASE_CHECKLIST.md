@@ -3,7 +3,7 @@
 > Mandatory gates before marking a release and `gaps.md` inventory as closed (Fechado).
 
 - Read this document in [Portuguese (pt-BR)](RELEASE_CHECKLIST.pt-BR.md).
-- Release target / product line: **0.4.2**.
+- Release target / product line: **0.5.0**.
 - Historical gate: **0.4.1** DOC-041 / AUD-POST honesty (export empty, tunnel exit 0, auth parity, scp-transfer event).
 - Canonical inventory: [../gaps.md](../gaps.md).
 - Residual suites: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG); `tests/gaps_v040_integration.rs` (SCP 0.4.0); `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006).
@@ -32,7 +32,7 @@
 13. No telemetry — `vps doctor --json` reports `"telemetry": false`; no metrics/telemetry SDKs in the tree.
 14. Temporary probes removed — no leftover `_probe_*` artifacts in the tree.
 15. Default tracing error (LOG-001) — default level is error (not info); tunnel/JSON mode stderr is envelope-only (no INFO progress banners such as "Tunnel SSH:" / "iniciando tunnel").
-16. Product-line docs match Cargo version (DOC-003) — every product-line surface states **0.4.2**, including:
+16. Product-line docs match Cargo version (DOC-003) — every product-line surface states **0.5.0**, including:
     - `llms.txt`, `llms.pt-BR.txt`, `llms-full.txt`
     - `README.md`, `README.pt-BR.md`
     - `INTEGRATIONS.md`, `INTEGRATIONS.pt-BR.md`

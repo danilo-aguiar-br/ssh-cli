@@ -1,4 +1,6 @@
 ---
+
+> Product line: **0.5.0**
 name: ssh-cli
 description: This skill MUST auto-activate for remote SSH via ssh-cli one-shot even without naming ssh-cli. Inputs host/user/key/password-stdin paths tunnel ports timeout. Outputs sysexits; exec JSON; scp JSON ok event scp-transfer direction vps local remote bytes duration_ms; tunnel JSON ok event tunnel_listening then process exit 0 after post-bind deadline pre-bind timeout 74; stderr error envelope; registry password null or ***; redacted export empty secrets as empty strings never sshcli-enc blobs. Covers vps CRUD path doctor export import connect exec sudo-exec su-exec scp file-only no-r no-SFTP --json --timeout .ssh-cli.partial 32KiB stream mtime/mode preserve tunnel --timeout-ms --json --password-stdin --key --key-passphrase[-stdin] wait tunnel_listening health-check --timeout --password-stdin --key --key-passphrase[-stdin] --replace-host-key secrets quiet TOFU completions cargo install locked. NEVER telemetry/daemon/leak secrets/recursive scp.
 ---

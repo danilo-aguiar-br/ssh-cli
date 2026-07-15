@@ -176,10 +176,10 @@ impl VpsRecord {
             return Err("invalid SSH port: 0 (use 1..=65535)".to_string());
         }
         if self.host.trim().is_empty() {
-            return Err("host não pode ser vazio".to_string());
+            return Err("host cannot be empty".to_string());
         }
         if self.username.trim().is_empty() {
-            return Err("usuário SSH não pode ser vazio".to_string());
+            return Err("SSH username cannot be empty".to_string());
         }
         self.validate_credentials()
     }

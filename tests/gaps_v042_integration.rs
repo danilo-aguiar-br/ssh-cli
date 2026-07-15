@@ -31,7 +31,11 @@ fn cmd(tmp: &TempDir) -> Command {
 #[test]
 fn gap_version_042() {
     let v = env!("CARGO_PKG_VERSION");
-    assert_eq!(v, "0.4.2", "Cargo.toml must be 0.4.2 for this suite");
+    // Suite closed at 0.4.2; product line advanced to 0.5.0 (EN/API rename + force-init fix).
+    assert!(
+        v == "0.5.0" || v.starts_with("0.5.") || v == "0.4.2",
+        "Cargo.toml product line must be 0.5.x (got {v})"
+    );
 }
 
 #[test]
@@ -42,7 +46,7 @@ fn gap_version_cli_contem_042() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("0.4.2"));
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
 }
 
 // --- TUN-003 ---
@@ -236,12 +240,12 @@ fn gap_doc_product_line_042() {
     let readme = std::fs::read_to_string(root().join("README.md")).unwrap();
     let llms = std::fs::read_to_string(root().join("llms.txt")).unwrap();
     assert!(
-        readme.contains("0.4.2"),
-        "README must mention product line 0.4.2"
+        readme.contains("0.5.0") || readme.contains("0.4.2"),
+        "README must mention product line 0.5.0 / 0.4.2 history"
     );
     assert!(
-        llms.contains("0.4.2"),
-        "llms.txt must state product line 0.4.2"
+        llms.contains("0.5.0") || llms.contains("0.4.2"),
+        "llms.txt must state product line 0.5.0 / 0.4.2 history"
     );
 }
 
