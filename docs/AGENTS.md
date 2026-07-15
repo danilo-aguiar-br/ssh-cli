@@ -4,7 +4,7 @@
 
 - Read this document in [Portuguese (pt-BR)](AGENTS.pt-BR.md).
 - Pair with [../INTEGRATIONS.md](../INTEGRATIONS.md) and [../skills/ssh-cli-en/SKILL.md](../skills/ssh-cli-en/SKILL.md).
-- Product line: **0.4.0** (closed inventory; russh 0.62.2; AUD-SCP + IO-007/008 closed).
+- Product line: **0.4.1** (closed inventory; russh 0.62.2; AUD-SCP + AUD-POST EXP/TUN/CLI/IO closed).
 
 
 ## Why
@@ -54,7 +54,7 @@
 - REQUIRED: treat empty password in list/show JSON as `null` (key-only hosts); non-empty is masked `***`.
 - REQUIRED: pass `--timeout-ms` for every `tunnel` invocation.
 - REQUIRED: treat `scp` as **regular files only** (no directories, no `-r`, no SFTP subsystem).
-- REQUIRED: never depend on crates.io **0.3.9** for SCP; that wire was broken — require **0.4.0+**.
+- REQUIRED: never depend on crates.io **0.3.9** for SCP; that wire was broken — require **0.4.1+**.
 - REQUIRED: parse SCP success with `docs/schemas/scp-transfer.schema.json` (`ok`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`) on **stdout**.
 - REQUIRED: on `tunnel --json`, wait for one stdout object with `event: "tunnel_listening"` (`docs/schemas/tunnel-listening.schema.json`) before using the local port; process stays alive until timeout or signal.
 - REQUIRED: may pass `health-check --timeout <ms>` when host default timeout is too long or short.

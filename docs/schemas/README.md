@@ -1,7 +1,7 @@
 # JSON Schemas Index
 
 ## English
-- This directory versions machine-readable JSON contracts for ssh-cli stdout/stderr payloads (**0.4.0**).
+- This directory versions machine-readable JSON contracts for ssh-cli stdout/stderr payloads (**0.4.1**).
 - Validate agent parsers against these schemas before treating fields as stable.
 - `vps-list.schema.json` contracts `ssh-cli vps list --json`.
 - `vps-show.schema.json` contracts `ssh-cli vps show <name> --json`.
@@ -21,7 +21,7 @@
 - `telemetry` in doctor output is always false.
 
 ## Português Brasileiro
-- Este diretório versiona contratos JSON legíveis por máquina para payloads stdout/stderr do ssh-cli (**0.4.0**).
+- Este diretório versiona contratos JSON legíveis por máquina para payloads stdout/stderr do ssh-cli (**0.4.1**).
 - Valide parsers de agentes contra estes schemas antes de tratar campos como estáveis.
 - `vps-list.schema.json` cobre `ssh-cli vps list --json`.
 - `vps-show.schema.json` cobre `ssh-cli vps show <name> --json`.

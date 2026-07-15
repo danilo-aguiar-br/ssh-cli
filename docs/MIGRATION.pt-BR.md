@@ -1,6 +1,6 @@
 # Guia de migração
 
-> Passe de ssh-cli 0.3.3 (ou posterior) para **0.4.0** sem perder o inventário multi-host.
+> Passe de ssh-cli 0.3.3 (ou posterior) para **0.4.1** sem perder o inventário multi-host.
 
 - Leia este documento em [inglês](MIGRATION.md).
 
@@ -48,8 +48,9 @@
 - String de versão reporta `-dirty` quando a working tree está suja.
 - Suite residual completa `tests/gaps_v038_integration.rs`.
 
-### Desde 0.4.0 (atual)
-- **Correção wire SCP:** o crates.io **0.3.9** anunciava SCP, mas o protocolo estava quebrado (header `\\n` literal, ACK vazio). Atualize para **0.4.0** antes de depender de `scp upload|download`.
+### Desde 0.4.1 (atual)
+- **Patch AUD-POST:** secrets vazios nunca viram blob `sshcli-enc` no export redacted (EXP-001); deadline do tunnel pós-bind sai **0** (TUN-002); paridade de flags auth em `tunnel`/`health-check` (CLI-005/006); JSON SCP com `event: \"scp-transfer\"` (IO-009). Só aditivo — sem breaking.
+- **Correção wire SCP (0.4.0):** crates.io **0.3.9** SCP quebrado. Atualize para **0.4.0+** (prefira **0.4.1**) antes de depender de `scp`.
 - SCP é **somente arquivos regulares** (sem `-r` / sem SFTP). Use `--timeout` para arquivos grandes (cobre connect + transfer). JSON de sucesso via `--json` / `--output-format json` (`docs/schemas/scp-transfer.schema.json`).
 - Download SCP grava `{path}.ssh-cli.partial` e faz rename atômico; mode/times aplicados no **partial** antes do rename.
 - Upload SCP faz stream em blocos de **32 KiB** (sem `fs::read` do arquivo inteiro na RAM).
@@ -142,7 +143,9 @@ ssh-cli su-exec prod "id"
 - Senha vazia → JSON `null`; não vazia → string `***`.
 - Texto humano em show ainda usa "(não definida)" para senha vazia.
 
-### Eventos de transfer / tunnel (0.4.0)
+### Eventos de transfer / tunnel (0.4.0 / 0.4.1)
+- JSON de sucesso SCP inclui `event: \"scp-transfer\"` obrigatório (IO-009, 0.4.1).
+- Tunnel continua emitindo `event: \"tunnel_listening\"` após bind.
 - Sucesso SCP: `docs/schemas/scp-transfer.schema.json`
 - Tunnel listening: `docs/schemas/tunnel-listening.schema.json`
 - Falhas em modo JSON: `docs/schemas/error-envelope.schema.json` em stderr

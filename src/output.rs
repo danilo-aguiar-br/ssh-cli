@@ -344,7 +344,7 @@ pub fn imprimir_health_check_json(nome: &str, latencia_ms: u64) {
     }
 }
 
-/// Imprime resultado de transferência SCP em JSON (GAP-SSH-IO-007 / SCP-021).
+/// Imprime resultado de transferência SCP em JSON (GAP-SSH-IO-007 / SCP-021 / IO-009).
 pub fn imprimir_transferencia_json(
     direction: &str,
     vps: &str,
@@ -353,8 +353,10 @@ pub fn imprimir_transferencia_json(
     bytes: u64,
     duration_ms: u64,
 ) {
+    // GAP-SSH-IO-009: discriminador de evento (paridade com tunnel_listening).
     let v = json!({
         "ok": true,
+        "event": "scp-transfer",
         "direction": direction,
         "vps": vps,
         "local": local,

@@ -21,7 +21,7 @@
 - Suite residual de I/O de agente em `tests/gaps_v037_integration.rs`
 - Suite residual pós-0.3.7 em `tests/gaps_v038_integration.rs`
 - Suite residual pós-0.3.8 em `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC/DENY/CHG)
-- Suite residual pós-0.3.9 / **0.4.0** em `tests/gaps_v040_integration.rs` (SCP-010..023, DOC-004, IO-007/007b/008, REL-004, TEST-004, partial, preserve, schema scp-transfer)
+- Suite residual pós-0.3.9 / **0.4.0** em `tests/gaps_v040_integration.rs`; suite AUD-POST **0.4.1** em `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006)
 - Storage integration em `tests/storage_integration.rs`
 - Snapshot tests em `tests/snapshot_tests.rs`
 - Superfície SCP em `tests/scp_integration.rs`
@@ -76,7 +76,7 @@ bash scripts/e2e_real_ssh.sh --from-grok-config
 ## Perfis de CI
 - Este repositório atualmente embarca sem workflows de GitHub Actions.
 - Mantenedores rodam o loop local do desenvolvedor antes de cada publish.
-- Gates de publish incluem package dry-run, verificação de install resolve, paridade bilíngue de docs e suite residual `gaps_v040`.
+- Gates de publish incluem package dry-run, verificação de install resolve, paridade bilíngue de docs e suites residuais `gaps_v040` + `gaps_v041`.
 
 
 ## Variáveis de ambiente

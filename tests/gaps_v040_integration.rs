@@ -51,8 +51,12 @@ fn root() -> std::path::PathBuf {
 
 #[test]
 fn gap_version_040() {
+    // Suite histórica 0.4.0: product line atual é 0.4.1+ (mantém regressão SCP/IO).
     let v = env!("CARGO_PKG_VERSION");
-    assert_eq!(v, "0.4.0", "Cargo.toml must be 0.4.0 for this suite");
+    assert!(
+        v.starts_with("0.4."),
+        "Cargo.toml product line must remain 0.4.x (got {v})"
+    );
 }
 
 #[test]
@@ -63,7 +67,7 @@ fn gap_version_cli_contem_040() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("0.4.0"));
+        .stdout(predicate::str::contains("0.4."));
 }
 
 // --- SCP-017 flags ---
@@ -162,8 +166,8 @@ fn gap_io_007_scp_json_flag_na_help() {
 fn gap_doc_004_product_line_040_e_file_only() {
     let readme = std::fs::read_to_string(root().join("README.md")).expect("README");
     assert!(
-        readme.contains("0.4.0"),
-        "README must mention product line 0.4.0"
+        readme.contains("0.4.0") || readme.contains("0.4.1"),
+        "README must mention product line 0.4.x"
     );
     let lower = readme.to_lowercase();
     assert!(
@@ -196,9 +200,9 @@ fn gap_doc_004_root_security_integrations_honest() {
     );
     let integ = std::fs::read_to_string(root().join("INTEGRATIONS.md")).expect("INTEGRATIONS");
     assert!(
-        integ.contains("0.4.0")
+        (integ.contains("0.4.0") || integ.contains("0.4.1"))
             && (integ.contains("scp-transfer") || integ.contains("tunnel_listening")),
-        "INTEGRATIONS 0.4.0 must document real SCP/tunnel surface"
+        "INTEGRATIONS 0.4.x must document real SCP/tunnel surface"
     );
     assert!(
         integ.contains("0.3.9"),
@@ -257,10 +261,13 @@ fn gap_doc_004c_docs_folder_scp_tunnel_honest() {
     let testing = std::fs::read_to_string(root().join("docs/TESTING.md")).expect("TESTING");
     assert!(
         testing.contains("gaps_v040")
-            && (testing.contains("E10") || testing.contains("E01–E14") || testing.contains("E01-E14")),
+            && (testing.contains("E10")
+                || testing.contains("E01–E14")
+                || testing.contains("E01-E14")),
         "docs/TESTING.md must list gaps_v040 and e2e E10+"
     );
-    let release = std::fs::read_to_string(root().join("docs/RELEASE_CHECKLIST.md")).expect("RELEASE");
+    let release =
+        std::fs::read_to_string(root().join("docs/RELEASE_CHECKLIST.md")).expect("RELEASE");
     assert!(
         release.contains("gaps_v040") && release.contains("DOC-004"),
         "docs/RELEASE_CHECKLIST.md must gate gaps_v040 and DOC-004"
@@ -289,14 +296,10 @@ fn gap_doc_004c_docs_folder_scp_tunnel_honest() {
     );
 }
 
-
 #[test]
 fn gap_doc_004d_skills_scp_tunnel_honest() {
     // Skills must teach agents the 0.4.0 scp/tunnel contracts without version-story prose.
-    for rel in [
-        "skills/ssh-cli-en/SKILL.md",
-        "skills/ssh-cli-pt/SKILL.md",
-    ] {
+    for rel in ["skills/ssh-cli-en/SKILL.md", "skills/ssh-cli-pt/SKILL.md"] {
         let body = std::fs::read_to_string(root().join(rel)).expect(rel);
         let lower = body.to_ascii_lowercase();
         assert!(
@@ -429,6 +432,11 @@ fn gap_scp_021_schema_scp_transfer() {
     assert!(body.contains("direction"));
     assert!(body.contains("bytes"));
     assert!(body.contains("duration_ms"));
+    // GAP-SSH-IO-009 (0.4.1): event discriminator required.
+    assert!(
+        body.contains("scp-transfer") && body.contains("\"event\""),
+        "scp-transfer schema must require event field (IO-009)"
+    );
 }
 
 #[test]

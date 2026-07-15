@@ -6,6 +6,8 @@ use crate::ssh::cliente::{ClienteSsh, ClienteSshTrait};
 use crate::vps::buscar_por_nome;
 use anyhow::Result;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 
@@ -19,6 +21,7 @@ pub async fn executar_tunnel(
     config_override: Option<PathBuf>,
     password_override: Option<String>,
     key_override: Option<String>,
+    key_passphrase_override: Option<String>,
     timeout_ms: u64,
     replace_host_key: bool,
     json: bool,
@@ -33,12 +36,17 @@ pub async fn executar_tunnel(
     let mut vps = buscar_por_nome(config_override.clone(), vps_nome)?
         .ok_or_else(|| ErroSshCli::VpsNaoEncontrada(vps_nome.to_string()))?;
 
-    if let Some(pwd) = password_override {
-        vps.senha = secrecy::SecretString::from(pwd);
-    }
-    if let Some(k) = key_override {
-        vps.key_path = Some(k);
-    }
+    // GAP-SSH-CLI-005 / M3: paridade com exec/scp via aplicar_overrides (password/key/passphrase).
+    // Timeout do registro VPS não é sobrescrito aqui — o deadline do tunnel é `timeout_ms`.
+    crate::vps::aplicar_overrides(
+        &mut vps,
+        password_override,
+        None,
+        None,
+        None,
+        key_override,
+        key_passphrase_override,
+    );
 
     let caminho = crate::vps::resolver_caminho_config(config_override)?;
     let cfg = crate::vps::construir_configuracao(&vps, Some(&caminho), replace_host_key);
@@ -65,6 +73,10 @@ pub async fn executar_tunnel(
     }
 
     // GAP-SSH-TUN-001: deadline cobre connect + loop (não só o accept loop).
+    // GAP-SSH-TUN-002: se o listener local já subiu, o fim por deadline é sucesso one-shot
+    // (não TimeoutSsh/exit 74). Timeout antes do bind (connect lento) permanece erro.
+    let bound = Arc::new(AtomicBool::new(false));
+    let bound_flag = Arc::clone(&bound);
     let resultado = tokio::time::timeout(Duration::from_millis(timeout_ms), async {
         let cliente: Box<dyn ClienteSshTrait> =
             <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
@@ -76,6 +88,7 @@ pub async fn executar_tunnel(
             timeout_ms,
             json,
             cliente,
+            Some(bound_flag),
         )
         .await
     })
@@ -83,8 +96,15 @@ pub async fn executar_tunnel(
 
     match resultado {
         Ok(inner) => inner,
+        Err(_) if bound.load(Ordering::SeqCst) => {
+            tracing::info!(
+                timeout_ms,
+                "tunnel encerrou por deadline one-shot (sucesso)"
+            );
+            Ok(())
+        }
         Err(_) => {
-            tracing::warn!(timeout_ms, "tunnel encerrou por deadline one-shot");
+            tracing::warn!(timeout_ms, "tunnel timeout antes do bind local");
             Err(ErroSshCli::TimeoutSsh(timeout_ms).into())
         }
     }
@@ -100,6 +120,7 @@ pub async fn executar_tunnel_with_client(
     timeout_ms: u64,
     json: bool,
     cliente: Box<dyn ClienteSshTrait>,
+    bound_flag: Option<Arc<AtomicBool>>,
 ) -> Result<()> {
     let cliente: std::sync::Arc<dyn ClienteSshTrait> = std::sync::Arc::from(cliente);
 
@@ -108,6 +129,10 @@ pub async fn executar_tunnel_with_client(
         .map_err(|e| {
             ErroSshCli::Generico(format!("falha ao abrir porta local {}: {}", porta_local, e))
         })?;
+
+    if let Some(flag) = bound_flag.as_ref() {
+        flag.store(true, Ordering::SeqCst);
+    }
 
     tracing::info!(porta = %porta_local, vps = %vps_nome, "listener TCP local iniciado");
 

@@ -256,7 +256,9 @@ pub fn ler_segredo_stdin() -> ResultadoSshCli<String> {
 }
 
 /// Aplica overrides de runtime sobre um VpsRegistro clonado.
-fn aplicar_overrides(
+///
+/// Ordem dos parâmetros: password, sudo, su, timeout, key_path, key_passphrase.
+pub(crate) fn aplicar_overrides(
     vps: &mut VpsRegistro,
     password_override: Option<String>,
     sudo_password_override: Option<String>,
@@ -392,8 +394,18 @@ pub async fn executar_comando_vps(
             salvar(&caminho, &arquivo)?;
             crate::output::imprimir_sucesso(&format!("VPS '{name}' adicionada ao registro"));
             if check {
-                executar_health_check(Some(&name), config_override, formato, false, None, None)
-                    .await?;
+                executar_health_check(
+                    Some(&name),
+                    config_override,
+                    formato,
+                    false,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                )
+                .await?;
             }
         }
         AcaoVps::List { json } => {
@@ -1071,6 +1083,8 @@ pub async fn executar_su_exec(
 }
 
 /// Health-check SSH.
+/// Health-check one-shot com paridade de auth (GAP-SSH-CLI-006) e TOFU (M1).
+#[allow(clippy::too_many_arguments)]
 pub async fn executar_health_check(
     vps_nome: Option<&str>,
     config_override: Option<PathBuf>,
@@ -1078,8 +1092,14 @@ pub async fn executar_health_check(
     json_local: bool,
     password_override: Option<String>,
     timeout_override: Option<u64>,
+    key_override: Option<String>,
+    key_passphrase_override: Option<String>,
+    replace_host_key: bool,
 ) -> Result<()> {
-    let _ = json_local; // merged below with formato
+    // M2: --json local ou formato global → envelope de erro JSON em falha.
+    if json_local || formato == FormatoSaida::Json {
+        crate::output::definir_json_erros(true);
+    }
     if crate::signals::cancelado() || crate::signals::terminado() {
         return Err(anyhow::anyhow!(crate::i18n::t(
             crate::i18n::Mensagem::OperacaoCancelada
@@ -1101,17 +1121,19 @@ pub async fn executar_health_check(
         .ok_or_else(|| ErroSshCli::VpsNaoEncontrada(nome_resolvido.clone()))?;
 
     let mut vps = vps_base.clone();
-    // GAP-SSH-CLI-004: --timeout alinha health-check a exec/tunnel.
+    // GAP-SSH-CLI-004: --timeout; GAP-SSH-CLI-006: key + passphrase.
+    // Ordem: password, sudo, su, timeout, key_path, key_passphrase.
     aplicar_overrides(
         &mut vps,
         password_override,
         None,
         None,
         timeout_override,
-        None,
-        None,
+        key_override,
+        key_passphrase_override,
     );
-    let cfg = construir_configuracao(&vps, Some(&caminho), false);
+    // M1: honra --replace-host-key global (paridade exec/scp/tunnel).
+    let cfg = construir_configuracao(&vps, Some(&caminho), replace_host_key);
     let inicio = std::time::Instant::now();
     let cliente: Box<dyn ClienteSshTrait> = <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
     let latencia_ms = u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);

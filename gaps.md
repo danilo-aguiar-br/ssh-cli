@@ -1,167 +1,105 @@
-# gaps.md — ssh-cli v0.4.0
+# gaps.md — ssh-cli v0.4.1
 
 ## Metadados
 
 | Campo | Valor |
 |-------|--------|
-| Versão de código | **0.4.0** (`Cargo.toml`) |
+| Versão de código | **0.4.1** (`Cargo.toml`) |
 | Data | **2026-07-15** |
-| Escopo | Fechamento total AUD-SCP-2026-07-15 + SCP-023b + IO-008 + residual re-audit + **auditoria docs raiz + pasta docs/ + pasta skills/ + CLAUDE.md 0.4.0** |
+| Escopo | Fechamento AUD-POST (EXP-001, TUN-002, CLI-005, CLI-006, IO-009, REL-006) + ship 0.4.1 |
 | Status deste inventário | **Fechado (0 Abertos)** |
-| Suite de regressão | `gaps_v038` + `gaps_v039` + `gaps_v040` + e2e E01–E14 |
+| Suite de regressão | `gaps_v038` + `gaps_v039` + `gaps_v040` + **`gaps_v041`** + e2e E01–E14 |
 | Supply-chain | **russh 0.62.2**; `yanked=deny`; `ignore=[]` |
 | Telemetria | **Ausente** |
+| Publish | Local ready; GitHub + crates.io **após OK** explícito do mantenedor |
 
 ## Inventário consolidado
 
-### Histórico 0.3.7–0.3.9
+### Histórico 0.3.7–0.4.0
 
-Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
+Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC + AUD-SCP 010–023 + DOC-004* + IO-007/008 + REL-004/005). Ver histórico em git tag `v0.4.0`.
 
-### Bloco AUD-SCP-2026-07-15 → **0.4.0** (18 + 023b + IO-008 + residual)
+### Bloco AUD-POST-0.4.0 → **0.4.1**
 
 | ID | Título | Status | Teste / evidência |
 |----|--------|--------|-------------------|
-| GAP-SSH-SCP-010 | Header `\\n` literal | **Resolvido (0.4.0)** | unit `formatar_header_upload_scp_*` |
-| GAP-SSH-SCP-011 | ACK/EOF sem `0x00` | **Resolvido (0.4.0)** | unit + e2e E10–E12 |
-| GAP-SSH-SCP-012 | Upload sem status remoto | **Resolvido (0.4.0)** | `scp_aguardar_status` |
-| GAP-SSH-SCP-013 | Download header/ACK | **Resolvido (0.4.0)** | e2e E11–E12 |
-| GAP-SSH-SCP-014 | Path shell-escape | **Resolvido (0.4.0)** | unit + e2e path espaço |
-| GAP-SSH-SCP-015 | Unit cristalizava bug | **Resolvido (0.4.0)** | unit proíbe `\`+`n` literal |
-| GAP-SSH-SCP-016 | E2E oficial sem scp | **Resolvido (0.4.0)** | e2e E10–E14; `gap_e2e_script_e10_e12` |
-| GAP-SSH-SCP-017 | Flags scp sem paridade | **Resolvido (0.4.0)** | `gap_scp_017_*` |
-| GAP-SSH-SCP-018 | Upload `fs::read` total | **Resolvido (0.4.0)** | stream 32 KiB |
-| GAP-SSH-SCP-019 | Sem `-r` / dirs | **Resolvido (0.4.0)** por design file-only | `gap_scp_019_*` + DOC-004 |
-| GAP-SSH-SCP-020 | Sucesso hardcoded PT | **Resolvido (0.4.0)** | i18n EN/PT success + validação |
-| GAP-SSH-SCP-020b | Validação SCP EN-only | **Resolvido (0.4.0)** | `ScpUploadSomenteArquivo` / `ScpDownloadLocalNaoDiretorio` |
-| GAP-SSH-SCP-021 | Schema JSON transfer | **Resolvido (0.4.0)** | `scp-transfer.schema.json` |
-| GAP-SSH-SCP-022 | Download parcial no disco | **Resolvido (0.4.0)** | `.ssh-cli.partial` + rename + fsync pai |
-| GAP-SSH-SCP-022b | Mode pós-rename residual | **Resolvido (0.4.0)** | mode/times no **partial** antes do rename |
-| GAP-SSH-SCP-023 | Preserve mtime/mode bi-dir | **Resolvido (0.4.0)** | `-tp`/`-fp` + mode + set_times; E14 |
-| GAP-SSH-SCP-023b | Download sem -p/mode | **Resolvido (0.4.0)** | `comando_scp_remoto` + `aplicar_mode_local` |
-| GAP-SSH-REL-004 | 0.3.9 anunciava SCP quebrado | **Resolvido (0.4.0)** | CHANGELOG honesty |
-| GAP-SSH-DOC-004 | Docs sem file-only / alerta 0.3.9 | **Resolvido (0.4.0)** | product line |
-| GAP-SSH-DOC-004b | Raiz: SECURITY 0.3.x current + INTEGRATIONS 0.4.0=0.3.9 + llms schema omit + CONTRIBUTING sem v040 | **Resolvido (0.4.0)** | `gap_doc_004_root_security_integrations_honest` |
-| GAP-SSH-DOC-004c | Pasta `docs/`: AGENTS/HOW_TO/COOKBOOK/MIGRATION/TESTING/RELEASE/CROSS + schemas sem contratos SCP/tunnel 0.4.0 | **Resolvido (0.4.0)** | `gap_doc_004c_docs_folder_scp_tunnel_honest` |
-| GAP-SSH-DOC-004d | Pasta `skills/`: SKILL EN/PT + evals sem contratos SCP/tunnel 0.4.0 (file-only, scp-transfer, partial, 32KiB, preserve, tunnel_listening) | **Resolvido (0.4.0)** | `gap_doc_004d_skills_scp_tunnel_honest` |
-| GAP-SSH-DOC-004e | `CLAUDE.md` bloco produto: alvo `0.3.9+`, suite só v039, SCP/tunnel sem file-only/partial/32KiB/scp-transfer/`tunnel_listening` | **Resolvido (0.4.0)** | bloco `# ssh-cli` consolidado 0.4.0 |
-| GAP-SSH-TEST-004 | Integração scp só surface | **Resolvido (0.4.0)** | `gaps_v040` |
-| GAP-SSH-IO-007 | Sucesso scp sem JSON | **Resolvido (0.4.0)** | `imprimir_transferencia_json` |
-| GAP-SSH-IO-007b | `scp --json` sem envelope erro | **Resolvido (0.4.0)** | `definir_json_erros` + `gap_io_007b_*` |
-| GAP-SSH-IO-008 | `tunnel` sem `--json` local | **Resolvido (0.4.0)** | `gap_io_008_tunnel_json_flag` + `imprimir_tunnel_listening_json` |
-| GAP-SSH-HYG-001 | `rust_out` dirty | **Resolvido (0.4.0)** | `.gitignore` |
-| GAP-SSH-SCP-001 | Valida local antes connect | **Resolvido** (pré) | suite gaps_v038/v040 |
+| GAP-SSH-EXP-001 | `vps export` redacted com ciphertext de senha vazia | **Resolvido (0.4.1)** | unit `empty_secret_never_encrypted_blob`; integration export sem `sshcli-enc:`; `gap_exp_001_*` |
+| GAP-SSH-TUN-002 | Tunnel deadline pós-bind → exit 74 | **Resolvido (0.4.1)** | `AtomicBool` bound; `gap_tun_002_*`; e2e/ad-hoc EC=0 |
+| GAP-SSH-CLI-005 | `tunnel` sem password-stdin / key-passphrase | **Resolvido (0.4.1)** | `gap_cli_005_*`; help + conflicts |
+| GAP-SSH-CLI-006 | `health-check` sem password-stdin / key override | **Resolvido (0.4.1)** | `gap_cli_006_*`; `aplicar_overrides` key |
+| GAP-SSH-IO-009 | JSON SCP sem `event` | **Resolvido (0.4.1)** | `event: scp-transfer`; schema; `gap_io_009_*` |
+| GAP-SSH-PROC-001 | `cargo fmt --check` sujo | **Resolvido (0.4.1)** | fmt gate |
+| GAP-SSH-REL-006 | Tag 0.4.0 sem EXP/TUN/CLI/IO patch | **Resolvido (0.4.1 local)**; remote c/ OK publish | commit+tag `v0.4.1` |
 
-## PA (todos Feitos)
-
-| PA | Status |
-|----|--------|
-| PA-SCP-01..13 | **Feito** |
-| PA-SCP-023b | **Feito** |
-| PA-IO-008 | **Feito** |
-| PA-SCP-022b / 020b / IO-007b | **Feito** (re-auditoria agent teams) |
-
-## Processo (não é gap de código)
+### Melhorias M1–M6 (dentro de 0.4.1)
 
 | ID | Título | Status |
 |----|--------|--------|
-| GAP-SSH-REL-005 | crates.io/GitHub ainda 0.3.9 até publish/push 0.4.0 | **Resolvido (0.4.0)** — `main`+tag `v0.4.0` no GitHub; crates.io **0.4.0**; GitHub Release `v0.4.0` (2026-07-15) |
+| M1 | health-check honra `--replace-host-key` | **Feito** |
+| M2 | health-check `--json` → `definir_json_erros` | **Feito** |
+| M3 | tunnel usa `aplicar_overrides` | **Feito** |
+| M4 | revalidação EXP unit/integration | **Feito** |
+| M5 | tabela gap→teste neste inventário | **Feito** |
+| M6 | CHANGELOG honesty residual 0.4.0 | **Feito** |
+
+## PA — contra-medidas
+
+| PA | Contra-medida | Status |
+|----|---------------|--------|
+| PA-EXP-01..03 | empty secret + testes | **Feito** |
+| PA-TUN-02 | bound flag pós-bind | **Feito** |
+| PA-CLI-05 | flags tunnel | **Feito** |
+| PA-CLI-06 | flags health-check | **Feito** |
+| PA-IO-09 | event scp-transfer | **Feito** |
+| PA-M1 / M2 | replace_host_key + json erros health | **Feito** |
+| PA-TEST-041 | gaps_v041 | **Feito** |
+| PA-DOC-041 | product line + CHANGELOG | **Feito** |
+| PA-REL-06 | release 0.4.1 | **Feito local** (push/publish com OK) |
 
 ## Política
 
-- **Resolvido** = código + teste + nota de versão **0.4.0**
-- Inventário **Fechado** somente com **0 Abertos** de produto
+- **Resolvido** = código + teste + inventário
+- Inventário **Fechado** com **0 Abertos**
 - Sem telemetria
 - Docs longos: atomwrite
-- One-shot: nascer → transferir → morrer
-- PROIBIDO deixar bugs/gaps de produto para “versão futura”
+- One-shot: nascer → executar → morrer
+- PROIBIDO push/publish sem OK do mantenedor
 
-## Resumo quantitativo 0.4.0
+## Tabela gap→teste (0.4.1)
+
+| Gap | Teste |
+|-----|-------|
+| EXP-001 | `empty_secret_never_encrypted_blob`; `export_redacted_nao_contem_senha`; `gap_exp_001_serializar_empty_source` |
+| TUN-002 | `gap_tun_002_bound_flag_source`; ad-hoc/e2e tunnel |
+| CLI-005 | `gap_cli_005_tunnel_help_auth_flags`; `gap_cli_005_tunnel_password_stdin_conflict` |
+| CLI-006 | `gap_cli_006_health_help_auth_flags`; `gap_cli_006_health_password_stdin_conflict` |
+| IO-009 | `gap_io_009_scp_event_schema`; `gap_scp_021` (event required) |
+| REL-006 | `gap_rel_006_changelog_041`; `gap_version_041` |
+
+## Resumo quantitativo
 
 | Métrica | Valor |
 |---------|--------|
-| Gaps abertos de produto | **0** |
-| Gaps AUD-SCP + pós-auditoria resolvidos | **29** (inclui DOC-004b raiz + DOC-004c docs/ + DOC-004d skills/ + DOC-004e CLAUDE.md) |
+| Gaps AUD-POST resolvidos | **6** (EXP/TUN/CLI×2/IO/REL) |
+| Melhorias M1–M6 | **6 Feito** |
+| Abertos | **0** |
 | russh | **0.62.2** |
 | Telemetria | Ausente |
-| E2E | E01–E14 |
-| Publish | **Feito** — GitHub `v0.4.0` + crates.io **0.4.0** (OK do mantenedor 2026-07-15) |
+| Versão | **0.4.1** |
 
-## Causa raiz (5 Porquês) — SCP-023b
+## Causa raiz (resumo)
 
-| Nível | Pergunta | Resposta |
-|-------|----------|----------|
-| Sintoma | Download mode=644 mtime=now apesar de “SCP-023 resolvido” | E14/ad-hoc falhava no download |
-| Por quê 1 | Por que mode/mtime não vinham? | Source remoto não emitia `T` e mode honesto |
-| Por quê 2 | Por que o source não emitia? | `scp -f` **sem** `-p` (OpenSSH só envia T com pflag) |
-| Por quê 3 | Por que o cliente não pedia -p? | `comando_scp_remoto` usava só `-t`/`-f` |
-| Por quê 4 | Por que parse ignorava mode? | `parse_header_scp` retornava só size |
-| Por quê 5 | Por que o inventário mentia? | Teste e2e não cobria preserve bi-dir; status “Resolvido” sem E14 |
+### EXP-001
+`serializar_segredo` cifrava string vazia → early-return `""`.
 
-**Causa raiz:** ausência de `-p` no source remoto + parse/apply incompletos + gate e2e sem preserve.
+### TUN-002
+Deadline pós-bind tratado como erro → bound flag distingue sucesso one-shot.
 
-**Contra-medidas (Feitas):** `-tp`/`-fp` sempre; parse `(mode,size)`; `aplicar_mode_local`; E14; `gap_scp_023_*`.
+### CLI-005 / CLI-006
+Subset de flags vs exec/scp → paridade clap + `aplicar_overrides`.
 
-## Causa raiz — IO-008
+### IO-009
+JSON SCP sem discriminador → `event: "scp-transfer"` + schema.
 
-| Nível | Resposta |
-|-------|----------|
-| Sintoma | Agentes sem evento estruturado no tunnel |
-| Por quê | Tunnel só banners humanos + sem flag `--json` local |
-| Raiz | Paridade agent-first incompleta no subcomando tunnel |
-| Contra-medida | `--json` + `event: tunnel_listening` após bind; erros via envelope JSON |
-
-## Causa raiz — residual re-audit agent teams
-
-| ID | Sintoma | Fix |
-|----|---------|-----|
-| SCP-022b | mode/times após rename → falha deixava `local` “sucesso parcial” | `aplicar_mode_local` + times no **partial** antes do rename |
-| IO-007b | `scp --json` não setava `definir_json_erros` (tunnel já fazia) | `cli.rs` scp: `definir_json_erros(true)` se json efetivo |
-| SCP-020b | validação dir/file hardcoded EN | `Mensagem::ScpUploadSomenteArquivo` / `ScpDownloadLocalNaoDiretorio` EN+PT |
-
-## Tools obrigatórios (sessão)
-
-- GraphRAG: `rules_rust_ssh`, `cli_com_clap`, `cli_one_shot`, `cli_stdin_stdout`, `escrita_atomica`, hardening, testes, publish
-- `context7 library russh` (trust 9.7) + docs Channel/exec
-- `mcp docs-rs` russh **0.62.2** `Channel` (`exec` documenta SCP tunnel)
-- `duckduckgo-search-cli` OpenSSH scp protocol C/T/ACK
-- `atomwrite` para este inventário
-
-## Referências
-
-- Código: `src/ssh/cliente.rs`, `src/scp.rs`, `src/cli.rs`, `src/tunnel.rs`, `src/output.rs`, `src/i18n.rs`
-- Testes: `tests/gaps_v040_integration.rs`, unit wire, `scripts/e2e_real_ssh.sh`
-- Schemas: `docs/schemas/scp-transfer.schema.json`
-
-## Revalidação (2026-07-15, residual re-audit)
-
-| Gate | Resultado |
-|------|-----------|
-| Agent team explore (SCP+CLI) | **22/22 PASS** + 3 residuais → **fechados** |
-| `cargo fmt` | **OK** |
-| `cargo clippy --locked --all-targets -D warnings` | **OK** |
-| `cargo test --locked` | **OK** (188 unit + integrations; gaps_v040=17) |
-| `cargo deny check` | **OK** (advisories/bans/licenses/sources) |
-| `scripts/e2e_real_ssh.sh --from-grok-config` | **PASS E01–E14** fails=0 |
-| context7 `/eugeny/russh` | trust **9.7** |
-| docs-rs russh **0.62.2** `Channel::exec` | SCP via canal documentado |
-| duckduckgo-search-cli | OpenSSH scp C/T/ACK consultado |
-| atomwrite | este `gaps.md` |
-| Telemetria | Ausente (só `telemetry: false` no doctor) |
-| Gaps de produto abertos | **0** |
-| REL-005 push/publish | **Resolvido** — GitHub + crates.io **0.4.0** |
-
-## Re-auditoria sessão (2026-07-15, pós-compact)
-
-| Check | Resultado |
-|-------|----------|
-| Agent team REAUDIT-SCP | 18 gaps Abertos do paste → **todos RESOLVED** em HEAD |
-| Agent team GATES | fmt/clippy/-D/test lib 188/gaps_v040 17/deny **PASS** |
-| E2E real `--from-grok-config` | **PASS E01–E14** fails=0 |
-| context7 `/eugeny/russh` | Channel::exec documenta uso SCP |
-| docs-rs russh 0.62.2 | Channel::exec / data / data_bytes |
-| duckduckgo-search-cli | OpenSSH scp man / protocol refs |
-| atomwrite | disponível; inventário já fechado (sem reescrita)
-| Telemetria | Ausente |
-| REL-005 | **Resolvido** — push+publish+GitHub Release **0.4.0** |
-
+### REL-006
+Fixes só no tree dirty → release **0.4.1**.

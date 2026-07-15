@@ -1,6 +1,6 @@
 # Migration Guide
 
-> Move from ssh-cli 0.3.3 (or later) to **0.4.0** without losing multi-host inventory.
+> Move from ssh-cli 0.3.3 (or later) to **0.4.1** without losing multi-host inventory.
 
 - Read this document in [Portuguese (pt-BR)](MIGRATION.pt-BR.md).
 
@@ -48,8 +48,9 @@
 - Version string reports `-dirty` when the working tree is dirty.
 - Full residual suite `tests/gaps_v038_integration.rs`.
 
-### Since 0.4.0 (current)
-- **SCP wire fix:** crates.io **0.3.9** advertised SCP but the protocol implementation was broken (literal `\\n` header, empty ACK). Upgrade to **0.4.0** before relying on `scp upload|download`.
+### Since 0.4.1 (current)
+- **AUD-POST patch:** empty secrets never become `sshcli-enc` blobs on redacted export (EXP-001); tunnel post-bind deadline exits **0** (TUN-002); `tunnel`/`health-check` auth flag parity with exec/scp (CLI-005/006); SCP JSON includes `event: \"scp-transfer\"` (IO-009). Additive only — no breaking CLI changes.
+- **SCP wire fix (0.4.0):** crates.io **0.3.9** advertised SCP but the protocol was broken. Upgrade to **0.4.0+** (prefer **0.4.1**) before relying on `scp`.
 - SCP is **regular files only** (no `-r` / no SFTP). Use `--timeout` for large files (covers connect + transfer). Success JSON via `--json` / `--output-format json` (`docs/schemas/scp-transfer.schema.json`).
 - SCP download writes `{path}.ssh-cli.partial` then atomic rename; mode/times applied on the **partial** before rename.
 - SCP upload streams in **32 KiB** chunks (no full-file `fs::read` into RAM).
@@ -142,7 +143,9 @@ ssh-cli su-exec prod "id"
 - Empty password → JSON `null`; non-empty → string `***`.
 - Human text show still uses "(não definida)" for empty password.
 
-### Transfer / tunnel events (0.4.0)
+### Transfer / tunnel events (0.4.0 / 0.4.1)
+- SCP success JSON includes required `event: \"scp-transfer\"` (IO-009, 0.4.1).
+- Tunnel still emits `event: \"tunnel_listening\"` after bind.
 - SCP success: `docs/schemas/scp-transfer.schema.json`
 - Tunnel listening: `docs/schemas/tunnel-listening.schema.json`
 - Failures in JSON mode: `docs/schemas/error-envelope.schema.json` on stderr

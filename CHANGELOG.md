@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-15
+
+### Fixed
+- **Export redacted empty secret** no longer emits `sshcli-enc:v1:…` ciphertext for password `""` (GAP-SSH-EXP-001). Empty secrets serialize as empty strings so cross-machine import of skeletons stays honest.
+- **Tunnel one-shot deadline** after local bind no longer returns exit **74** `TimeoutSsh` when the agent already received `tunnel_listening` (GAP-SSH-TUN-002). Pre-bind timeout remains exit 74.
+
+### Added
+- `tunnel` auth flag parity with exec/scp: `--password-stdin`, `--key-passphrase`, `--key-passphrase-stdin` (GAP-SSH-CLI-005)
+- `health-check` auth flag parity: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` (GAP-SSH-CLI-006)
+- SCP success JSON field `event: \"scp-transfer\"` + schema required (GAP-SSH-IO-009)
+- Suite `tests/gaps_v041_integration.rs` (AUD-POST regression)
+- `health-check` honors global `--replace-host-key` and enables JSON error envelope with `--json`
+
+### Changed
+- Version 0.4.0 → **0.4.1**
+- Product-line docs + skills document tunnel/health auth parity and scp-transfer event
+
+### Security / honesty
+- **If you installed 0.4.0 from crates.io:** redacted `vps export` could show fake empty-password ciphertext; tunnel agents could see `ok:true` then exit 74. Upgrade to **0.4.1**.
+- No telemetry
+
+### Notes
+- One-shot CLI: birth → execute → die
+- Additive agent contracts only (PATCH)
+
 ## [0.4.0] - 2026-07-15
 
 ### Fixed

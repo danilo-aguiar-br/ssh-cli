@@ -9,6 +9,31 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-15
+
+### Corrigido
+- **Export redacted com secret vazio** não emite mais ciphertext `sshcli-enc:v1:…` para senha `""` (GAP-SSH-EXP-001).
+- **Deadline do tunnel** após bind local não retorna mais exit **74** quando o agente já recebeu `tunnel_listening` (GAP-SSH-TUN-002). Timeout pré-bind permanece 74.
+
+### Adicionado
+- Paridade de flags auth em `tunnel`: `--password-stdin`, `--key-passphrase`, `--key-passphrase-stdin` (GAP-SSH-CLI-005)
+- Paridade de flags auth em `health-check`: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` (GAP-SSH-CLI-006)
+- Campo JSON SCP `event: \"scp-transfer\"` + schema obrigatório (GAP-SSH-IO-009)
+- Suite `tests/gaps_v041_integration.rs`
+- `health-check` honra `--replace-host-key` global e envelope JSON de erro com `--json`
+
+### Alterado
+- Versão 0.4.0 → **0.4.1**
+- Docs/skills de product line com paridade auth e event scp-transfer
+
+### Segurança / honesty
+- **Se instalou 0.4.0 do crates.io:** export redacted podia mostrar ciphertext falso de senha vazia; tunnel podia emitir `ok:true` e sair 74. Atualize para **0.4.1**.
+- Sem telemetria
+
+### Notas
+- CLI one-shot: nascer → executar → morrer
+- Contratos agent aditivos apenas (PATCH)
+
 ## [0.4.0] - 2026-07-15
 
 ### Corrigido

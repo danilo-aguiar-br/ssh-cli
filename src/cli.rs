@@ -225,11 +225,20 @@ pub enum Comando {
         #[arg(long)]
         timeout_ms: u64,
         /// Override de senha SSH.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
-        /// Override de chave.
+        /// Lê senha SSH de stdin (GAP-SSH-CLI-005).
+        #[arg(long)]
+        password_stdin: bool,
+        /// Override de caminho da chave privada.
         #[arg(long)]
         key: Option<String>,
+        /// Passphrase da chave.
+        #[arg(long, conflicts_with = "key_passphrase_stdin")]
+        key_passphrase: Option<String>,
+        /// Lê passphrase da chave de stdin (GAP-SSH-CLI-005).
+        #[arg(long)]
+        key_passphrase_stdin: bool,
         /// Saída JSON agent-first quando o listener local sobe (GAP-SSH-IO-008).
         #[arg(long)]
         json: bool,
@@ -243,8 +252,20 @@ pub enum Comando {
         #[arg(long)]
         json: bool,
         /// Override de senha SSH.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
+        /// Lê senha SSH de stdin (GAP-SSH-CLI-006).
+        #[arg(long)]
+        password_stdin: bool,
+        /// Override de caminho da chave privada (GAP-SSH-CLI-006).
+        #[arg(long)]
+        key: Option<String>,
+        /// Passphrase da chave.
+        #[arg(long, conflicts_with = "key_passphrase_stdin")]
+        key_passphrase: Option<String>,
+        /// Lê passphrase da chave de stdin (GAP-SSH-CLI-006).
+        #[arg(long)]
+        key_passphrase_stdin: bool,
         /// Override de timeout SSH em milissegundos (GAP-SSH-CLI-004).
         #[arg(long)]
         timeout: Option<u64>,
@@ -796,7 +817,10 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             porta_remota,
             timeout_ms,
             password,
+            password_stdin,
             key,
+            key_passphrase,
+            key_passphrase_stdin,
             json,
         } => {
             // GAP-SSH-IO-008: --json local ou --format json global.
@@ -804,6 +828,9 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             if json_efetivo {
                 crate::output::definir_json_erros(true);
             }
+            // GAP-SSH-CLI-005: paridade auth com exec/scp (stdin + passphrase).
+            let password = ler_stdin_se(password_stdin, password)?;
+            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
             crate::tunnel::executar_tunnel(
                 &vps_nome,
                 porta_local,
@@ -812,6 +839,7 @@ pub async fn executar(args: Argumentos) -> Result<()> {
                 config_override,
                 password,
                 key,
+                key_passphrase,
                 timeout_ms,
                 replace_host_key,
                 json_efetivo,
@@ -822,8 +850,15 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             vps_nome,
             json,
             password,
+            password_stdin,
+            key,
+            key_passphrase,
+            key_passphrase_stdin,
             timeout,
         } => {
+            // GAP-SSH-CLI-006: paridade auth com exec/scp (stdin + key + passphrase).
+            let password = ler_stdin_se(password_stdin, password)?;
+            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
             crate::vps::executar_health_check(
                 vps_nome.as_deref(),
                 config_override,
@@ -831,6 +866,9 @@ pub async fn executar(args: Argumentos) -> Result<()> {
                 json,
                 password,
                 timeout,
+                key,
+                key_passphrase,
+                replace_host_key,
             )
             .await
         }

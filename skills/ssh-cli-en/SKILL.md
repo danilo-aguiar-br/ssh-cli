@@ -1,6 +1,6 @@
 ---
 name: ssh-cli
-description: This skill MUST auto-activate for remote SSH via ssh-cli one-shot even without naming ssh-cli. Inputs host name IP user key or password-stdin command paths tunnel ports timeout ms. Outputs sysexits, exec JSON (stdout stderr exit_code truncated_stdout truncated_stderr duration_ms), scp JSON (ok direction vps local remote bytes duration_ms), tunnel JSON (ok event tunnel_listening vps local_port remote_host remote_port timeout_ms), stderr error (exit_code message remote_exit_code), registry password null or ***. Covers vps CRUD path doctor export import connect exec sudo-exec packing su-exec scp upload download files-only no-r no-SFTP --json --timeout .ssh-cli.partial rename 32KiB stream mtime mode preserve tunnel required --timeout-ms --json wait tunnel_listening health-check --timeout secrets status init reencrypt --quiet default error logs TOFU replace-host-key mode 0600 completions cargo install locked. NEVER telemetry. NEVER long-lived SSH daemon. NEVER leak secrets. NEVER recursive scp dirs.
+description: This skill MUST auto-activate for remote SSH via ssh-cli one-shot even without naming ssh-cli. Inputs host/user/key/password-stdin paths tunnel ports timeout. Outputs sysexits; exec JSON; scp JSON ok event scp-transfer direction vps local remote bytes duration_ms; tunnel JSON ok event tunnel_listening; stderr error envelope; registry password null or ***. Covers vps CRUD path doctor export import connect exec sudo-exec su-exec scp file-only no-r no-SFTP --json --timeout .ssh-cli.partial 32KiB stream mtime/mode preserve tunnel --timeout-ms --json --password-stdin --key --key-passphrase[-stdin] wait tunnel_listening health-check --timeout --password-stdin --key --key-passphrase[-stdin] secrets quiet TOFU replace-host-key completions cargo install locked. NEVER telemetry/daemon/leak secrets/recursive scp.
 ---
 
 # ssh-cli Agent Skill
@@ -242,7 +242,7 @@ ssh-cli --disable-sudo exec prod "id" --json
 ### REQUIRED
 - MUST use `scp upload` or `scp download` for regular-file copy only
 - MUST pass `--json` on every agent-parsed transfer
-- MUST parse scp success only from stdout with fields `ok`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`
+- MUST parse scp success only from stdout with fields `ok`, `event` (`scp-transfer`), `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`
 - MUST treat `ok` as true and `direction` as `upload` or `download` only
 - MUST use argument order `upload <vps> <local> <remote>` and `download <vps> <remote> <local>`
 - MUST pass optional `--timeout <ms>` on scp when connect-plus-transfer needs a longer deadline
@@ -291,7 +291,7 @@ printf '%s' "$KEY_PASS" | ssh-cli scp upload prod ./payload.bin /tmp/payload.bin
 - MUST NEVER use the local port before `tunnel_listening` when `--json` is set
 - MUST NEVER treat tunnel start as complete on process spawn alone
 - MUST NEVER use `--timeout` instead of `--timeout-ms` on tunnel
-- MUST NEVER invent `--password-stdin` on tunnel if not listed here
+- MUST use tunnel auth flags `--password` / `--password-stdin` / `--key` / `--key-passphrase` / `--key-passphrase-stdin` (parity with exec/scp since 0.4.1)
 
 ### Correct Pattern
 
@@ -392,6 +392,7 @@ ssh-cli exec missing-host "true" --json; echo $?
 - MUST read scp success fields `ok`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`
 - MUST read tunnel ready fields `ok`, `event`, `vps`, `local_port`, `remote_host`, `remote_port`, `timeout_ms`
 - MUST treat tunnel `event` as the constant string `tunnel_listening`
+- MUST treat scp success `event` as the constant string `scp-transfer` (0.4.1+)
 - MUST parse stderr error envelope fields `exit_code`, `message`, and optional `remote_exit_code` on hard failures in JSON mode including scp and tunnel
 - MUST treat list show doctor secrets status payloads as opaque typed objects and only use documented fields
 - MUST treat list/show `password` as JSON `null` when empty or absent and as `***` when stored

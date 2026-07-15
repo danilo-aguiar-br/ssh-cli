@@ -4,7 +4,7 @@
 
 - Read this document in [Portuguese (pt-BR)](HOW_TO_USE.pt-BR.md).
 - Return to [README.md](../README.md) for the full command map.
-- Product line documented here: **0.4.0** (GAP-001–014 closed; residual LOG/JSON/CLI closed; AUD-SCP wire fix + agent JSON for scp/tunnel closed).
+- Product line documented here: **0.4.1** (GAP-001–014 closed; residual LOG/JSON/CLI closed; AUD-SCP wire fix + agent JSON for scp/tunnel closed).
 
 
 ## Prerequisites
@@ -12,8 +12,8 @@
 - Ensure network reachability to the target SSH host.
 - Hold either a password or an OpenSSH private key for that host.
 - Prefer a writable XDG config home for multi-host storage.
-- Install with `cargo install ssh-cli --locked` (**0.4.0+** on crates.io; avoid **0.3.9** for SCP).
-- Do not rely on crates.io **0.3.9** for SCP: that release advertised transfer but the wire protocol was broken (0-byte remote files or timeouts). Use **0.4.0+**.
+- Install with `cargo install ssh-cli --locked` (**0.4.1+** on crates.io; avoid **0.3.9** for SCP).
+- Do not rely on crates.io **0.3.9** for SCP: that release advertised transfer but the wire protocol was broken (0-byte remote files or timeouts). Use **0.4.1+**.
 
 
 ## First Command in 60 Seconds

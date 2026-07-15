@@ -4,7 +4,7 @@
 
 - Leia este documento em [inglês](AGENTS.md).
 - Combine com [../INTEGRATIONS.pt-BR.md](../INTEGRATIONS.pt-BR.md) e [../skills/ssh-cli-pt/SKILL.md](../skills/ssh-cli-pt/SKILL.md).
-- Linha de produto: **0.4.0** (inventário Fechado; russh 0.62.2; AUD-SCP + IO-007/008 fechados).
+- Linha de produto: **0.4.1** (inventário Fechado; russh 0.62.2; AUD-SCP + AUD-POST EXP/TUN/CLI/IO fechados).
 
 
 ## Por quê
@@ -54,7 +54,7 @@
 - OBRIGATÓRIO: tratar senha vazia em list/show JSON como `null` (hosts só-chave); não vazia mascara `***`.
 - OBRIGATÓRIO: passar `--timeout-ms` em toda invocação de `tunnel`.
 - OBRIGATÓRIO: tratar `scp` como **somente arquivos regulares** (sem diretórios, sem `-r`, sem subsistema SFTP).
-- OBRIGATÓRIO: nunca depender do crates.io **0.3.9** para SCP; o wire estava quebrado — exija **0.4.0+**.
+- OBRIGATÓRIO: nunca depender do crates.io **0.3.9** para SCP; o wire estava quebrado — exija **0.4.1+**.
 - OBRIGATÓRIO: parsear sucesso SCP com `docs/schemas/scp-transfer.schema.json` (`ok`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`) no **stdout**.
 - OBRIGATÓRIO: em `tunnel --json`, aguardar um objeto stdout com `event: "tunnel_listening"` (`docs/schemas/tunnel-listening.schema.json`) antes de usar a porta local; o processo permanece vivo até timeout ou sinal.
 - OBRIGATÓRIO: pode passar `health-check --timeout <ms>` quando o timeout padrão do host for longo ou curto demais.

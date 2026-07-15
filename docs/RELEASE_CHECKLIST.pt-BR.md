@@ -3,7 +3,7 @@
 > Gates obrigatórios antes de marcar release e inventário `gaps.md` como Fechado.
 
 - Leia este documento em [inglês](RELEASE_CHECKLIST.md).
-- Alvo de release / linha de produto: **0.4.0**.
+- Alvo de release / linha de produto: **0.4.1**.
 - Inventário canônico: [../gaps.md](../gaps.md).
 - Suites residuais: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG); `tests/gaps_v040_integration.rs` (SCP-010..023, DOC-004, IO-007/007b/008, REL-004, TEST-004).
 

@@ -3,7 +3,7 @@
 > Copy executable recipes that solve real multi-host SSH agent problems.
 
 - Read this document in [Portuguese (pt-BR)](COOKBOOK.pt-BR.md).
-- Product line: **0.4.0**.
+- Product line: **0.4.1**.
 
 
 ## Latency Note
@@ -23,7 +23,7 @@
 - Install: `cargo install ssh-cli --locked`
 - Supply chain: russh 0.62.2; `cargo deny` with `yanked=deny`, `multiple-versions=warn`
 - SCP: regular files only (no `-r` / no directories / no SFTP); download partial suffix `.ssh-cli.partial`
-- SCP wire: require **0.4.0+** (crates.io **0.3.9** advertised SCP but was inoperant)
+- SCP wire: require **0.4.1+** (crates.io **0.3.9** advertised SCP but was inoperant)
 
 
 ## How To Initialize Master-Key Encryption
@@ -160,7 +160,7 @@ ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
 ## How To Transfer a Release Artifact (regular file only)
 
 ```bash
-# Require 0.4.0+ — crates.io 0.3.9 SCP wire was broken (0-byte remote / timeout)
+# Require 0.4.1+ — crates.io 0.3.9 SCP wire was broken (0-byte remote / timeout)
 # No directories / no -r / no SFTP
 ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
   --timeout 120000 --json

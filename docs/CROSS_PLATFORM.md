@@ -3,7 +3,7 @@
 > Escape OS-specific SSH glue with one portable Rust binary.
 
 - Read this document in [Portuguese (pt-BR)](CROSS_PLATFORM.pt-BR.md).
-- Product line: **0.4.0**.
+- Product line: **0.4.1**.
 
 
 ## The Pain You Already Know

@@ -3,9 +3,9 @@
 > Mandatory gates before marking a release and `gaps.md` inventory as closed (Fechado).
 
 - Read this document in [Portuguese (pt-BR)](RELEASE_CHECKLIST.pt-BR.md).
-- Release target / product line: **0.4.0**.
+- Release target / product line: **0.4.1**.
 - Canonical inventory: [../gaps.md](../gaps.md).
-- Residual suites: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG); `tests/gaps_v040_integration.rs` (SCP-010..023, DOC-004, IO-007/007b/008, REL-004, TEST-004).
+- Residual suites: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG); `tests/gaps_v040_integration.rs` (SCP 0.4.0); `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006).
 
 
 ## Purpose
@@ -20,8 +20,8 @@
 2. Clippy clean — `cargo clippy --all-targets -- -D warnings` exits 0.
 3. Supply chain deny (DENY-002) — `cargo deny check` exits 0; no russh CVE `ignore`; `yanked=deny`; empty `ignore = []`.
 4. Install resolve — `bash scripts/verify_install_resolve.sh` exits 0; russh at security floor (≥ 0.60.3; product line uses 0.62.2).
-5. Full tests — `cargo test` green (lib + integration + gaps_v037 + gaps_v038 + gaps_v039 + **gaps_v040**).
-6. Gap suites 1:1 — all `gap_*` tests in `tests/gaps_v038_integration.rs`, `tests/gaps_v039_integration.rs`, and `tests/gaps_v040_integration.rs` green.
+5. Full tests — `cargo test` green (lib + integration + gaps_v037 + gaps_v038 + gaps_v039 + gaps_v040 + **gaps_v041**).
+6. Gap suites 1:1 — all `gap_*` tests in `tests/gaps_v038_integration.rs`, `tests/gaps_v039_integration.rs`, and `tests/gaps_v040_integration.rs` / `tests/gaps_v041_integration.rs` green.
 7. Local e2e (no real VPS) — help, fake VPS CRUD, completions behave as documented.
 8. Real VPS smoke (when available) — `health-check` / `exec` plus SCP matrix **E10–E14** via `scripts/e2e_real_ssh.sh` when credentials exist; record outcome in `gaps.md` without secrets.
 9. Inventory versioned — `gaps.md` is tracked (not gitignored); `git check-ignore gaps.md` is empty.
@@ -55,7 +55,7 @@
     - `tunnel --json` / `tunnel_listening` and/or scp agent JSON surface in README/INTEGRATIONS/AGENTS
     - bilingual `skills/ssh-cli-en` and `skills/ssh-cli-pt` teach scp-transfer, tunnel_listening, file-only, partial, 32 KiB, timeout matrix (DOC-004d)
     - SECURITY Supported Versions brands **0.4.x** as current line (not 0.3.x)
-    - `cargo test --locked --test gaps_v040_integration` green (includes DOC-004 / DOC-004d gates)
+    - `cargo test --locked --test gaps_v040_integration` + `gaps_v041_integration` green
 
 
 ## How to verify residuals quickly
@@ -63,6 +63,7 @@
 ```bash
 cargo test --locked --test gaps_v039_integration
 cargo test --locked --test gaps_v040_integration
+cargo test --locked --test gaps_v041_integration
 cargo deny check
 bash scripts/verify_install_resolve.sh
 ssh-cli --version

@@ -17,7 +17,7 @@
 - Follow first use in [docs/HOW_TO_USE.md](docs/HOW_TO_USE.md).
 - Copy recipes from [docs/COOKBOOK.md](docs/COOKBOOK.md).
 - Check platforms in [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md).
-- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.4.0**).
+- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.4.1**).
 - Run tests via [docs/TESTING.md](docs/TESTING.md).
 - Consume JSON contracts under [docs/schemas/README.md](docs/schemas/README.md).
 - Teach LLMs with [skills/ssh-cli-en/SKILL.md](skills/ssh-cli-en/SKILL.md).
@@ -53,7 +53,7 @@
 - Dual limits `max_command_chars` and `max_output_chars`
 - Timeout with best-effort remote abort
 - Bounded tunnel via mandatory `--timeout-ms`
-- SCP upload and download of **regular files only** (no recursive directories / no SFTP subsystem; first solid wire fix in **0.4.0** — avoid crates.io 0.3.9 SCP)
+- SCP upload and download of **regular files only** (no recursive directories / no SFTP subsystem; first solid wire fix in **0.4.0**; patch **0.4.1** — avoid crates.io 0.3.9 SCP)
 - SCP flag parity with exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (contract `docs/schemas/scp-transfer.schema.json`)
 - SCP download writes `{path}.ssh-cli.partial` then atomic rename; preserve remote mtime/mode bi-directional; upload streams 32 KiB chunks
 - `tunnel --json` emits structured `tunnel_listening` after local bind
@@ -87,7 +87,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Installation
 ### Choose the install path that matches your environment
-- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (**0.4.0+** on crates.io; avoid **0.3.9** for SCP).
+- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (**0.4.1+** on crates.io; avoid **0.3.9** for SCP).
 - Rebuild from a checkout: `cargo install --path . --locked`
 - Do **not** use install without `--locked` unless you verified the crypto pins resolve cleanly.
 - Force upgrade after a release: `cargo install ssh-cli --locked --force`
@@ -205,7 +205,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Troubleshooting FAQ
 ### Fix common install and runtime failures
-- Install fails on crypto RC drift: rerun with `--locked` or use release **0.4.0+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
+- Install fails on crypto RC drift: rerun with `--locked` or use release **0.4.1+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
 - Auth fails on key-only hosts: set `--key` on `vps add` or pass `--key` / `--password-stdin` to `exec`.
 - Auth fails with passphrase keys: use `--key-passphrase-stdin`.
 - Host key changed: confirm legitimacy then rerun with `--replace-host-key`.
@@ -213,7 +213,7 @@ ssh-cli exec prod "hostname" --json
 - Config has encrypted secrets but no key: run `ssh-cli secrets init` or restore `secrets.key` / env master-key.
 - sudo-exec disabled: remove `--disable-sudo` and set `disable_sudo=false` on the host.
 - Unexpected stderr noise in JSON pipelines: default log level is already `error`; set `RUST_LOG` only to `debug` (or `-v`) when diagnosing.
-- SCP from crates.io **0.3.9** fails or writes 0-byte remotes: upgrade to **0.4.0+** (wire fix); only regular files, not directories.
+- SCP from crates.io **0.3.9** fails or writes 0-byte remotes: upgrade to **0.4.1+** (wire fix); only regular files, not directories.
 - SCP download fails mid-transfer: destination stays absent or previous file intact (partial uses `.ssh-cli.partial`).
 - macOS Gatekeeper blocks binary: run `xattr -d com.apple.quarantine /path/to/ssh-cli`.
 - Permission denied on config: ensure `chmod 600` on the XDG `config.toml` and `secrets.key`.

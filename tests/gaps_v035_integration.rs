@@ -134,6 +134,11 @@ fn export_redacted_nao_contem_senha() {
         .success();
     let texto = std::fs::read_to_string(&out).unwrap();
     assert!(!texto.contains("fake-test-password-not-real-001"));
+    // GAP-SSH-EXP-001: redacted export must not emit ciphertext blobs of empty secrets.
+    assert!(
+        !texto.contains("sshcli-enc:"),
+        "export redacted must not contain sshcli-enc blobs; got:\n{texto}"
+    );
     assert!(texto.contains("exp1"));
     assert!(out.exists());
 }

@@ -1,6 +1,6 @@
 ---
 name: ssh-cli
-description: Esta skill DEVE auto-ativar para SSH remoto via ssh-cli one-shot mesmo sem nomear ssh-cli. Entradas nome host IP usuário chave ou password-stdin comando paths portas tunnel timeout ms. Saídas sysexits, JSON exec (stdout stderr exit_code truncated_stdout truncated_stderr duration_ms), JSON scp (ok direction vps local remote bytes duration_ms), JSON tunnel (ok event tunnel_listening vps local_port remote_host remote_port timeout_ms), erro stderr (exit_code message remote_exit_code), inventário password null ou ***. Cobre vps CRUD path doctor export import connect exec sudo-exec packing su-exec scp upload download só-arquivo sem -r sem SFTP --json --timeout .ssh-cli.partial rename stream 32KiB preserve mtime mode tunnel --timeout-ms obrigatório --json aguardar tunnel_listening health-check --timeout secrets status init reencrypt --quiet logs error TOFU replace-host-key mode 0600 completions cargo install locked. NUNCA telemetria. NUNCA daemon SSH persistente. NUNCA vaze segredos. NUNCA scp recursivo de dirs.
+description: Esta skill DEVE auto-ativar para SSH remoto via ssh-cli one-shot mesmo sem nomear ssh-cli. Entradas host/usuário/chave/password-stdin paths tunnel timeout. Saídas sysexits; JSON exec; JSON scp ok event scp-transfer direction vps local remote bytes duration_ms; JSON tunnel ok event tunnel_listening; envelope erro stderr; inventário password null ou ***. Cobre vps CRUD path doctor export import connect exec sudo-exec su-exec scp só-arquivo sem -r/SFTP --json --timeout .ssh-cli.partial stream 32KiB preserve mtime/mode tunnel --timeout-ms --json --password-stdin --key --key-passphrase[-stdin] aguardar tunnel_listening health-check --timeout --password-stdin --key --key-passphrase[-stdin] secrets quiet TOFU replace-host-key completions cargo install locked. NUNCA telemetria/daemon/vazar segredos/scp recursivo.
 ---
 
 # Skill de Agente ssh-cli
@@ -291,7 +291,7 @@ printf '%s' "$KEY_PASS" | ssh-cli scp upload prod ./payload.bin /tmp/payload.bin
 - NUNCA DEVE usar a porta local antes de `tunnel_listening` quando `--json` estiver ativo
 - NUNCA DEVE tratar o start do tunnel como completo só pelo spawn do processo
 - NUNCA DEVE usar `--timeout` no lugar de `--timeout-ms` no tunnel
-- NUNCA DEVE inventar `--password-stdin` no tunnel se não estiver listado aqui
+- DEVE usar no tunnel flags de auth `--password` / `--password-stdin` / `--key` / `--key-passphrase` / `--key-passphrase-stdin` (paridade com exec/scp desde 0.4.1)
 
 ### Correct Pattern
 
@@ -307,6 +307,7 @@ ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json --key ~/.ssh/
 ### REQUIRED
 - DEVE usar `health-check` para verificar conectividade após mudanças de host
 - DEVE passar override opcional `--timeout <ms>` em `health-check` quando um deadline não padrão for necessário
+- DEVE usar em `health-check` as mesmas flags de auth agent-safe: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` (0.4.1+)
 - NUNCA DEVE usar `--timeout-ms` em health-check
 
 ### Correct Pattern

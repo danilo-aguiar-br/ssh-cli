@@ -21,7 +21,7 @@
 - Agent I/O residual suite under `tests/gaps_v037_integration.rs`
 - Post-0.3.7 residual suite under `tests/gaps_v038_integration.rs`
 - Post-0.3.8 residual suite under `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC/DENY/CHG)
-- Post-0.3.9 / **0.4.0** residual suite under `tests/gaps_v040_integration.rs` (SCP-010..023, DOC-004, IO-007/007b/008, REL-004, TEST-004, partial, preserve, scp-transfer schema)
+- Post-0.3.9 / **0.4.0** suite `tests/gaps_v040_integration.rs`; AUD-POST **0.4.1** suite `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006)
 - Storage integration under `tests/storage_integration.rs`
 - Snapshot tests under `tests/snapshot_tests.rs`
 - SCP surface under `tests/scp_integration.rs`
@@ -51,6 +51,7 @@ cargo test --locked --test gaps_v037_integration
 cargo test --locked --test gaps_v038_integration
 cargo test --locked --test gaps_v039_integration
 cargo test --locked --test gaps_v040_integration
+cargo test --locked --test gaps_v041_integration
 cargo test --locked --test storage_integration
 cargo test --locked --test snapshot_tests
 cargo test --locked packing
@@ -76,7 +77,7 @@ bash scripts/e2e_real_ssh.sh --from-grok-config
 ## CI Profiles
 - This repository currently ships without GitHub Actions workflows.
 - Maintainers run the local developer loop before every publish.
-- Publish gates include package dry-run, install resolve verification, bilingual docs parity, and `gaps_v040` residual suite.
+- Publish gates include package dry-run, install resolve verification, bilingual docs parity, and `gaps_v040` + `gaps_v041` residual suites.
 
 
 ## Environment Variables
@@ -98,4 +99,5 @@ bash scripts/e2e_real_ssh.sh --from-grok-config
 - Permission failures: confirm temp dirs are writable and mode assertions match the OS.
 - Encrypted fixture surprises: set `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` or provide a test master-key via env.
 - Unexpected quiet stderr: default is error-level tracing; set `RUST_LOG` or `-v` if you need debug lines.
-- SCP residual failures: run `cargo test --locked --test gaps_v040_integration` and read `gaps.md` AUD-SCP block.
+- SCP residual failures: run `cargo test --locked --test gaps_v040_integration
+cargo test --locked --test gaps_v041_integration` and read `gaps.md` AUD-SCP block.

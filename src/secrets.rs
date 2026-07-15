@@ -197,7 +197,14 @@ pub fn eh_blob_cifrado(valor: &str) -> bool {
 }
 
 /// Serializa um segredo para TOML: cifra se houver (ou auto-criar) chave; senão plaintext.
+///
+/// Segredo **vazio** nunca vira blob `sshcli-enc` (GAP-SSH-EXP-001): export redacted zera
+/// senhas e deve gravar `""` legível, não ciphertext de string vazia (que engana import
+/// em outra máquina sem a master-key e finge "secret present").
 pub fn serializar_segredo(plaintext: &str) -> ResultadoSshCli<String> {
+    if plaintext.is_empty() {
+        return Ok(String::new());
+    }
     let (chave, _) = garantir_chave_para_escrita()?;
     match chave {
         None => Ok(plaintext.to_string()),
@@ -467,6 +474,19 @@ mod testes {
             msg.contains("cifrados") || msg.contains("SSH_CLI") || msg.contains("secrets"),
             "msg={msg}"
         );
+        limpar_env_chave();
+    }
+
+    #[test]
+    #[serial]
+    fn empty_secret_never_encrypted_blob() {
+        // GAP-SSH-EXP-001
+        let _tmp = sandbox();
+        let hex = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+        std::env::set_var("SSH_CLI_SECRETS_KEY", hex);
+        let out = serializar_segredo("").unwrap();
+        assert_eq!(out, "");
+        assert!(!eh_blob_cifrado(&out));
         limpar_env_chave();
     }
 
