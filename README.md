@@ -87,7 +87,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Installation
 ### Choose the install path that matches your environment
-- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (after **0.4.0** is published; until then install from git/path for full features).
+- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (**0.4.0+** on crates.io; avoid **0.3.9** for SCP).
 - Rebuild from a checkout: `cargo install --path . --locked`
 - Do **not** use install without `--locked` unless you verified the crypto pins resolve cleanly.
 - Force upgrade after a release: `cargo install ssh-cli --locked --force`

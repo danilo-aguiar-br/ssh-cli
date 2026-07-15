@@ -65,7 +65,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 
 | ID | Título | Status |
 |----|--------|--------|
-| GAP-SSH-REL-005 | crates.io/GitHub ainda 0.3.9 até publish/push 0.4.0 | **Aguardando OK do mantenedor** (código local completo) |
+| GAP-SSH-REL-005 | crates.io/GitHub ainda 0.3.9 até publish/push 0.4.0 | **Resolvido (0.4.0)** — `main`+tag `v0.4.0` no GitHub; crates.io **0.4.0**; GitHub Release `v0.4.0` (2026-07-15) |
 
 ## Política
 
@@ -85,7 +85,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | russh | **0.62.2** |
 | Telemetria | Ausente |
 | E2E | E01–E14 |
-| Publish | Somente com OK explícito do mantenedor |
+| Publish | **Feito** — GitHub `v0.4.0` + crates.io **0.4.0** (OK do mantenedor 2026-07-15) |
 
 ## Causa raiz (5 Porquês) — SCP-023b
 
@@ -149,7 +149,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | atomwrite | este `gaps.md` |
 | Telemetria | Ausente (só `telemetry: false` no doctor) |
 | Gaps de produto abertos | **0** |
-| REL-005 push/publish | **Aguardando OK** do mantenedor |
+| REL-005 push/publish | **Resolvido** — GitHub + crates.io **0.4.0** |
 
 ## Re-auditoria sessão (2026-07-15, pós-compact)
 
@@ -163,5 +163,5 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | duckduckgo-search-cli | OpenSSH scp man / protocol refs |
 | atomwrite | disponível; inventário já fechado (sem reescrita)
 | Telemetria | Ausente |
-| REL-005 | **Aguardando OK** push+publish |
+| REL-005 | **Resolvido** — push+publish+GitHub Release **0.4.0** |
 

@@ -12,7 +12,7 @@
 - Ensure network reachability to the target SSH host.
 - Hold either a password or an OpenSSH private key for that host.
 - Prefer a writable XDG config home for multi-host storage.
-- Install with `cargo install ssh-cli --locked` (after 0.4.0 on crates.io; until then use `--path . --locked` from a checkout).
+- Install with `cargo install ssh-cli --locked` (**0.4.0+** on crates.io; avoid **0.3.9** for SCP).
 - Do not rely on crates.io **0.3.9** for SCP: that release advertised transfer but the wire protocol was broken (0-byte remote files or timeouts). Use **0.4.0+**.
 
 

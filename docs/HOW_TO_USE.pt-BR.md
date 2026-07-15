@@ -12,7 +12,7 @@
 - Garanta conectividade de rede até o host SSH alvo.
 - Tenha senha ou chave privada OpenSSH para esse host.
 - Prefira um XDG config home gravável para storage multi-host.
-- Instale com `cargo install ssh-cli --locked` (após 0.4.0 no crates.io; até lá use `--path . --locked` a partir do checkout).
+- Instale com `cargo install ssh-cli --locked` (**0.4.0+** no crates.io; evite **0.3.9** para SCP).
 - Não dependa do crates.io **0.3.9** para SCP: aquela release anunciava transferência, mas o protocolo wire estava quebrado (arquivos remotos de 0 bytes ou timeouts). Use **0.4.0+**.
 
 
