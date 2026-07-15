@@ -373,12 +373,62 @@ mod real {
         false
     }
 
+    /// Byte de ACK/OK do protocolo SCP (também usado como terminador do payload).
+    const SCP_OK: u8 = 0;
+
+    /// Basename seguro para o wire SCP (sem path separators / control chars).
+    fn basename_scp(nome_arquivo: &str) -> String {
+        nome_arquivo
+            .split(['/', '\\'])
+            .next_back()
+            .unwrap_or("file")
+            .replace(['\n', '\r', '\0'], "_")
+    }
+
+    /// Header `C`-line do protocolo SCP (newline real `0x0a`, nunca `\\n` literal).
+    #[cfg_attr(not(test), allow(dead_code))]
     fn formatar_header_upload_scp(tamanho: u64, nome_arquivo: &str) -> String {
-        format!("C0644 {} {}\\n", tamanho, nome_arquivo)
+        formatar_header_upload_scp_com_modo(0o644, tamanho, nome_arquivo)
+    }
+
+    /// Header `C` com mode octal (ex.: `0644`).
+    fn formatar_header_upload_scp_com_modo(mode: u32, tamanho: u64, nome_arquivo: &str) -> String {
+        let nome = basename_scp(nome_arquivo);
+        let mode = mode & 0o7777;
+        format!("C{mode:04o} {tamanho} {nome}\n")
+    }
+
+    /// Linha `T` do protocolo SCP (preserve times / `-p`).
+    fn formatar_linha_t_scp(mtime_secs: u64, atime_secs: u64) -> String {
+        format!("T{mtime_secs} 0 {atime_secs} 0\n")
+    }
+
+    /// Parse da linha `T mtime 0 atime 0`.
+    fn parse_linha_t_scp(linha: &str) -> ResultadoSshCli<(u64, u64)> {
+        let linha = linha.trim_end_matches(['\0', '\r', '\n']).trim();
+        if !linha.starts_with('T') {
+            return Err(ErroSshCli::CanalFalhou(format!(
+                "linha T SCP inesperada: {linha}"
+            )));
+        }
+        let resto = &linha[1..];
+        let partes: Vec<&str> = resto.split_whitespace().collect();
+        if partes.len() < 3 {
+            return Err(ErroSshCli::CanalFalhou(format!(
+                "linha T SCP mal formatada: {linha}"
+            )));
+        }
+        let mtime: u64 = partes[0].parse().map_err(|_| {
+            ErroSshCli::CanalFalhou(format!("mtime inválido na linha T: {}", partes[0]))
+        })?;
+        let atime: u64 = partes[2].parse().map_err(|_| {
+            ErroSshCli::CanalFalhou(format!("atime inválido na linha T: {}", partes[2]))
+        })?;
+        Ok((mtime, atime))
     }
 
     fn parse_header_scp(header: &str) -> ResultadoSshCli<u64> {
-        let header = header.trim();
+        let header = header.trim_end_matches(['\0', '\r', '\n']).trim();
 
         if !header.starts_with('C') {
             return Err(ErroSshCli::CanalFalhou(format!(
@@ -398,6 +448,135 @@ mod real {
         partes[1].parse().map_err(|_| {
             ErroSshCli::CanalFalhou(format!("tamanho inválido no header: {}", partes[1]))
         })
+    }
+
+    /// Mode octal para o header `C` a partir de metadata local.
+    fn mode_scp_de_metadata(meta: &std::fs::Metadata) -> u32 {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            meta.permissions().mode() & 0o7777
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = meta;
+            0o644
+        }
+    }
+
+    /// Segundos epoch a partir de SystemTime (best-effort).
+    fn system_time_secs(t: std::time::SystemTime) -> u64 {
+        t.duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    }
+
+    /// Sufixo do arquivo temporário de download atômico (SCP-022).
+    const SCP_PARTIAL_SUFFIX: &str = ".ssh-cli.partial";
+
+    fn caminho_parcial_download(local: &std::path::Path) -> std::path::PathBuf {
+        let mut p = local.as_os_str().to_os_string();
+        p.push(SCP_PARTIAL_SUFFIX);
+        std::path::PathBuf::from(p)
+    }
+
+    /// Interpreta o primeiro byte de status SCP: `0`=OK, `1`/`2`=erro (+ mensagem).
+    fn interpretar_status_scp(bytes: &[u8]) -> ResultadoSshCli<()> {
+        if bytes.is_empty() {
+            return Err(ErroSshCli::CanalFalhou(
+                "status SCP vazio (esperado ACK 0x00)".to_string(),
+            ));
+        }
+        match bytes[0] {
+            SCP_OK => Ok(()),
+            1 | 2 => {
+                let msg = String::from_utf8_lossy(&bytes[1..]).trim().to_string();
+                Err(ErroSshCli::CanalFalhou(if msg.is_empty() {
+                    format!("SCP rejeitou a transferência (status {})", bytes[0])
+                } else {
+                    format!("SCP: {msg}")
+                }))
+            }
+            other => Err(ErroSshCli::CanalFalhou(format!(
+                "status SCP inesperado: 0x{other:02x}"
+            ))),
+        }
+    }
+
+    /// Monta `scp -t/-f` com path remoto escapado para o shell remoto.
+    fn comando_scp_remoto(modo: &str, remote: &std::path::Path) -> String {
+        let path = crate::ssh::packing::escapar_shell_single_quotes(&remote.display().to_string());
+        // Sem `-p`: preservaria mtime e exigiria linha `T` no protocolo.
+        // Path já está em single-quotes (sem `--` para máxima compatibilidade OpenSSH).
+        format!("scp {modo} {path}")
+    }
+
+    /// Lê o próximo `ChannelMsg::Data` não vazio do canal SCP.
+    async fn scp_ler_data<S>(canal: &mut russh::Channel<S>) -> ResultadoSshCli<Vec<u8>>
+    where
+        S: From<(russh::ChannelId, russh::ChannelMsg)> + Send + Sync + 'static,
+    {
+        use russh::ChannelMsg;
+        loop {
+            match canal.wait().await {
+                Some(ChannelMsg::Data { data }) => {
+                    if data.is_empty() {
+                        continue;
+                    }
+                    return Ok(data.to_vec());
+                }
+                Some(ChannelMsg::ExtendedData { data, .. }) => {
+                    if data.is_empty() {
+                        continue;
+                    }
+                    let msg = String::from_utf8_lossy(data.as_ref()).trim().to_string();
+                    return Err(ErroSshCli::CanalFalhou(format!("SCP stderr: {msg}")));
+                }
+                Some(ChannelMsg::ExitStatus { exit_status }) if exit_status != 0 => {
+                    return Err(ErroSshCli::CanalFalhou(format!(
+                        "scp encerrou com exit {exit_status}"
+                    )));
+                }
+                Some(ChannelMsg::Close) | None => {
+                    return Err(ErroSshCli::CanalFalhou(
+                        "canal SCP fechou prematuramente".to_string(),
+                    ));
+                }
+                _ => continue,
+            }
+        }
+    }
+
+    /// Aguarda ACK de status SCP (`0x00`) ou propaga erro `1`/`2`.
+    async fn scp_aguardar_status<S>(canal: &mut russh::Channel<S>) -> ResultadoSshCli<()>
+    where
+        S: From<(russh::ChannelId, russh::ChannelMsg)> + Send + Sync + 'static,
+    {
+        let data = scp_ler_data(canal).await?;
+        interpretar_status_scp(&data)
+    }
+
+    /// Lê bytes até incluir newline (header `C`/`T`) ou status de erro `1`/`2`.
+    async fn scp_ler_ate_newline<S>(canal: &mut russh::Channel<S>) -> ResultadoSshCli<Vec<u8>>
+    where
+        S: From<(russh::ChannelId, russh::ChannelMsg)> + Send + Sync + 'static,
+    {
+        let mut buf = Vec::new();
+        loop {
+            let chunk = scp_ler_data(canal).await?;
+            if buf.is_empty() && matches!(chunk.first().copied(), Some(1 | 2)) {
+                return Ok(chunk);
+            }
+            buf.extend_from_slice(&chunk);
+            if buf.contains(&b'\n') {
+                return Ok(buf);
+            }
+            if buf.len() > 16_384 {
+                return Err(ErroSshCli::CanalFalhou(
+                    "header SCP excessivamente longo".to_string(),
+                ));
+            }
+        }
     }
 
     impl ClienteSsh {
@@ -616,11 +795,14 @@ mod real {
             })
         }
 
-        /// Upload de arquivo local para remote via SCP.
+        /// Upload de arquivo local para remote via SCP (protocolo OpenSSH sink).
+        ///
+        /// One-shot: stream em chunks (sem carregar o arquivo inteiro em RAM).
         ///
         /// # Erros
         /// - [`ErroSshCli::ArquivoNaoEncontrado`] se o arquivo local não existir.
-        /// - [`ErroSshCli::CanalFalhou`] em falha ao abrir canal SCP.
+        /// - [`ErroSshCli::ArgumentoInvalido`] se o path local não for arquivo regular.
+        /// - [`ErroSshCli::CanalFalhou`] em falha ao abrir canal SCP / status remoto.
         /// - [`ErroSshCli::TimeoutSsh`] se exceder o timeout.
         pub async fn upload(
             &mut self,
@@ -628,10 +810,16 @@ mod real {
             remote: &std::path::Path,
         ) -> ResultadoSshCli<TransferenciaResultado> {
             use russh::ChannelMsg;
+            use std::io::Read;
             use std::time::Instant;
 
             let local_str = local.display().to_string();
-            let remote_str = remote.display().to_string();
+
+            if local.is_dir() {
+                return Err(ErroSshCli::ArgumentoInvalido(
+                    "upload only supports regular files (no directories / no -r)".to_string(),
+                ));
+            }
 
             let metadados = std::fs::metadata(local).map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
@@ -643,11 +831,18 @@ mod real {
 
             if !metadados.is_file() {
                 return Err(ErroSshCli::ArgumentoInvalido(
-                    "upload só suporta arquivos regulares".to_string(),
+                    "upload only supports regular files".to_string(),
                 ));
             }
 
             let tamanho = metadados.len();
+            let mode = mode_scp_de_metadata(&metadados);
+            let mtime = metadados.modified().ok().map(system_time_secs).unwrap_or(0);
+            let atime = metadados
+                .accessed()
+                .ok()
+                .map(system_time_secs)
+                .unwrap_or(mtime);
             let nome_arquivo = local.file_name().and_then(|n| n.to_str()).unwrap_or("file");
 
             let inicio = Instant::now();
@@ -655,53 +850,67 @@ mod real {
 
             let resultado =
                 tokio::time::timeout(timeout, async {
+                    if crate::signals::cancelado() {
+                        return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
+                            crate::i18n::Mensagem::OperacaoCancelada,
+                        )));
+                    }
+
                     let mut canal =
                         self.sessao.channel_open_session().await.map_err(|e| {
                             ErroSshCli::CanalFalhou(format!("abrir sessão SCP: {e}"))
                         })?;
 
-                    let comando = format!("scp -t -p {}", remote_str);
+                    let comando = comando_scp_remoto("-t", remote);
                     canal
                         .exec(true, comando.as_str())
                         .await
                         .map_err(|e| ErroSshCli::CanalFalhou(format!("exec SCP: {e}")))?;
 
-                    canal.wait().await.ok_or_else(|| {
-                        ErroSshCli::CanalFalhou("canal fechou prematuramente".to_string())
-                    })?;
+                    // Sink remoto envia ACK (0x00) antes de aceitar o header.
+                    scp_aguardar_status(&mut canal).await?;
 
-                    let resposta = formatar_header_upload_scp(tamanho, nome_arquivo);
+                    // Preserve times (linha T) antes do header C.
+                    let linha_t = formatar_linha_t_scp(mtime, atime);
                     canal
-                        .data(resposta.as_bytes())
+                        .data(linha_t.as_bytes())
+                        .await
+                        .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar linha T SCP: {e}")))?;
+                    scp_aguardar_status(&mut canal).await?;
+
+                    let header = formatar_header_upload_scp_com_modo(mode, tamanho, nome_arquivo);
+                    canal
+                        .data(header.as_bytes())
                         .await
                         .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar header SCP: {e}")))?;
+                    scp_aguardar_status(&mut canal).await?;
 
-                    canal.wait().await.ok_or_else(|| {
-                        ErroSshCli::CanalFalhou("canal fechou durante header".to_string())
-                    })?;
-
-                    let conteudo = std::fs::read(local).map_err(ErroSshCli::Io)?;
-                    let mut offset = 0;
-                    let tamanho_bloco = 32768;
-
-                    while offset < conteudo.len() {
-                        let fim = std::cmp::min(offset + tamanho_bloco, conteudo.len());
-                        let bloco = &conteudo[offset..fim];
-                        canal.data(bloco).await.map_err(|e| {
+                    // SCP-018: stream do disco em chunks (sem fs::read total).
+                    let mut arquivo = std::fs::File::open(local).map_err(ErroSshCli::Io)?;
+                    let mut buf = vec![0u8; 32_768];
+                    loop {
+                        if crate::signals::cancelado() {
+                            return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
+                                crate::i18n::Mensagem::OperacaoCancelada,
+                            )));
+                        }
+                        let n = arquivo.read(&mut buf).map_err(ErroSshCli::Io)?;
+                        if n == 0 {
+                            break;
+                        }
+                        canal.data(&buf[..n]).await.map_err(|e| {
                             ErroSshCli::CanalFalhou(format!("enviar bloco SCP: {e}"))
                         })?;
-                        offset = fim;
                     }
 
+                    // Terminador de arquivo = byte 0x00 (não data vazio).
                     canal
-                        .data(&[] as &[u8])
+                        .data([SCP_OK].as_slice())
                         .await
                         .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar EOF SCP: {e}")))?;
+                    scp_aguardar_status(&mut canal).await?;
 
-                    canal.wait().await.ok_or_else(|| {
-                        ErroSshCli::CanalFalhou("canal fechou durante transferência".to_string())
-                    })?;
-
+                    let _ = canal.eof().await;
                     while let Some(msg) = canal.wait().await {
                         if let ChannelMsg::Close = msg {
                             break;
@@ -722,11 +931,13 @@ mod real {
             })
         }
 
-        /// Download de arquivo remote para local via SCP.
+        /// Download de arquivo remote para local via SCP (protocolo OpenSSH source).
+        ///
+        /// Escreve em `{local}.ssh-cli.partial` e faz rename atômico (SCP-022).
         ///
         /// # Erros
         /// - [`ErroSshCli::Io`] se não conseguir escrever o arquivo local.
-        /// - [`ErroSshCli::CanalFalhou`] em falha ao abrir canal SCP.
+        /// - [`ErroSshCli::CanalFalhou`] em falha ao abrir canal SCP / status remoto.
         /// - [`ErroSshCli::TimeoutSsh`] se exceder o timeout.
         pub async fn download(
             &mut self,
@@ -735,81 +946,144 @@ mod real {
         ) -> ResultadoSshCli<TransferenciaResultado> {
             use russh::ChannelMsg;
             use std::io::Write;
-            use std::time::Instant;
+            use std::time::{Duration as StdDuration, Instant, UNIX_EPOCH};
 
-            let remote_str = remote.display().to_string();
+            if local.is_dir() {
+                return Err(ErroSshCli::ArgumentoInvalido(
+                    "download local path must be a file path, not an existing directory"
+                        .to_string(),
+                ));
+            }
 
             let inicio = Instant::now();
             let timeout = Duration::from_millis(self.cfg.timeout_ms);
+            let partial = caminho_parcial_download(local);
 
             let resultado = tokio::time::timeout(timeout, async {
+                if crate::signals::cancelado() {
+                    return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
+                        crate::i18n::Mensagem::OperacaoCancelada,
+                    )));
+                }
+
                 let mut canal = self
                     .sessao
                     .channel_open_session()
                     .await
                     .map_err(|e| ErroSshCli::CanalFalhou(format!("abrir sessão SCP: {e}")))?;
 
-                let comando = format!("scp -f -p {}", remote_str);
+                let comando = comando_scp_remoto("-f", remote);
                 canal
                     .exec(true, comando.as_str())
                     .await
                     .map_err(|e| ErroSshCli::CanalFalhou(format!("exec SCP: {e}")))?;
 
+                // Source remoto só envia o header após o ACK inicial do sink local.
                 canal
-                    .data(&[] as &[u8])
+                    .data([SCP_OK].as_slice())
                     .await
                     .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar ack inicial: {e}")))?;
 
-                let mut msg = canal.wait().await.ok_or_else(|| {
-                    ErroSshCli::CanalFalhou("canal fechou esperando header".to_string())
-                })?;
-
-                let ChannelMsg::Data { data } = msg else {
-                    return Err(ErroSshCli::CanalFalhou(
-                        "esperava dados do servidor".to_string(),
-                    ));
-                };
-
-                let header = String::from_utf8_lossy(&data);
+                let mut times: Option<(u64, u64)> = None;
+                let mut header_bytes = scp_ler_ate_newline(&mut canal).await?;
+                // Erro remoto: status 1/2 no primeiro byte.
+                if !header_bytes.is_empty() && matches!(header_bytes[0], 1 | 2) {
+                    interpretar_status_scp(&header_bytes)?;
+                }
+                let mut header = String::from_utf8_lossy(&header_bytes).into_owned();
+                // Linha T opcional (preserve times).
+                if header.trim_start().starts_with('T') {
+                    times = Some(parse_linha_t_scp(&header)?);
+                    canal
+                        .data([SCP_OK].as_slice())
+                        .await
+                        .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar ack T: {e}")))?;
+                    header_bytes = scp_ler_ate_newline(&mut canal).await?;
+                    if !header_bytes.is_empty() && matches!(header_bytes[0], 1 | 2) {
+                        interpretar_status_scp(&header_bytes)?;
+                    }
+                    header = String::from_utf8_lossy(&header_bytes).into_owned();
+                }
                 let tamanho = parse_header_scp(&header)?;
 
                 canal
-                    .data(&[] as &[u8])
+                    .data([SCP_OK].as_slice())
                     .await
-                    .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar ack: {e}")))?;
+                    .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar ack header: {e}")))?;
 
                 if let Some(pai) = local.parent() {
-                    std::fs::create_dir_all(pai)?;
+                    if !pai.as_os_str().is_empty() {
+                        std::fs::create_dir_all(pai)?;
+                    }
                 }
 
-                let mut arquivo = std::fs::File::create(local).map_err(ErroSshCli::Io)?;
+                // SCP-022: escrever no partial; rename só no sucesso.
+                let mut arquivo = std::fs::File::create(&partial).map_err(ErroSshCli::Io)?;
                 let mut recebidos: u64 = 0;
+                let mut pendente: Vec<u8> = Vec::new();
 
                 while recebidos < tamanho {
-                    msg = canal.wait().await.ok_or_else(|| {
-                        ErroSshCli::CanalFalhou("canal fechou durante download".to_string())
-                    })?;
-
-                    let ChannelMsg::Data { data } = msg else {
-                        continue;
-                    };
-
-                    let bytes = data.as_ref();
-                    if bytes.is_empty() {
-                        continue;
+                    if crate::signals::cancelado() {
+                        return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
+                            crate::i18n::Mensagem::OperacaoCancelada,
+                        )));
                     }
-
-                    arquivo.write_all(bytes).map_err(ErroSshCli::Io)?;
-                    recebidos += bytes.len() as u64;
-
-                    canal.data(&[] as &[u8]).await.map_err(|e| {
-                        ErroSshCli::CanalFalhou(format!("enviar ack durante download: {e}"))
-                    })?;
+                    if pendente.is_empty() {
+                        let chunk = scp_ler_data(&mut canal).await?;
+                        pendente.extend_from_slice(&chunk);
+                    }
+                    let falta = (tamanho - recebidos) as usize;
+                    let usar = falta.min(pendente.len());
+                    arquivo
+                        .write_all(&pendente[..usar])
+                        .map_err(ErroSshCli::Io)?;
+                    recebidos += usar as u64;
+                    pendente.drain(..usar);
                 }
 
+                // Após payload, source envia 0x00 final (pode já estar em `pendente`).
+                if pendente.is_empty() {
+                    match scp_ler_data(&mut canal).await {
+                        Ok(trail) => pendente.extend_from_slice(&trail),
+                        Err(_) if recebidos == tamanho => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+                if pendente.first() == Some(&SCP_OK) {
+                    pendente.remove(0);
+                } else if !pendente.is_empty() {
+                    return Err(ErroSshCli::CanalFalhou(format!(
+                        "terminador SCP inesperado após payload (0x{:02x})",
+                        pendente[0]
+                    )));
+                }
+
+                arquivo.flush().map_err(ErroSshCli::Io)?;
+                let _ = arquivo.sync_data();
+                drop(arquivo);
+
+                canal
+                    .data([SCP_OK].as_slice())
+                    .await
+                    .map_err(|e| ErroSshCli::CanalFalhou(format!("enviar ack final: {e}")))?;
+
+                let _ = canal.eof().await;
                 while let Some(msg) = canal.wait().await {
-                    if let ChannelMsg::Close = msg {
+                    if matches!(msg, ChannelMsg::Close) {
                         break;
+                    }
+                }
+
+                std::fs::rename(&partial, local).map_err(ErroSshCli::Io)?;
+
+                if let Some((mtime, atime)) = times {
+                    let mtime_st = UNIX_EPOCH + StdDuration::from_secs(mtime);
+                    let atime_st = UNIX_EPOCH + StdDuration::from_secs(atime);
+                    let ft = std::fs::FileTimes::new()
+                        .set_modified(mtime_st)
+                        .set_accessed(atime_st);
+                    if let Ok(f) = std::fs::File::options().write(true).open(local) {
+                        let _ = f.set_times(ft);
                     }
                 }
 
@@ -817,15 +1091,24 @@ mod real {
             })
             .await;
 
-            let recebidos =
-                resultado.map_err(|_| ErroSshCli::TimeoutSsh(self.cfg.timeout_ms))??;
-
-            let duracao_ms = u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);
-
-            Ok(TransferenciaResultado {
-                bytes_transferidos: recebidos,
-                duracao_ms,
-            })
+            match resultado {
+                Ok(Ok(recebidos)) => {
+                    let duracao_ms =
+                        u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);
+                    Ok(TransferenciaResultado {
+                        bytes_transferidos: recebidos,
+                        duracao_ms,
+                    })
+                }
+                Ok(Err(e)) => {
+                    let _ = std::fs::remove_file(&partial);
+                    Err(e)
+                }
+                Err(_) => {
+                    let _ = std::fs::remove_file(&partial);
+                    Err(ErroSshCli::TimeoutSsh(self.cfg.timeout_ms))
+                }
+            }
         }
 
         /// Abort remoto best-effort: reconecta com timeout curto e executa pkill.
@@ -971,8 +1254,10 @@ mod real {
     #[cfg(test)]
     mod testes_real {
         use super::{
-            formatar_header_upload_scp, mapear_exit_status, parse_header_scp,
-            processar_mensagem_exec,
+            caminho_parcial_download, comando_scp_remoto, formatar_header_upload_scp,
+            formatar_header_upload_scp_com_modo, formatar_linha_t_scp, interpretar_status_scp,
+            mapear_exit_status, parse_header_scp, parse_linha_t_scp, processar_mensagem_exec,
+            SCP_PARTIAL_SUFFIX,
         };
 
         #[test]
@@ -1048,7 +1333,58 @@ mod real {
         #[test]
         fn formatar_header_upload_scp_gera_formato_esperado() {
             let header = formatar_header_upload_scp(123, "arquivo.txt");
-            assert_eq!(header, "C0644 123 arquivo.txt\\n");
+            // Wire protocol: newline real (0x0a), NÃO a sequência literal '\'+'n'.
+            assert_eq!(header, "C0644 123 arquivo.txt\n");
+            assert_eq!(header.as_bytes().last().copied(), Some(b'\n'));
+            assert!(
+                !header.as_bytes().windows(2).any(|w| w == *b"\\n"),
+                "header não deve conter backslash-n literal"
+            );
+        }
+
+        #[test]
+        fn formatar_header_upload_scp_usa_basename() {
+            let header = formatar_header_upload_scp(1, "/tmp/dir/nome.bin");
+            assert_eq!(header, "C0644 1 nome.bin\n");
+        }
+
+        #[test]
+        fn interpretar_status_scp_ok_e_erro() {
+            assert!(interpretar_status_scp(&[0]).is_ok());
+            assert!(interpretar_status_scp(&[1, b'f', b'a', b'i', b'l']).is_err());
+            assert!(interpretar_status_scp(&[]).is_err());
+        }
+
+        #[test]
+        fn comando_scp_remoto_escapa_path() {
+            let cmd = comando_scp_remoto("-t", std::path::Path::new("/tmp/a b.txt"));
+            assert_eq!(cmd, "scp -t '/tmp/a b.txt'");
+        }
+
+        #[test]
+        fn formatar_linha_t_scp_formato() {
+            let t = formatar_linha_t_scp(1_700_000_000, 1_700_000_001);
+            assert_eq!(t, "T1700000000 0 1700000001 0\n");
+            assert_eq!(t.as_bytes().last().copied(), Some(b'\n'));
+        }
+
+        #[test]
+        fn parse_linha_t_scp_ok() {
+            let (m, a) = parse_linha_t_scp("T100 0 200 0\n").expect("T ok");
+            assert_eq!((m, a), (100, 200));
+        }
+
+        #[test]
+        fn formatar_header_com_modo() {
+            let h = formatar_header_upload_scp_com_modo(0o755, 10, "x.sh");
+            assert_eq!(h, "C0755 10 x.sh\n");
+        }
+
+        #[test]
+        fn caminho_parcial_download_sufixo() {
+            let p = caminho_parcial_download(std::path::Path::new("/tmp/out.bin"));
+            assert!(p.to_string_lossy().ends_with(SCP_PARTIAL_SUFFIX));
+            assert!(p.to_string_lossy().contains("out.bin"));
         }
 
         #[test]

@@ -4,7 +4,7 @@
 
 - Read this document in [Portuguese (pt-BR)](AGENTS.pt-BR.md).
 - Pair with [../INTEGRATIONS.md](../INTEGRATIONS.md) and [../skills/ssh-cli-en/SKILL.md](../skills/ssh-cli-en/SKILL.md).
-- Product line: **0.3.9** (closed inventory; russh 0.62.2).
+- Product line: **0.4.0** (closed inventory; russh 0.62.2).
 
 
 ## Why

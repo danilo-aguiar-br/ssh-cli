@@ -1,152 +1,73 @@
-# gaps.md — ssh-cli v0.3.9 (inventário Fechado)
+# gaps.md — ssh-cli v0.4.0
 
 ## Metadados
 
 | Campo | Valor |
 |-------|--------|
-| Versão de código | **0.3.9** (`Cargo.toml`) |
-| Commit | ver `git log -1` após Release v0.3.9 |
+| Versão de código | **0.4.0** (`Cargo.toml`) |
 | Data | **2026-07-15** |
-| Escopo | Residuais da auditoria pós-0.3.8 + gates release; suite `gaps_v039` |
-| Status deste inventário | **Fechado** — **0** gaps Abertos |
-| Suite de regressão | `tests/gaps_v038_integration.rs` + `tests/gaps_v039_integration.rs` |
+| Escopo | Fechamento total AUD-SCP-2026-07-15 + ship honesto |
+| Status deste inventário | **Fechado (0 Abertos)** |
+| Suite de regressão | `gaps_v038` + `gaps_v039` + `gaps_v040` + e2e E01–E13 |
 | Supply-chain | **russh 0.62.2**; `yanked=deny`; `ignore=[]` |
 | Telemetria | Ausente |
 
 ## Inventário consolidado
 
-### Histórico 0.3.7 (23) + 0.3.8 (12)
+### Histórico 0.3.7–0.3.9
 
-Todos **Resolvidos** — ver seções anteriores e commit `94941e4` (0.3.8).
+Todos **Resolvidos** (ver seções históricas / commits anteriores). SEC-001..003 Resolvidos.
 
-### Bloco auditoria pós-0.3.8 → 0.3.9 (7)
+### Bloco AUD-SCP-2026-07-15 → **0.4.0** (18)
 
-| ID | Título | Status |
-|----|--------|--------|
-| GAP-SSH-LOG-001 | Tracing default INFO polui stderr (JSON/tunnel) | **Resolvido (0.3.9)** — default **error**; `-v` → debug |
-| GAP-SSH-JSON-001 | password `"***"` em VPS key-only (vazio) | **Resolvido (0.3.9)** — `null` se vazio |
-| GAP-SSH-CLI-004 | `health-check` sem `--timeout` | **Resolvido (0.3.9)** |
-| GAP-SSH-DOC-003 | Docs product line ainda 0.3.6 | **Resolvido (0.3.9)** |
-| GAP-SSH-DENY-002 | Warnings duplicate crates no deny | **Resolvido (0.3.9)** — política `multiple-versions=warn` documentada; sem ignore CVE |
-| GAP-SSH-REL-003 | Tag local `v0.3.8` ausente | **Resolvido (0.3.9)** — tags locais `v0.3.8` + `v0.3.9` (sem push) |
-| GAP-SSH-CHG-001 | Âncoras CHANGELOG 0.3.8/0.3.9 | **Resolvido (0.3.9)** |
+| ID | Título | Status | Teste / evidência |
+|----|--------|--------|-------------------|
+| GAP-SSH-SCP-010 | Header `\\n` literal | **Resolvido (0.4.0)** | unit `formatar_header_upload_scp_*` |
+| GAP-SSH-SCP-011 | ACK/EOF sem `0x00` | **Resolvido (0.4.0)** | unit + e2e E10–E12 |
+| GAP-SSH-SCP-012 | Upload sem status remoto | **Resolvido (0.4.0)** | `scp_aguardar_status` |
+| GAP-SSH-SCP-013 | Download header/ACK | **Resolvido (0.4.0)** | e2e E11–E12 |
+| GAP-SSH-SCP-014 | Path shell-escape | **Resolvido (0.4.0)** | unit `comando_scp_remoto_escapa_path` + e2e path espaço |
+| GAP-SSH-SCP-015 | Unit cristalizava bug | **Resolvido (0.4.0)** | unit proíbe `\`+`n` literal |
+| GAP-SSH-SCP-016 | E2E oficial sem scp | **Resolvido (0.4.0)** | `e2e_real_ssh.sh` E10–E13; `gap_e2e_script_e10_e12` |
+| GAP-SSH-SCP-017 | Flags scp sem paridade | **Resolvido (0.4.0)** | `gap_scp_017_*` |
+| GAP-SSH-SCP-018 | Upload `fs::read` total | **Resolvido (0.4.0)** | stream 32 KiB; `gap_scp_022_partial_suffix_na_fonte` |
+| GAP-SSH-SCP-019 | Sem `-r` / dirs | **Resolvido (0.4.0)** por design: erro tipado + docs file-only | `gap_scp_019_*` + DOC-004 |
+| GAP-SSH-SCP-020 | Sucesso hardcoded PT | **Resolvido (0.4.0)** | i18n `ScpUpload/DownloadConcluido` |
+| GAP-SSH-SCP-021 | Schema JSON transfer | **Resolvido (0.4.0)** | `docs/schemas/scp-transfer.schema.json` |
+| GAP-SSH-SCP-022 | Download parcial no disco | **Resolvido (0.4.0)** | `.ssh-cli.partial` + rename; cleanup on err |
+| GAP-SSH-SCP-023 | Preserve mtime/mode | **Resolvido (0.4.0)** | linha `T` + mode `C0mmm` + `set_times` |
+| GAP-SSH-REL-004 | 0.3.9 anunciava SCP quebrado | **Resolvido (0.4.0)** | CHANGELOG honesty + ship 0.4.0 |
+| GAP-SSH-DOC-004 | Docs sem file-only / alerta 0.3.9 | **Resolvido (0.4.0)** | README/MIGRATION/product line |
+| GAP-SSH-TEST-004 | Integração scp só surface | **Resolvido (0.4.0)** | `gaps_v040` + `scp_integration` flags |
+| GAP-SSH-IO-007 | Sucesso scp sem JSON | **Resolvido (0.4.0)** | `imprimir_transferencia_json` |
+| GAP-SSH-SCP-001 | Valida local antes connect | **Resolvido** (pré) | `gap_scp_001_*` |
 
-### Bloco higiene exposição workspace (pós-auditoria secrets) (3)
+## PA-SCP (todos Feitos em 0.4.0)
 
-| ID | Título | Status |
-|----|--------|--------|
-| GAP-SSH-SEC-001 | `.setting.cyber/` só coberto por `*.log` | **Resolvido** — dir em `.gitignore` + `.cargoignore` + `Cargo.toml` exclude |
-| GAP-SSH-SEC-002 | E2E `--from-grok-config` sem barreira de path no repo | **Resolvido** — script recusa config sob ROOT; docs preferem env |
-| GAP-SSH-SEC-003 | Demo `s3cret` ambígua em docs públicas | **Resolvido** — placeholder `demo-password-not-real` + SECURITY |
+| PA | Status |
+|----|--------|
+| PA-SCP-01..13 | **Feito** |
 
----
+## Política
 
-# Detalhe 0.3.9
+- **Resolvido** = código + teste + nota de versão **0.4.0**
+- Inventário **Fechado** somente com 0 Abertos
+- Sem telemetria
+- Escrita docs longos: atomwrite
+- One-shot: nascer → transferir → morrer
 
-## GAP-SSH-LOG-001
-
-| Campo | Valor |
-|-------|--------|
-| Status | **Resolvido (0.3.9)** |
-| Causa raiz | `inicializar_logs` default `info` → prosa em stderr com envelope JSON |
-| Código | `src/cli.rs` `inicializar_logs` → default **error** |
-| Teste | `gap_log_001_tunnel_json_stderr_sem_info_prosa` |
-| Cadeia | B (I/O agent-first) estendida a stderr |
-
-## GAP-SSH-JSON-001
-
-| Status | **Resolvido (0.3.9)** |
-| Código | `output::registro_para_json_mascarado` + texto show |
-| Política | senha vazia → JSON `null` / texto "(não definida)"; não-vazia → `***` |
-| Testes | `gap_json_001_*` + unit `registro_para_json_mascarado_password_null_quando_vazio` |
-
-## GAP-SSH-CLI-004
-
-| Status | **Resolvido (0.3.9)** |
-| Código | `Comando::HealthCheck { timeout }`; `aplicar_overrides` em `executar_health_check` |
-| Teste | `gap_cli_004_health_check_aceita_timeout` |
-
-## GAP-SSH-DOC-003
-
-| Status | **Resolvido (0.3.9)** |
-| Arquivos | Product line **0.3.9** + comportamentos LOG/JSON/CLI em `README*`, `llms*`, `INTEGRATIONS*`, `docs/HOW_TO_USE*`, `COOKBOOK*`, `MIGRATION*`, `TESTING*`, `CROSS_PLATFORM*`, `AGENTS*`, `schemas/README`, `docs/RELEASE_CHECKLIST*`, `skills/*` |
-| Testes | `gap_doc_003_version_contem_039`, `gap_doc_003_product_line_docs_contem_039`, `gap_doc_003_residual_behaviors_documentados` |
-| Nota | Auditoria GraphRAG 2026-07-15 (raiz + product line) fechou **0.3.6** como linha atual |
-| Nota docs/ | Auditoria pasta `docs/` 2026-07-15: schema `password` `string\|null` (JSON-001); headers pt-BR em português; `RELEASE_CHECKLIST` bilíngue; paridade MIGRATION campos; gate schema no teste DOC-003 |
-| Nota skills/ | Auditoria pasta `skills/` 2026-07-15: EN/PT reescritas consolidadas (sem changelog por versão); description <1024 e sem `:` no conteúdo; cobertura LOG/JSON/CLI + envelope stderr + `--quiet` + `key-passphrase-stdin` + `--port` + completions elvish/powershell; evals 26 queries; gates em `gap_doc_003_residual_behaviors_documentados` |
-
-## GAP-SSH-DENY-002
-
-| Status | **Resolvido (0.3.9)** |
-| Código | `deny.toml` comentário + `multiple-versions = "warn"` (sem rebaixar yanked/CVE) |
-| Nota | Duplicatas aead/chacha20 são transitivas russh + chacha20poly1305 — warn aceitável |
-| Teste | `gap_deny_002_deny_toml_sem_ignore_cve` |
-
-## GAP-SSH-REL-003 / CHG-001
-
-| REL-003 | tags locais `v0.3.8` (commit 94941e4) e `v0.3.9` (HEAD release) |
-| CHG-001 | seções e âncoras `[0.3.9]` / `[0.3.8]` no CHANGELOG |
-| Teste | `gap_chg_001_changelog_tem_039` |
-
-## GAP-SSH-SEC-001
-
-| Status | **Resolvido** |
-| Causa | `.setting.cyber/` não estava no ignore por diretório; só `*.log` |
-| Fix | `.gitignore`, `.cargoignore`, `Cargo.toml` `exclude` listam `.setting.cyber/` |
-| Teste | `gap_sec_001_setting_cyber_ignorado_por_diretorio` |
-
-## GAP-SSH-SEC-002
-
-| Status | **Resolvido** |
-| Causa | E2E lia grok config sem bloquear path dentro do workspace |
-| Fix | `scripts/e2e_real_ssh.sh` compara `GROK_CFG_ABS` vs `ROOT`; docs/TESTING/CONTRIBUTING preferem env |
-| Teste | `gap_sec_002_e2e_recusa_grok_config_dentro_do_repo` |
-
-## GAP-SSH-SEC-003
-
-| Status | **Resolvido** |
-| Causa | Placeholder `s3cret` em README/COOKBOOK |
-| Fix | `demo-password-not-real`; SECURITY documenta placeholders |
-| Teste | `gap_sec_003_docs_sem_s3cret_usa_placeholder_demo` |
-
----
-
-## Plano de ação PA (auditoria 0.3.8) — todos Feitos
-
-| PA | Gap | Status |
-|----|-----|--------|
-| PA-A1/A2 | LOG-001 | **Feito** |
-| PA-A3 | DOC-003 | **Feito** |
-| PA-A4 | REL-003 | **Feito** |
-| PA-A5 | JSON-001 | **Feito** |
-| PA-A6 | CHG/DENY | **Feito** |
-| PA-A7 | CLI-004 | **Feito** |
-| PA-A8 | inventário honestidade | **Feito** (este arquivo) |
-
----
-
-## Resumo quantitativo 0.3.9
+## Resumo quantitativo 0.4.0
 
 | Métrica | Valor |
 |---------|--------|
 | Gaps abertos | **0** |
-| Gaps 0.3.9 resolvidos | **7** |
-| Gaps SEC higiene exposição | **3** Resolvidos (SEC-001..003) |
-| Gaps legados 0.3.7+0.3.8 | **35** Resolvidos |
+| Gaps AUD-SCP resolvidos nesta release | **18** |
 | russh | **0.62.2** |
 | Telemetria | Ausente |
-
-## Política
-
-- Status **Resolvido** só com código + teste + nota de versão.
-- Inventário **Fechado** somente com 0 Abertos.
-- Sem telemetria.
-- Escrita: atomwrite em docs longos.
+| E2E | E01–E13 |
 
 ## Referências
 
-- Auditoria profunda 2026-07-15 (pós-0.3.8)
-- GraphRAG: stdin/stdout, one-shot, ssh, hardening
-- context7 / docs-rs / duckduckgo-search-cli (sessão de auditoria)
-- Código: `cli.rs` logs, `output.rs` mask, `vps` health-check timeout, `deny.toml`
-- Testes: `tests/gaps_v039_integration.rs`
+- Código: `src/ssh/cliente.rs`, `src/scp.rs`, `src/cli.rs`, `src/output.rs`, `src/i18n.rs`
+- Testes: `tests/gaps_v040_integration.rs`, unit wire, `scripts/e2e_real_ssh.sh`
+- Schemas: `docs/schemas/scp-transfer.schema.json`

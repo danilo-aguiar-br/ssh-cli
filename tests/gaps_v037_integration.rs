@@ -211,14 +211,7 @@ fn gap_io_004_quiet_suprime_sucesso() {
 fn gap_cli_002_password_e_stdin_conflitam() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
-        .args([
-            "exec",
-            "x",
-            "true",
-            "--password",
-            "a",
-            "--password-stdin",
-        ])
+        .args(["exec", "x", "true", "--password", "a", "--password-stdin"])
         .assert()
         .failure();
 }
@@ -247,7 +240,10 @@ fn gap_state_001_remove_limpa_active() {
     add_host(&tmp, "ativa");
     cmd(&tmp).args(["connect", "ativa"]).assert().success();
     assert!(tmp.path().join("active").exists());
-    cmd(&tmp).args(["vps", "remove", "ativa"]).assert().success();
+    cmd(&tmp)
+        .args(["vps", "remove", "ativa"])
+        .assert()
+        .success();
     assert!(!tmp.path().join("active").exists());
 }
 

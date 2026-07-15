@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/scp-transfer.schema.json",
+  "title": "scp transfer JSON",
+  "description": "Structured success payload for `ssh-cli scp upload|download --json` (or global --output-format json). Regular files only.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ok",
+    "direction",
+    "vps",
+    "local",
+    "remote",
+    "bytes",
+    "duration_ms"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["upload", "download"]
+    },
+    "vps": {
+      "type": "string",
+      "description": "Registered VPS name used for the transfer"
+    },
+    "local": {
+      "type": "string",
+      "description": "Local filesystem path"
+    },
+    "remote": {
+      "type": "string",
+      "description": "Remote filesystem path"
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Bytes transferred"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Wall time of the transfer in milliseconds"
+    }
+  }
+}

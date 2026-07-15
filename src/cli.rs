@@ -134,7 +134,12 @@ pub enum Comando {
         #[arg(long)]
         password_stdin: bool,
         /// Override de senha sudo.
-        #[arg(long, alias = "sudoPassword", alias = "sudo_password", conflicts_with = "sudo_password_stdin")]
+        #[arg(
+            long,
+            alias = "sudoPassword",
+            alias = "sudo_password",
+            conflicts_with = "sudo_password_stdin"
+        )]
         sudo_password: Option<String>,
         /// Lê senha sudo de stdin.
         #[arg(long)]
@@ -172,7 +177,12 @@ pub enum Comando {
         #[arg(long)]
         password_stdin: bool,
         /// Override de senha su.
-        #[arg(long, alias = "suPassword", alias = "su_password", conflicts_with = "su_password_stdin")]
+        #[arg(
+            long,
+            alias = "suPassword",
+            alias = "su_password",
+            conflicts_with = "su_password_stdin"
+        )]
         su_password: Option<String>,
         /// Lê senha su de stdin.
         #[arg(long)]
@@ -294,13 +304,23 @@ pub enum AcaoVps {
         #[arg(long, alias = "maxChars")]
         max_chars: Option<String>,
         /// Senha para `sudo`.
-        #[arg(long, alias = "sudoPassword", alias = "sudo_password", conflicts_with = "sudo_password_stdin")]
+        #[arg(
+            long,
+            alias = "sudoPassword",
+            alias = "sudo_password",
+            conflicts_with = "sudo_password_stdin"
+        )]
         sudo_password: Option<String>,
         /// Lê senha sudo de stdin.
         #[arg(long)]
         sudo_password_stdin: bool,
         /// Senha para `su -`.
-        #[arg(long, alias = "suPassword", alias = "su_password", conflicts_with = "su_password_stdin")]
+        #[arg(
+            long,
+            alias = "suPassword",
+            alias = "su_password",
+            conflicts_with = "su_password_stdin"
+        )]
         su_password: Option<String>,
         /// Lê senha su de stdin.
         #[arg(long)]
@@ -364,13 +384,23 @@ pub enum AcaoVps {
         #[arg(long, alias = "maxChars")]
         max_chars: Option<String>,
         /// Nova senha sudo.
-        #[arg(long, alias = "sudoPassword", alias = "sudo_password", conflicts_with = "sudo_password_stdin")]
+        #[arg(
+            long,
+            alias = "sudoPassword",
+            alias = "sudo_password",
+            conflicts_with = "sudo_password_stdin"
+        )]
         sudo_password: Option<String>,
         /// Lê senha sudo de stdin.
         #[arg(long)]
         sudo_password_stdin: bool,
         /// Nova senha su.
-        #[arg(long, alias = "suPassword", alias = "su_password", conflicts_with = "su_password_stdin")]
+        #[arg(
+            long,
+            alias = "suPassword",
+            alias = "su_password",
+            conflicts_with = "su_password_stdin"
+        )]
         su_password: Option<String>,
         /// Lê senha su de stdin.
         #[arg(long)]
@@ -420,10 +450,10 @@ pub enum AcaoVps {
     },
 }
 
-/// Ações do subcomando `scp`.
+/// Ações do subcomando `scp` (arquivo regular; sem `-r` / sem SFTP).
 #[derive(Debug, Subcommand)]
 pub enum AcaoScp {
-    /// Upload de arquivo local para remote.
+    /// Upload de arquivo local para remote (regular files only).
     Upload {
         /// Nome da VPS.
         vps_nome: String,
@@ -432,11 +462,29 @@ pub enum AcaoScp {
         /// Caminho remote.
         remote: PathBuf,
         /// Override de senha SSH.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
+        /// Lê senha SSH de stdin.
+        #[arg(long)]
+        password_stdin: bool,
+        /// Override de caminho da chave privada.
+        #[arg(long)]
+        key: Option<String>,
+        /// Passphrase da chave.
+        #[arg(long, conflicts_with = "key_passphrase_stdin")]
+        key_passphrase: Option<String>,
+        /// Lê passphrase da chave de stdin.
+        #[arg(long)]
+        key_passphrase_stdin: bool,
+        /// Override de timeout SSH em milissegundos (cobre connect+transfer).
+        #[arg(long)]
+        timeout: Option<u64>,
+        /// Emite JSON de transferência em stdout (GAP-SSH-IO-007).
+        #[arg(long)]
+        json: bool,
     },
 
-    /// Download de arquivo remote para local.
+    /// Download de arquivo remote para local (regular files only).
     Download {
         /// Nome da VPS.
         vps_nome: String,
@@ -445,8 +493,26 @@ pub enum AcaoScp {
         /// Caminho local.
         local: PathBuf,
         /// Override de senha SSH.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "password_stdin")]
         password: Option<String>,
+        /// Lê senha SSH de stdin.
+        #[arg(long)]
+        password_stdin: bool,
+        /// Override de caminho da chave privada.
+        #[arg(long)]
+        key: Option<String>,
+        /// Passphrase da chave.
+        #[arg(long, conflicts_with = "key_passphrase_stdin")]
+        key_passphrase: Option<String>,
+        /// Lê passphrase da chave de stdin.
+        #[arg(long)]
+        key_passphrase_stdin: bool,
+        /// Override de timeout SSH em milissegundos (cobre connect+transfer).
+        #[arg(long)]
+        timeout: Option<u64>,
+        /// Emite JSON de transferência em stdout (GAP-SSH-IO-007).
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -661,12 +727,60 @@ pub async fn executar(args: Argumentos) -> Result<()> {
                 .await
         }
         Comando::Scp { acao } => {
-            let pwd = match &acao {
-                AcaoScp::Upload { password, .. } | AcaoScp::Download { password, .. } => {
-                    password.clone()
+            let (
+                password,
+                password_stdin,
+                key,
+                key_passphrase,
+                key_passphrase_stdin,
+                timeout,
+                json_local,
+            ) = match &acao {
+                AcaoScp::Upload {
+                    password,
+                    password_stdin,
+                    key,
+                    key_passphrase,
+                    key_passphrase_stdin,
+                    timeout,
+                    json,
+                    ..
                 }
+                | AcaoScp::Download {
+                    password,
+                    password_stdin,
+                    key,
+                    key_passphrase,
+                    key_passphrase_stdin,
+                    timeout,
+                    json,
+                    ..
+                } => (
+                    password.clone(),
+                    *password_stdin,
+                    key.clone(),
+                    key_passphrase.clone(),
+                    *key_passphrase_stdin,
+                    *timeout,
+                    *json,
+                ),
             };
-            crate::scp::executar_scp(acao, config_override, pwd).await
+            let password = ler_stdin_se(password_stdin, password)?;
+            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
+            let json_efetivo = json_local || formato == FormatoSaida::Json;
+            crate::scp::executar_scp(
+                acao,
+                config_override,
+                crate::scp::OpcoesScp {
+                    password,
+                    key,
+                    key_passphrase,
+                    timeout,
+                    replace_host_key,
+                    json: json_efetivo,
+                },
+            )
+            .await
         }
         Comando::Tunnel {
             vps_nome,

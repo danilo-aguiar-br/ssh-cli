@@ -1,6 +1,6 @@
 # Guia de migração
 
-> Passe de ssh-cli 0.3.3 (ou posterior) para **0.3.9** sem perder o inventário multi-host.
+> Passe de ssh-cli 0.3.3 (ou posterior) para **0.4.0** sem perder o inventário multi-host.
 
 - Leia este documento em [inglês](MIGRATION.md).
 
@@ -48,11 +48,13 @@
 - String de versão reporta `-dirty` quando a tree está suja.
 - Suite residual completa `tests/gaps_v038_integration.rs`.
 
-### Desde 0.3.9 (atual)
-- Nível de tracing padrão é error (não info); `-v` habilita debug; `RUST_LOG` sobrescreve — stderr de JSON/tunnel fica limpo por padrão.
-- Senha vazia ou ausente em VPS só-chave serializa como JSON `null` (não `"***"`); não vazia ainda mascara como `***`; texto humano em show usa "(não definida)" para vazio.
-- `health-check` aceita override `--timeout <ms>` (alinhado ao exec).
-- Docs de linha de produto alinhados a 0.3.9; suite residual `tests/gaps_v039_integration.rs`.
+### Desde 0.4.0 (atual)
+- **Correção wire SCP:** o crates.io **0.3.9** anunciava SCP, mas o protocolo estava quebrado (header `\\n` literal, ACK vazio). Atualize para **0.4.0** antes de depender de `scp upload|download`.
+- SCP é **somente arquivos regulares** (sem `-r` / sem SFTP). Use `--timeout` para arquivos grandes. JSON de sucesso via `--json` / `--output-format json` (`docs/schemas/scp-transfer.schema.json`).
+- Tracing default error (não info); `-v` ativa debug; `RUST_LOG` sobrescreve — stderr JSON/tunnel limpo por omissão.
+- Senha vazia em VPS só-chave serializa como JSON `null` (não `"***"`); não vazia mascara `***`.
+- `health-check` aceita `--timeout <ms>` (alinhado ao exec).
+- Docs de product line em 0.4.0; suites `gaps_v039` + `gaps_v040`.
 
 
 ## Migração passo a passo
@@ -110,7 +112,7 @@ ssh-cli su-exec prod "id"
 - Espere banners de tunnel só em caminhos humanos/TTY, não no stdout JSON do agente.
 
 
-## Campos de host / schema (estáveis até 0.3.9)
+## Campos de host / schema (estáveis até 0.4.0)
 
 ### Após 0.3.4+
 - `timeout_ms`
@@ -125,7 +127,7 @@ ssh-cli su-exec prod "id"
 - Campos de senha/sudo/su/passphrase podem guardar blobs `sshcli-enc:v1:…`
 - Fontes de master-key: `SSH_CLI_SECRETS_KEY`, `SSH_CLI_SECRETS_KEY_FILE`, keyring ou XDG `secrets.key`.
 
-### Mascaramento (0.3.9)
+### Mascaramento (0.4.0)
 - Senha vazia → JSON `null`; não vazia → string `***`.
 - Texto humano em show ainda usa "(não definida)" para senha vazia.
 

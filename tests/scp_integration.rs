@@ -44,7 +44,10 @@ fn scp_upload_help_exibe_parametros() {
         .success()
         .stdout(predicate::str::contains("VPS_NOME"))
         .stdout(predicate::str::contains("LOCAL"))
-        .stdout(predicate::str::contains("REMOTE"));
+        .stdout(predicate::str::contains("REMOTE"))
+        .stdout(predicate::str::contains("--timeout"))
+        .stdout(predicate::str::contains("--json"))
+        .stdout(predicate::str::contains("--key"));
 }
 
 #[test]

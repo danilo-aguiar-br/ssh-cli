@@ -56,7 +56,16 @@ fn gap_val_001_rejeita_nome_path_traversal() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
-            "vps", "add", "--name", "../evil", "--host", "h", "--user", "u", "--password", "p",
+            "vps",
+            "add",
+            "--name",
+            "../evil",
+            "--host",
+            "h",
+            "--user",
+            "u",
+            "--password",
+            "p",
         ])
         .assert()
         .failure()
@@ -69,7 +78,16 @@ fn gap_val_001_rejeita_nome_con() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
-            "vps", "add", "--name", "CON", "--host", "h", "--user", "u", "--password", "p",
+            "vps",
+            "add",
+            "--name",
+            "CON",
+            "--host",
+            "h",
+            "--user",
+            "u",
+            "--password",
+            "p",
         ])
         .assert()
         .failure()
@@ -82,7 +100,17 @@ fn gap_val_002_rejeita_porta_zero() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
-            "vps", "add", "--name", "p0", "--host", "h", "--user", "u", "--password", "p", "--port",
+            "vps",
+            "add",
+            "--name",
+            "p0",
+            "--host",
+            "h",
+            "--user",
+            "u",
+            "--password",
+            "p",
+            "--port",
             "0",
         ])
         .assert()
@@ -159,7 +187,10 @@ fn gap_io_001_output_format_json_list_vazio() {
 #[serial]
 fn gap_io_002_health_check_aceita_json_local() {
     let tmp = TempDir::new().unwrap();
-    let assert = cmd(&tmp).args(["health-check", "--json"]).assert().failure();
+    let assert = cmd(&tmp)
+        .args(["health-check", "--json"])
+        .assert()
+        .failure();
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     assert!(
         !stderr.contains("unexpected argument"),
@@ -186,7 +217,16 @@ fn gap_io_004_quiet_suprime_sucesso() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
-            "--quiet", "vps", "add", "--name", "q1", "--host", "h", "--user", "u", "--password",
+            "--quiet",
+            "vps",
+            "add",
+            "--name",
+            "q1",
+            "--host",
+            "h",
+            "--user",
+            "u",
+            "--password",
             "p",
         ])
         .assert()
@@ -289,7 +329,10 @@ fn gap_state_001_remove_limpa_active() {
     add_host(&tmp, "ativa");
     cmd(&tmp).args(["connect", "ativa"]).assert().success();
     assert!(tmp.path().join("active").exists());
-    cmd(&tmp).args(["vps", "remove", "ativa"]).assert().success();
+    cmd(&tmp)
+        .args(["vps", "remove", "ativa"])
+        .assert()
+        .success();
     assert!(!tmp.path().join("active").exists());
 }
 
@@ -468,10 +511,9 @@ fn gap_dep_002_russh_patched_no_lock() {
         }
     }
     assert!(found, "russh package missing in Cargo.lock");
-    let deny = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("deny.toml"),
-    )
-    .unwrap();
+    let deny =
+        std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("deny.toml"))
+            .unwrap();
     assert!(!deny.contains("RUSTSEC-2026-0153"));
     assert!(!deny.contains("RUSTSEC-2026-0154"));
     assert!(deny.contains("yanked = \"deny\"") || deny.contains("yanked=\"deny\""));

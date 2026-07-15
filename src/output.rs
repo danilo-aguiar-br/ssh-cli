@@ -344,6 +344,32 @@ pub fn imprimir_health_check_json(nome: &str, latencia_ms: u64) {
     }
 }
 
+/// Imprime resultado de transferência SCP em JSON (GAP-SSH-IO-007 / SCP-021).
+pub fn imprimir_transferencia_json(
+    direction: &str,
+    vps: &str,
+    local: &str,
+    remote: &str,
+    bytes: u64,
+    duration_ms: u64,
+) {
+    let v = json!({
+        "ok": true,
+        "direction": direction,
+        "vps": vps,
+        "local": local,
+        "remote": remote,
+        "bytes": bytes,
+        "duration_ms": duration_ms,
+    });
+    match serde_json::to_string_pretty(&v) {
+        Ok(s) => {
+            let _ = escrever_linha(&s);
+        }
+        Err(e) => eprintln!("erro ao serializar JSON: {e}"),
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

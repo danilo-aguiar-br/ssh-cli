@@ -207,6 +207,60 @@ else
   fail E09
 fi
 
+# --- SCP (GAP-SSH-SCP-016): E10 upload, E11 download, E12 integrity, E13 missing remote ---
+REMOTE_SCP="/tmp/ssh-cli-e2e-scp-$$.bin"
+REMOTE_SPACE="/tmp/ssh-cli e2e space $$ .bin"
+UP_PLAIN="$TMP/up-plain.txt"
+UP_SPACE="$TMP/up space file.txt"
+UP_1M="$TMP/up-1m.bin"
+DOWN_PLAIN="$TMP/down-plain.txt"
+DOWN_SPACE="$TMP/down space file.txt"
+DOWN_1M="$TMP/down-1m.bin"
+
+printf 'e2e-scp-payload\n' >"$UP_PLAIN"
+printf 'space-payload\n' >"$UP_SPACE"
+# ≥1 MiB payload for streaming/wire stress
+dd if=/dev/urandom of="$UP_1M" bs=1024 count=1024 status=none 2>/dev/null || \
+  head -c 1048576 /dev/urandom >"$UP_1M"
+
+if cli scp upload e2e --timeout 120000 "$UP_PLAIN" "$REMOTE_SCP" >/dev/null 2>&1 \
+  && cli scp upload e2e --timeout 120000 "$UP_SPACE" "$REMOTE_SPACE" >/dev/null 2>&1 \
+  && cli scp upload e2e --timeout 180000 "$UP_1M" "${REMOTE_SCP}.1m" >/dev/null 2>&1; then
+  pass E10
+else
+  fail E10
+fi
+
+if cli scp download e2e --timeout 120000 "$REMOTE_SCP" "$DOWN_PLAIN" >/dev/null 2>&1 \
+  && cli scp download e2e --timeout 120000 "$REMOTE_SPACE" "$DOWN_SPACE" >/dev/null 2>&1 \
+  && cli scp download e2e --timeout 180000 "${REMOTE_SCP}.1m" "$DOWN_1M" >/dev/null 2>&1; then
+  pass E11
+else
+  fail E11
+fi
+
+if cmp -s "$UP_PLAIN" "$DOWN_PLAIN" \
+  && cmp -s "$UP_SPACE" "$DOWN_SPACE" \
+  && cmp -s "$UP_1M" "$DOWN_1M"; then
+  pass E12
+else
+  fail E12
+fi
+
+# E13: remote missing must fail (non-zero exit)
+if ! cli scp download e2e --timeout 30000 "/tmp/ssh-cli-e2e-missing-$$-no-such" "$TMP/should-not-exist" >/dev/null 2>&1; then
+  if [[ ! -f "$TMP/should-not-exist" ]]; then
+    pass E13
+  else
+    fail E13
+  fi
+else
+  fail E13
+fi
+
+# Best-effort remote cleanup (never print paths with secrets)
+cli exec e2e "rm -f $(printf '%q' "$REMOTE_SCP") $(printf '%q' "$REMOTE_SPACE") $(printf '%q' "${REMOTE_SCP}.1m")" >/dev/null 2>&1 || true
+
 echo "---"
 echo "fails=$FAILS soft_sudo=$SOFT_SUDO tmp_destroyed=yes"
 if [[ "$FAILS" -gt 0 ]]; then

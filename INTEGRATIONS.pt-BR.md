@@ -16,14 +16,14 @@
 
 ## Novas flags por versão
 ### Acompanhe o crescimento da superfície sem ler o código
-- `0.3.9` filtro de tracing default `error` (agent-first); senha vazia serializa como JSON `null` em hosts só-chave; `health-check --timeout <ms>`; docs de product line em **0.3.9**.
+- `0.4.0` filtro de tracing default `error` (agent-first); senha vazia serializa como JSON `null` em hosts só-chave; `health-check --timeout <ms>`; docs de product line em **0.4.0**.
 - `0.3.8` russh 0.62.2; stdout de tunnel limpo para agentes; sem VPS ativa sai com `66` (`EX_NOINPUT`); `cargo deny` com `yanked=deny`.
 - `0.3.7` `--output-format` no CRUD VPS; `health-check --json`; `--quiet`; envelope JSON de erro; timeout do tunnel cobre connect.
 - `0.3.6` adiciona cifragem at-rest default, `secrets status|init|reencrypt`, `SSH_CLI_ALLOW_PLAINTEXT_SECRETS`, campos doctor de secrets, `scripts/e2e_real_ssh.sh`.
 - `0.3.5` adiciona caminhos de passphrase stdin, JSON auto em non-TTY, doctor `secrets_at_rest`, export atômico residual.
 - `0.3.4` adiciona `--key`, `--key-passphrase`, `--password-stdin`, `--sudo-password-stdin`, `--su-password-stdin`, `--timeout-ms` (tunnel), `--disable-sudo`, `--description`, `--replace-host-key`, `max_command_chars`, `max_output_chars`, `vps doctor`, `vps export`, `vps import`, `su-exec`.
 - `0.2.0` adiciona overrides runtime `--password`, `--sudo-password`, `--timeout` e aliases camelCase.
-- Prefira **0.3.9+** para automação SSH completa, cifragem default e supply-chain limpa.
+- Prefira **0.4.0+** para automação SSH completa, cifragem default e supply-chain limpa.
 
 
 ## Tabela resumo

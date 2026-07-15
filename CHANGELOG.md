@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-15
+
+### Fixed
+- **SCP wire protocol** was broken on crates.io **0.3.9** (header used literal `\\n` instead of real newline `0x0a`; ACK/EOF sent empty data instead of byte `0x00`; status not validated; download header/terminator incorrect) — SCP-010..013
+- Remote SCP path shell-escape for spaces and meta-characters (SCP-014)
+- Unit tests no longer crystalize the broken header form (SCP-015)
+- Download no longer leaves a partial final file on failure: write `{path}.ssh-cli.partial` then atomic rename (SCP-022)
+- Upload no longer loads the entire file into RAM (`fs::read`); streams in 32 KiB chunks (SCP-018)
+
+### Added
+- Official e2e E10–E13 SCP coverage in `scripts/e2e_real_ssh.sh` (upload, download, `cmp` integrity, missing remote) (SCP-016)
+- SCP flag parity with exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (SCP-017)
+- Structured SCP success JSON + `docs/schemas/scp-transfer.schema.json` (IO-007, SCP-021)
+- Preserve mtime/atime via SCP `T` line; unix mode on `C` header when available (SCP-023)
+- i18n EN/PT success messages for SCP (SCP-020)
+- Suite `tests/gaps_v040_integration.rs` (TEST-004)
+
+### Changed
+- Version 0.3.9 → **0.4.0**
+- Product-line docs document **regular files only** (no `-r` / no SFTP subsystem) and the 0.3.9 SCP wire regression (DOC-004, SCP-019, REL-004)
+- `scp` honors global `--replace-host-key` and global `--output-format json`
+
+### Security / honesty
+- **If you installed 0.3.9 from crates.io and used `scp`:** that release advertised SCP but the wire implementation was inoperant (upload often produced 0-byte remote files or timed out). Upgrade to **0.4.0**.
+- No telemetry
+
+### Notes
+- One-shot CLI: connect → transfer → disconnect → exit
+- Large files: raise `--timeout` (covers connect + full transfer)
+
 ## [0.3.9] - 2026-07-15
 
 ### Fixed
@@ -184,7 +214,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.9...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.9...v0.4.0
 [0.3.9]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.6...v0.3.7

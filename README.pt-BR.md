@@ -17,7 +17,7 @@
 - Siga o primeiro uso em [docs/HOW_TO_USE.pt-BR.md](docs/HOW_TO_USE.pt-BR.md).
 - Copie receitas de [docs/COOKBOOK.pt-BR.md](docs/COOKBOOK.pt-BR.md).
 - Confira plataformas em [docs/CROSS_PLATFORM.pt-BR.md](docs/CROSS_PLATFORM.pt-BR.md).
-- Migre de 0.3.3+ em [docs/MIGRATION.pt-BR.md](docs/MIGRATION.pt-BR.md) (linha alvo **0.3.9**).
+- Migre de 0.3.3+ em [docs/MIGRATION.pt-BR.md](docs/MIGRATION.pt-BR.md) (linha alvo **0.4.0**).
 - Execute testes via [docs/TESTING.pt-BR.md](docs/TESTING.pt-BR.md).
 - Consuma contratos JSON em [docs/schemas/README.md](docs/schemas/README.md).
 - Ensine LLMs com [skills/ssh-cli-pt/SKILL.md](skills/ssh-cli-pt/SKILL.md).
@@ -53,7 +53,7 @@
 - Limites dual `max_command_chars` e `max_output_chars`
 - Timeout com abort remoto best-effort
 - Tunnel limitado via `--timeout-ms` obrigatório
-- SCP upload e download
+- SCP upload e download de **arquivos regulares apenas** (sem diretórios recursivos / sem SFTP; wire sólido em **0.4.0** — evite SCP do crates.io 0.3.9)
 - Health-check com latência e `--timeout` opcional
 - Completions para bash zsh fish powershell
 - Segredos via flags stdin para evitar leak em argv
@@ -84,7 +84,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Instalação
 ### Escolha o caminho de install do seu ambiente
-- Prefira crates.io com lockfile: `cargo install ssh-cli --locked` (após publicar **0.3.9**; até lá use git/path para a superfície completa).
+- Prefira crates.io com lockfile: `cargo install ssh-cli --locked` (após publicar **0.4.0**; até lá use git/path para a superfície completa).
 - Rebuild a partir do checkout: `cargo install --path . --locked`
 - **Não** use install sem `--locked` salvo se validou o resolve crypto com os pins.
 - Force upgrade após release: `cargo install ssh-cli --locked --force`
@@ -124,7 +124,7 @@ ssh-cli exec prod "hostname" --json
 | `ssh-cli exec <vps> <cmd>` | Comando remoto one-shot |
 | `ssh-cli sudo-exec <vps> <cmd>` | sudo one-shot com packing seguro |
 | `ssh-cli su-exec <vps> <cmd>` | Elevação `su -` one-shot |
-| `ssh-cli scp upload|download` | Transferência de arquivos |
+| `ssh-cli scp upload|download` | Transferência de arquivo regular (flags: `--timeout`, `--key`, `--json`, …) |
 | `ssh-cli tunnel ... --timeout-ms N` | Port-forward local com deadline |
 | `ssh-cli health-check [<vps>] [--timeout N]` | Sonda de conectividade (timeout opcional em ms) |
 | `ssh-cli secrets status|init|reencrypt` | Master-key e cifragem at-rest (nunca imprime a chave) |
@@ -202,7 +202,7 @@ ssh-cli exec prod "hostname" --json
 
 ## FAQ de troubleshooting
 ### Corrija falhas comuns de install e runtime
-- Install falha em drift crypto RC: rode com `--locked` ou use a linha **0.3.9+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
+- Install falha em drift crypto RC: rode com `--locked` ou use a linha **0.4.0+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
 - Auth falha em hosts só-chave: defina `--key` em `vps add` ou passe `--key` / `--password-stdin` no `exec`.
 - Auth falha com chave com passphrase: use `--key-passphrase-stdin`.
 - Host key mudou: confirme legitimidade e rode com `--replace-host-key`.

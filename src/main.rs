@@ -41,9 +41,7 @@ fn main() {
             if let Some(erro_ssh) = e.downcast_ref::<ssh_cli::erros::ErroSshCli>() {
                 let code = erro_ssh.exit_code();
                 let remote = match erro_ssh {
-                    ssh_cli::erros::ErroSshCli::ComandoFalhou { exit_code, .. } => {
-                        Some(*exit_code)
-                    }
+                    ssh_cli::erros::ErroSshCli::ComandoFalhou { exit_code, .. } => Some(*exit_code),
                     _ => None,
                 };
                 if quer_json {

@@ -53,15 +53,7 @@ fn add_host_password(tmp: &TempDir, name: &str) {
 fn write_ed25519(tmp: &TempDir) -> std::path::PathBuf {
     let key = tmp.path().join("id_ed25519_test");
     let status = std::process::Command::new("ssh-keygen")
-        .args([
-            "-t",
-            "ed25519",
-            "-f",
-            key.to_str().unwrap(),
-            "-N",
-            "",
-            "-q",
-        ])
+        .args(["-t", "ed25519", "-f", key.to_str().unwrap(), "-N", "", "-q"])
         .status()
         .expect("ssh-keygen");
     assert!(status.success(), "ssh-keygen failed");
@@ -172,17 +164,19 @@ fn gap_cli_004_health_check_aceita_timeout() {
 #[test]
 #[serial]
 fn gap_doc_003_version_contem_039() {
+    // Suite histórica 0.3.9: product line atual é 0.4.0+ (mantém regressão de behaviours LOG/JSON/CLI).
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("0.3.9"));
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
 }
 
-/// Product-line public docs must state **0.3.9** (not stale 0.3.6-as-current).
+/// Product-line public docs must state current package version (not stale 0.3.6-as-current).
 #[test]
 fn gap_doc_003_product_line_docs_contem_039() {
+    let current = env!("CARGO_PKG_VERSION");
     const FILES: &[&str] = &[
         "README.md",
         "README.pt-BR.md",
@@ -210,8 +204,8 @@ fn gap_doc_003_product_line_docs_contem_039() {
     for path in FILES {
         let body = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("ler {path}: {e}"));
         assert!(
-            body.contains("0.3.9"),
-            "{path} deve mencionar product line 0.3.9"
+            body.contains(current),
+            "{path} deve mencionar product line {current}"
         );
         // HOW_TO_USE/COOKBOOK/TESTING/CROSS_PLATFORM must not claim current line is only 0.3.6
         if path.contains("HOW_TO_USE")
@@ -266,7 +260,7 @@ fn gap_doc_003_residual_behaviors_documentados() {
                 && skill.contains("--quiet")
                 && skill.contains("key-passphrase-stdin")
                 && skill.contains("--port")
-                && !skill.contains("0.3.9 did")
+                && !skill.contains("0.4.0 did") && !skill.contains("0.3.9 did")
                 && !skill.contains("in version 0.3.9")
                 && !skill.contains("versão 0.3.9")
                 && !skill.contains("na versão 0.3.9"),
@@ -304,8 +298,8 @@ fn gap_doc_003_residual_behaviors_documentados() {
     }
 
     // JSON-001 schema contract: password type includes null (not string-only).
-    let schema = std::fs::read_to_string("docs/schemas/vps-show.schema.json")
-        .expect("vps-show.schema.json");
+    let schema =
+        std::fs::read_to_string("docs/schemas/vps-show.schema.json").expect("vps-show.schema.json");
     let password_block = schema
         .split("\"password\"")
         .nth(1)
@@ -329,8 +323,7 @@ fn gap_deny_002_deny_toml_sem_ignore_cve() {
         "ignore deve permanecer vazio"
     );
     assert!(
-        deny.contains("multiple-versions = \"warn\"")
-            || deny.contains("GAP-SSH-DENY-002"),
+        deny.contains("multiple-versions = \"warn\"") || deny.contains("GAP-SSH-DENY-002"),
         "política DENY-002 documentada"
     );
 }

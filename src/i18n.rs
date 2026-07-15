@@ -127,6 +127,21 @@ pub enum Mensagem {
     },
     /// Operação cancelada por sinal do usuário (Ctrl+C ou SIGTERM).
     OperacaoCancelada,
+    // SCP (GAP-SSH-SCP-020)
+    /// Upload SCP concluído.
+    ScpUploadConcluido {
+        /// Bytes transferidos.
+        bytes: u64,
+        /// Duração em milissegundos.
+        ms: u64,
+    },
+    /// Download SCP concluído.
+    ScpDownloadConcluido {
+        /// Bytes transferidos.
+        bytes: u64,
+        /// Duração em milissegundos.
+        ms: u64,
+    },
 }
 
 impl Mensagem {
@@ -214,6 +229,12 @@ fn en(msg: &Mensagem) -> String {
             format!("Health check OK for '{nome}' ({latencia_ms}ms)")
         }
         Mensagem::OperacaoCancelada => "Operation cancelled by user.".to_string(),
+        Mensagem::ScpUploadConcluido { bytes, ms } => {
+            format!("Upload completed: {bytes} bytes in {ms}ms")
+        }
+        Mensagem::ScpDownloadConcluido { bytes, ms } => {
+            format!("Download completed: {bytes} bytes in {ms}ms")
+        }
     }
 }
 
@@ -256,6 +277,12 @@ fn pt(msg: &Mensagem) -> String {
             format!("Health check OK para '{nome}' ({latencia_ms}ms)")
         }
         Mensagem::OperacaoCancelada => "Operação cancelada pelo usuário.".to_string(),
+        Mensagem::ScpUploadConcluido { bytes, ms } => {
+            format!("Upload concluído: {bytes} bytes em {ms}ms")
+        }
+        Mensagem::ScpDownloadConcluido { bytes, ms } => {
+            format!("Download concluído: {bytes} bytes em {ms}ms")
+        }
     }
 }
 

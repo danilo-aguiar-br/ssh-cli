@@ -17,14 +17,14 @@
 
 ## New Flags by Version
 ### Track surface growth without reading source
-- `0.3.9` default tracing filter is `error` (agent-first); empty password serializes as JSON `null` on key-only hosts; `health-check --timeout <ms>`; product docs at **0.3.9**.
+- `0.4.0` default tracing filter is `error` (agent-first); empty password serializes as JSON `null` on key-only hosts; `health-check --timeout <ms>`; product docs at **0.4.0**.
 - `0.3.8` russh 0.62.2; tunnel agent stdout clean; no-active-VPS exits `66` (`EX_NOINPUT`); `cargo deny` with `yanked=deny`.
 - `0.3.7` `--output-format` on VPS CRUD; `health-check --json`; `--quiet`; JSON error envelope; tunnel timeout covers connect.
 - `0.3.6` adds default at-rest encryption, `secrets status|init|reencrypt`, `SSH_CLI_ALLOW_PLAINTEXT_SECRETS`, doctor fields `secrets_key_file` / `secrets_plaintext_opt_out`, `scripts/e2e_real_ssh.sh`.
 - `0.3.5` adds `--key-passphrase-stdin` runtime paths, auto JSON on non-TTY, doctor `secrets_at_rest`, residual atomic export and AEAD (then optional).
 - `0.3.4` adds `--key`, `--key-passphrase`, `--password-stdin`, `--sudo-password-stdin`, `--su-password-stdin`, `--timeout-ms` (tunnel), `--disable-sudo`, `--description`, `--replace-host-key`, `max_command_chars`, `max_output_chars`, `vps doctor`, `vps export`, `vps import`, `su-exec`.
 - `0.2.0` adds runtime `--password`, `--sudo-password`, `--timeout` overrides and camelCase aliases.
-- Prefer **0.3.9+** for full SSH automation, default secret encryption, and clean supply-chain.
+- Prefer **0.4.0+** for full SSH automation, default secret encryption, and clean supply-chain.
 
 
 ## Summary Table

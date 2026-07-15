@@ -3,7 +3,7 @@
 > Escape a cola SSH específica de SO com um binário Rust portátil.
 
 - Leia este documento em [inglês](CROSS_PLATFORM.md).
-- Linha de produto: **0.3.9**.
+- Linha de produto: **0.4.0**.
 
 
 ## A dor que você já conhece

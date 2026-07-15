@@ -3,7 +3,7 @@
 > Copy executable recipes that solve real multi-host SSH agent problems.
 
 - Read this document in [Portuguese (pt-BR)](COOKBOOK.pt-BR.md).
-- Product line: **0.3.9**.
+- Product line: **0.4.0**.
 
 
 ## Latency Note

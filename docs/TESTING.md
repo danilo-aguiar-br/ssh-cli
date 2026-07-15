@@ -3,7 +3,7 @@
 > Run the right ssh-cli test profile without hanging on remote networks.
 
 - Read this document in [Portuguese (pt-BR)](TESTING.pt-BR.md).
-- Product line: **0.3.9**.
+- Product line: **0.4.0**.
 
 
 ## Why Categorized Tests

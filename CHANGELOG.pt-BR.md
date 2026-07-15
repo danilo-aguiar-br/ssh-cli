@@ -9,6 +9,36 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-15
+
+### Corrigido
+- **Protocolo wire SCP** quebrado no crates.io **0.3.9** (header com `\\n` literal em vez de newline real `0x0a`; ACK/EOF com data vazia em vez do byte `0x00`; status remoto não validado; download com header/terminador incorretos) — SCP-010..013
+- Escape shell do path remoto SCP para espaços e meta-caracteres (SCP-014)
+- Unit tests não cristalizam mais o header quebrado (SCP-015)
+- Download não deixa arquivo final parcial em falha: grava `{path}.ssh-cli.partial` e faz rename atômico (SCP-022)
+- Upload não carrega o arquivo inteiro em RAM (`fs::read`); stream em chunks de 32 KiB (SCP-018)
+
+### Adicionado
+- E2E oficial E10–E13 SCP em `scripts/e2e_real_ssh.sh` (upload, download, integridade `cmp`, remoto ausente) (SCP-016)
+- Paridade de flags scp com exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (SCP-017)
+- JSON estruturado de sucesso SCP + `docs/schemas/scp-transfer.schema.json` (IO-007, SCP-021)
+- Preserve mtime/atime via linha `T`; mode unix no header `C` quando disponível (SCP-023)
+- Mensagens i18n EN/PT de sucesso SCP (SCP-020)
+- Suite `tests/gaps_v040_integration.rs` (TEST-004)
+
+### Alterado
+- Versão 0.3.9 → **0.4.0**
+- Docs de product line documentam **somente arquivos regulares** (sem `-r` / sem SFTP) e a regressão wire SCP de 0.3.9 (DOC-004, SCP-019, REL-004)
+- `scp` honra `--replace-host-key` global e `--output-format json` global
+
+### Segurança / honestidade
+- **Se você instalou 0.3.9 do crates.io e usou `scp`:** essa release anunciava SCP, mas o wire era inoperante (upload frequentemente gerava arquivo remoto 0 bytes ou timeout). Atualize para **0.4.0**.
+- Sem telemetria
+
+### Notas
+- CLI one-shot: conectar → transferir → desconectar → sair
+- Arquivos grandes: aumente `--timeout` (cobre connect + transferência completa)
+
 ## [0.3.9] - 2026-07-15
 
 ### Corrigido
@@ -17,15 +47,11 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - stderr JSON sem prosa INFO por omissão (LOG-001)
 - VPS só-chave: `password: null` no JSON (não `"***"`) (JSON-001)
 - `health-check --timeout <ms>` alinhado ao exec (CLI-004)
-- Docs de product line em **0.3.9** e comportamentos residuais documentados em README, `llms*.txt`, INTEGRATIONS, `docs/*` (HOW_TO_USE, COOKBOOK, MIGRATION, TESTING, CROSS_PLATFORM, AGENTS, schemas) e skills (auditoria profunda DOC-003)
+- Docs de product line em **0.3.9** e comportamentos residuais documentados em README, `llms*.txt`, INTEGRATIONS, `docs/*` e skills (auditoria profunda DOC-003)
 - Âncoras de compare do CHANGELOG para 0.3.8/0.3.9 (CHG-001)
 - `deny.toml` documenta warns multi-version esperados sem ignore de CVE (DENY-002)
-- `docs/schemas/vps-show.schema.json` permite `password` com tipo `string | null` (paridade do contrato JSON-001 com o runtime)
-- Aberturas de link cruzado em `docs/*.pt-BR.md` usam narrativa em português ("Leia este documento em inglês")
-- `docs/RELEASE_CHECKLIST.md` + `docs/RELEASE_CHECKLIST.pt-BR.md` bilíngues com gates residuais LOG/JSON/CLI/DOC/DENY/REL/CHG
-- Testes DOC-003 cobrem checklists e janela `null` do schema de password
-- Skills EN/PT consolidadas como fórmulas operacionais imperativas (LOG/JSON/CLI, envelope de erro, quiet, key-passphrase-stdin, port, completions completas) sem histórias de changelog por versão
-- Higiene de exposição SEC-001..003: ignore completo de `.setting.cyber/`, E2E recusa grok config dentro do repo, docs usam `demo-password-not-real` (não `s3cret`)
+- `docs/schemas/vps-show.schema.json` permite `password` com tipo `string | null` (paridade JSON-001)
+- Higiene de exposição SEC-001..003: ignore `.setting.cyber/`, E2E recusa grok config no repo, docs usam `demo-password-not-real`
 
 ### Adicionado
 - Suite `tests/gaps_v039_integration.rs` para gaps residuais de auditoria (incl. SEC-001..003)
@@ -184,7 +210,8 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 Release inicial.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.9...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.9...v0.4.0
 [0.3.9]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.6...v0.3.7

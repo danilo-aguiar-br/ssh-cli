@@ -3,7 +3,7 @@
 > Rode o perfil certo de testes do ssh-cli sem travar em redes remotas.
 
 - Leia este documento em [inglês](TESTING.md).
-- Linha de produto: **0.3.9**.
+- Linha de produto: **0.4.0**.
 
 
 ## Por que testes categorizados

@@ -4,7 +4,7 @@
 
 - Read this document in [Portuguese (pt-BR)](HOW_TO_USE.pt-BR.md).
 - Return to [README.md](../README.md) for the full command map.
-- Product line documented here: **0.3.9** (GAP-001–014 closed; residual audit LOG/JSON/CLI closed).
+- Product line documented here: **0.4.0** (GAP-001–014 closed; residual audit LOG/JSON/CLI closed).
 
 
 ## Prerequisites
@@ -12,7 +12,7 @@
 - Ensure network reachability to the target SSH host.
 - Hold either a password or an OpenSSH private key for that host.
 - Prefer a writable XDG config home for multi-host storage.
-- Install with `cargo install ssh-cli --locked` (after 0.3.9 on crates.io; until then use `--path . --locked` from a checkout).
+- Install with `cargo install ssh-cli --locked` (after 0.4.0 on crates.io; until then use `--path . --locked` from a checkout).
 
 
 ## First Command in 60 Seconds

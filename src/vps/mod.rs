@@ -330,9 +330,8 @@ pub async fn executar_comando_vps(
             check,
         } => {
             // GAP-SSH-VAL-001: validar na fronteira de escrita.
-            let name = crate::paths::validar_e_normalizar(&name).map_err(|e| {
-                ErroSshCli::ArgumentoInvalido(format!("nome de VPS inválido: {e}"))
-            })?;
+            let name = crate::paths::validar_e_normalizar(&name)
+                .map_err(|e| ErroSshCli::ArgumentoInvalido(format!("nome de VPS inválido: {e}")))?;
             let mut arquivo = carregar(&caminho)?;
             if arquivo.hosts.contains_key(&name) {
                 return Err(ErroSshCli::VpsDuplicada(name).into());
@@ -387,23 +386,14 @@ pub async fn executar_comando_vps(
                 disable_sudo,
             );
             // GAP-SSH-VAL-002 / VAL-003: domínio completo no write-path.
-            registro
-                .validar()
-                .map_err(ErroSshCli::ArgumentoInvalido)?;
+            registro.validar().map_err(ErroSshCli::ArgumentoInvalido)?;
             arquivo.hosts.insert(name.clone(), registro);
             arquivo.schema_version = modelo::SCHEMA_VERSION_ATUAL;
             salvar(&caminho, &arquivo)?;
             crate::output::imprimir_sucesso(&format!("VPS '{name}' adicionada ao registro"));
             if check {
-                executar_health_check(
-                    Some(&name),
-                    config_override,
-                    formato,
-                    false,
-                    None,
-                    None,
-                )
-                .await?;
+                executar_health_check(Some(&name), config_override, formato, false, None, None)
+                    .await?;
             }
         }
         AcaoVps::List { json } => {
@@ -493,9 +483,7 @@ pub async fn executar_comando_vps(
             if let Some(d) = disable_sudo {
                 registro.disable_sudo = d;
             }
-            registro
-                .validar()
-                .map_err(ErroSshCli::ArgumentoInvalido)?;
+            registro.validar().map_err(ErroSshCli::ArgumentoInvalido)?;
             salvar(&caminho, &arquivo)?;
             crate::output::imprimir_sucesso(&format!("VPS '{nome}' editada"));
         }
@@ -1268,19 +1256,18 @@ mod testes {
         use crate::ssh::cliente::mocks::MockClienteSsh;
         use crate::ssh::cliente::SaidaExecucao;
         let mut mock = MockClienteSsh::new();
-        mock.expect_executar_comando()
-            .returning(|c, _, stdin| {
-                assert!(c.contains("sudo -n sh -c"));
-                assert!(stdin.is_none());
-                Ok(SaidaExecucao {
-                    stdout: "ok".into(),
-                    stderr: String::new(),
-                    exit_code: Some(0),
-                    truncado_stdout: false,
-                    truncado_stderr: false,
-                    duracao_ms: 1,
-                })
-            });
+        mock.expect_executar_comando().returning(|c, _, stdin| {
+            assert!(c.contains("sudo -n sh -c"));
+            assert!(stdin.is_none());
+            Ok(SaidaExecucao {
+                stdout: "ok".into(),
+                stderr: String::new(),
+                exit_code: Some(0),
+                truncado_stdout: false,
+                truncado_stderr: false,
+                duracao_ms: 1,
+            })
+        });
         mock.expect_desconectar().returning(|| Ok(()));
 
         let vps = reg_min();

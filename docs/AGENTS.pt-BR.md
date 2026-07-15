@@ -4,7 +4,7 @@
 
 - Leia este documento em [inglês](AGENTS.md).
 - Combine com [../INTEGRATIONS.pt-BR.md](../INTEGRATIONS.pt-BR.md) e [../skills/ssh-cli-pt/SKILL.md](../skills/ssh-cli-pt/SKILL.md).
-- Linha de produto: **0.3.9** (inventário Fechado; russh 0.62.2).
+- Linha de produto: **0.4.0** (inventário Fechado; russh 0.62.2).
 
 
 ## Por quê

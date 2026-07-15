@@ -1,6 +1,6 @@
 # Migration Guide
 
-> Move from ssh-cli 0.3.3 (or later) to **0.3.9** without losing multi-host inventory.
+> Move from ssh-cli 0.3.3 (or later) to **0.4.0** without losing multi-host inventory.
 
 - Read this document in [Portuguese (pt-BR)](MIGRATION.pt-BR.md).
 
@@ -48,11 +48,13 @@
 - Version string reports `-dirty` when the working tree is dirty.
 - Full residual suite `tests/gaps_v038_integration.rs`.
 
-### Since 0.3.9 (current)
+### Since 0.4.0 (current)
+- **SCP wire fix:** crates.io **0.3.9** advertised SCP but the protocol implementation was broken (literal `\\n` header, empty ACK). Upgrade to **0.4.0** before relying on `scp upload|download`.
+- SCP is **regular files only** (no `-r` / no SFTP). Use `--timeout` for large files (covers connect + transfer). Success JSON via `--json` / `--output-format json` (`docs/schemas/scp-transfer.schema.json`).
 - Default tracing level is error (not info); `-v` enables debug; `RUST_LOG` overrides — JSON/tunnel stderr stays clean by default.
 - Empty or missing password on key-only VPS serializes as JSON `null` (not `"***"`); non-empty still masks as `***`; human text show uses "(não definida)" for empty.
 - `health-check` accepts `--timeout <ms>` override (aligned with exec).
-- Product-line docs aligned to 0.3.9; residual suite `tests/gaps_v039_integration.rs`.
+- Product-line docs aligned to 0.4.0; suites `tests/gaps_v039_integration.rs` + `tests/gaps_v040_integration.rs`.
 
 
 ## Step-by-Step Migration
@@ -110,7 +112,7 @@ ssh-cli su-exec prod "id"
 - Expect tunnel banners only in human/TTY paths, not on agent JSON stdout.
 
 
-## JSON Schema / host fields (stable through 0.3.9)
+## JSON Schema / host fields (stable through 0.4.0)
 
 ### After 0.3.4+ host fields
 - `timeout_ms`
@@ -125,7 +127,7 @@ ssh-cli su-exec prod "id"
 - Password/sudo/su/passphrase fields may store `sshcli-enc:v1:…` blobs.
 - Master key sources: `SSH_CLI_SECRETS_KEY`, `SSH_CLI_SECRETS_KEY_FILE`, keyring, or XDG `secrets.key`.
 
-### Masking (0.3.9)
+### Masking (0.4.0)
 - Empty password → JSON `null`; non-empty → string `***`.
 - Human text show still uses "(não definida)" for empty password.
 
