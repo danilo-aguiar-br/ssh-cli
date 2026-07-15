@@ -4,7 +4,7 @@
 
 - Leia este documento em [inglês](HOW_TO_USE.md).
 - Volte ao [README.pt-BR.md](../README.pt-BR.md) para o mapa completo de comandos.
-- Linha de produto documentada aqui: **0.4.1** (GAP-001–014 fechados; residual LOG/JSON/CLI fechado; correção wire AUD-SCP + JSON de agente para scp/tunnel fechados).
+- Linha de produto documentada aqui: **0.4.1** (GAP-001–014 fechados; residual LOG/JSON/CLI fechado; correção wire AUD-SCP + JSON de agente para scp/tunnel; AUD-POST EXP-001/TUN-002/CLI-005/006/IO-009 fechados).
 
 
 ## Pré-requisitos
@@ -42,7 +42,7 @@ ssh-cli exec demo "uname -a" --json
 - Eleve com `ssh-cli su-exec` quando a senha `su` estiver no registro do host.
 - Transfira **somente arquivos regulares** (sem diretórios, sem `-r`, sem SFTP) com `ssh-cli scp upload demo ./app.tgz /tmp/app.tgz`.
 - Baixe com `ssh-cli scp download demo /var/log/app.log ./app.log`.
-- Prefira JSON de agente: `ssh-cli scp upload demo ./app.tgz /tmp/app.tgz --json` (schema `docs/schemas/scp-transfer.schema.json`).
+- Prefira JSON de agente: `ssh-cli scp upload demo ./app.tgz /tmp/app.tgz --json` (schema `docs/schemas/scp-transfer.schema.json`; sucesso exige `event: "scp-transfer"`).
 - Flags SCP com paridade ao exec: `--timeout` (connect + transfer), `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json`.
 - Download com falha não deixa o destino final corrompido: grava `{path}.ssh-cli.partial`, aplica mode/times no partial e faz rename atômico.
 - Upload faz stream em blocos de 32 KiB (não carrega o arquivo inteiro na RAM).
@@ -63,7 +63,7 @@ ssh-cli exec demo "uname -a" --json
 - Anexe comentários shell com `--description` para histórico remoto auditável.
 - Desabilite elevação em tarefas não confiáveis com `--disable-sudo`.
 - Substitua host key legítima só após confirmação humana com `--replace-host-key` (TOFU).
-- Exporte inventário com segredos mascarados: `ssh-cli vps export -o hosts.toml`.
+- Exporte inventário com segredos mascarados: `ssh-cli vps export -o hosts.toml` (secret vazio serializa como `""`, nunca blob `sshcli-enc:`; EXP-001 / 0.4.1).
 - Importe hosts com `ssh-cli vps import --file hosts.toml`.
 - Re-cifre inventário plaintext após upgrade: `ssh-cli secrets reencrypt`.
 - Espere JSON automático quando stdout não é TTY, salvo `--output-format`.
@@ -85,9 +85,11 @@ ssh-cli exec demo "uname -a" --json
 
 ## Subcomandos não cobertos acima
 - `health-check [--timeout <ms>]` sonda conectividade e imprime latência (`vps add --check` após cadastro); sobrescreva o timeout quando o padrão do host for longo ou curto demais.
+- Paridade auth em `health-check` (0.4.1 / CLI-006): `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`.
 - Nível de tracing padrão é error para manter stderr de JSON e tunnel limpos; use `RUST_LOG` ou `-v` (debug) ao diagnosticar.
 - `tunnel` exige porta local, host remoto, porta remota e `--timeout-ms`.
-- Opcional: `tunnel --json` emite `event: "tunnel_listening"` estruturado no stdout após o bind local (`docs/schemas/tunnel-listening.schema.json`).
+- Opcional: `tunnel --json` emite `event: "tunnel_listening"` estruturado no stdout após o bind local (`docs/schemas/tunnel-listening.schema.json`); deadline pós-bind sai com exit **0** após o agente receber o evento (TUN-002 / 0.4.1); timeout pré-bind permanece **74**.
+- Paridade auth em `tunnel` (0.4.1 / CLI-005): `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`.
 - `completions` grava scripts de completion no stdout.
 - `su-exec` exige senha `su` configurada no registro do host.
 - `secrets` gerencia a master-key de cifragem sem nunca imprimi-la.

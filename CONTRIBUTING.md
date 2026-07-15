@@ -28,7 +28,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Never bump MSRV without an explicit issue discussion.
 
 ### Dependency pinning
-- Product line **0.4.0** uses **russh 0.62.2** (since 0.3.8) without the older COMPAT RC crypto pins; do not reintroduce dead RC pins without an issue.
+- Product line **0.4.1** uses **russh 0.62.2** (since 0.3.8) without the older COMPAT RC crypto pins; do not reintroduce dead RC pins without an issue.
 - Never run blind `cargo update` on the crypto graph.
 - Run `scripts/verify_install_resolve.sh` after any dependency change.
 
@@ -91,7 +91,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 ## Release Process
 - Bump SemVer in `Cargo.toml` and update both CHANGELOG languages.
 - Run full test suite, clippy `-D warnings`, `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps`, and install resolve gate.
-- Confirm root bilingual docs (README, SECURITY, INTEGRATIONS, llms*) match the release surface (including `secrets`, default encryption, SCP file-only + 0.3.9 honesty, `scp-transfer` schema, and `tunnel --json`).
+- Confirm root bilingual docs (README, SECURITY, INTEGRATIONS, llms*) match the release surface (including `secrets`, default encryption, SCP file-only + 0.3.9 honesty, `scp-transfer` with `event`, `tunnel --json` / post-bind exit 0, export empty-secret honesty, tunnel/health auth parity, and gaps_v041).
 - Package with `cargo package --locked` and dry-run publish when needed.
 - Tag `vX.Y.Z` only after publish gates pass and **explicit maintainer authorization**.
 - Prefer `cargo install ssh-cli --locked` in public install docs.

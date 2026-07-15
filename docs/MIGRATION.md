@@ -49,7 +49,7 @@
 - Full residual suite `tests/gaps_v038_integration.rs`.
 
 ### Since 0.4.1 (current)
-- **AUD-POST patch:** empty secrets never become `sshcli-enc` blobs on redacted export (EXP-001); tunnel post-bind deadline exits **0** (TUN-002); `tunnel`/`health-check` auth flag parity with exec/scp (CLI-005/006); SCP JSON includes `event: \"scp-transfer\"` (IO-009). Additive only — no breaking CLI changes.
+- **AUD-POST patch:** empty secrets never become `sshcli-enc` blobs on redacted export (EXP-001); tunnel post-bind deadline exits **0** (TUN-002); `tunnel`/`health-check` auth flag parity with exec/scp (CLI-005/006); SCP JSON includes `event: "scp-transfer"` (IO-009). Additive only — no breaking CLI changes.
 - **SCP wire fix (0.4.0):** crates.io **0.3.9** advertised SCP but the protocol was broken. Upgrade to **0.4.0+** (prefer **0.4.1**) before relying on `scp`.
 - SCP is **regular files only** (no `-r` / no SFTP). Use `--timeout` for large files (covers connect + transfer). Success JSON via `--json` / `--output-format json` (`docs/schemas/scp-transfer.schema.json`).
 - SCP download writes `{path}.ssh-cli.partial` then atomic rename; mode/times applied on the **partial** before rename.
@@ -61,7 +61,7 @@
 - Default tracing level is error (not info); `-v` enables debug; `RUST_LOG` overrides — JSON/tunnel stderr stays clean by default.
 - Empty or missing password on key-only VPS serializes as JSON `null` (not `"***"`); non-empty still masks as `***`; human text show uses "(não definida)" for empty.
 - `health-check` accepts `--timeout <ms>` override (aligned with exec).
-- Product-line docs aligned to 0.4.0; suites `tests/gaps_v039_integration.rs` + `tests/gaps_v040_integration.rs`; official e2e **E01–E14** (E10–E14 cover SCP).
+- Product-line docs aligned to **0.4.1**; suites `tests/gaps_v039_integration.rs` + `tests/gaps_v040_integration.rs` + `tests/gaps_v041_integration.rs`; official e2e **E01–E14** (E10–E14 cover SCP).
 
 
 ## Step-by-Step Migration
@@ -108,7 +108,12 @@ ssh-cli su-exec prod "id"
 ### Update agent wrappers
 - Pass `--timeout-ms` for tunnels.
 - On `tunnel --json`, wait for `event == "tunnel_listening"` before using the local port.
-- Parse SCP success with `docs/schemas/scp-transfer.schema.json`.
+- **TUN-002:** after `tunnel_listening`, post-bind one-shot deadline exits **0** (do not treat 74 as failure if bind already signaled). Pre-bind timeout remains 74.
+- **EXP-001:** on redacted `vps export`, do not expect or parse `sshcli-enc:` for empty secrets — empties serialize as `""`.
+- **IO-009:** parse SCP success with `docs/schemas/scp-transfer.schema.json` including required `event: "scp-transfer"`.
+- **CLI-005:** `tunnel` accepts `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`.
+- **CLI-006:** `health-check` accepts `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`.
+- If you came from **0.4.0**: redacted export could show fake empty-password ciphertext; tunnel could emit `ok:true` and still exit 74 — upgrade wrappers and the binary to **0.4.1**.
 - On SCP/tunnel `--json` failure, parse stderr error envelope (not human prose).
 - Treat SCP as regular files only; do not send directory trees.
 - Re-test transfers after leaving **0.3.9** (that release SCP was not trustworthy).
@@ -124,7 +129,7 @@ ssh-cli su-exec prod "id"
 - Expect tunnel banners only in human/TTY paths, not on agent JSON stdout.
 
 
-## JSON Schema / host fields (stable through 0.4.0)
+## JSON Schema / host fields (stable through 0.4.1)
 
 ### After 0.3.4+ host fields
 - `timeout_ms`
@@ -144,8 +149,8 @@ ssh-cli su-exec prod "id"
 - Human text show still uses "(não definida)" for empty password.
 
 ### Transfer / tunnel events (0.4.0 / 0.4.1)
-- SCP success JSON includes required `event: \"scp-transfer\"` (IO-009, 0.4.1).
-- Tunnel still emits `event: \"tunnel_listening\"` after bind.
+- SCP success JSON includes required `event: "scp-transfer"` (IO-009, 0.4.1).
+- Tunnel still emits `event: "tunnel_listening"` after bind.
 - SCP success: `docs/schemas/scp-transfer.schema.json`
 - Tunnel listening: `docs/schemas/tunnel-listening.schema.json`
 - Failures in JSON mode: `docs/schemas/error-envelope.schema.json` on stderr
@@ -158,7 +163,7 @@ ssh-cli su-exec prod "id"
 - Always-trust host key behavior is gone in release builds.
 - Default encryption is on; plaintext requires explicit opt-out env (tests).
 - Default tracing is error; INFO prose is not expected on agent stderr.
-- SCP remains file-only by design in 0.4.0 (not a temporary limitation).
+- SCP remains file-only by design in 0.4.0+ (still true in 0.4.1; not a temporary limitation).
 
 
 ## Rollback

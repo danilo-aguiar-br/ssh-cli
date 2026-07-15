@@ -13,8 +13,8 @@
 - `su-exec.schema.json` contracts `ssh-cli su-exec ... --json`.
 - `health-check.schema.json` contracts `ssh-cli health-check --json`.
 - Optional CLI `--timeout` on `health-check` does not change response schema fields.
-- `scp-transfer.schema.json` contracts `ssh-cli scp upload|download --json` **success on stdout** (regular files only; no directories / no `-r` / no SFTP).
-- `tunnel-listening.schema.json` contracts the post-bind stdout event for `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`).
+- `scp-transfer.schema.json` contracts `ssh-cli scp upload|download --json` **success on stdout** (regular files only; no directories / no `-r` / no SFTP); required field `event: "scp-transfer"` (IO-009 / **0.4.1**).
+- `tunnel-listening.schema.json` contracts the post-bind stdout event for `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`). After `tunnel_listening`, one-shot post-bind deadline is process exit **0** (not a schema field; see AGENTS / TUN-002). Pre-bind timeout remains **74**.
 - `error-envelope.schema.json` contracts **stderr** failure payloads when JSON errors mode is active (`--json` / global `--output-format json` / effective JSON on scp and tunnel): fields `exit_code`, `message`, optional `remote_exit_code`.
 - Secrets in list/show payloads: empty password is JSON `null` (key-only hosts); non-empty password is the masked string `***`, never raw credentials.
 - There is no schema for `secrets status` key material (command never emits the master key); treat status JSON as non-sensitive metadata only.
@@ -33,8 +33,8 @@
 - `su-exec.schema.json` cobre `ssh-cli su-exec ... --json`.
 - `health-check.schema.json` cobre `ssh-cli health-check --json`.
 - O CLI opcional `--timeout` em `health-check` não altera os campos do schema de resposta.
-- `scp-transfer.schema.json` cobre sucesso em **stdout** de `ssh-cli scp upload|download --json` (somente arquivos regulares; sem diretórios / sem `-r` / sem SFTP).
-- `tunnel-listening.schema.json` cobre o evento pós-bind em stdout de `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`).
+- `scp-transfer.schema.json` cobre sucesso em **stdout** de `ssh-cli scp upload|download --json` (somente arquivos regulares; sem diretórios / sem `-r` / sem SFTP); o campo `event: "scp-transfer"` é **obrigatório** (GAP-SSH-IO-009 / **0.4.1**).
+- `tunnel-listening.schema.json` cobre o evento pós-bind em stdout de `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`). Após `tunnel_listening`, o deadline one-shot pós-bind é exit **0** do processo (não é campo de schema; ver AGENTS / TUN-002). Timeout pré-bind permanece **74**.
 - `error-envelope.schema.json` cobre payloads de falha em **stderr** quando o modo de erros JSON está ativo (`--json` / `--output-format json` global / JSON efetivo em scp e tunnel): campos `exit_code`, `message`, opcional `remote_exit_code`.
 - Segredos em list/show: senha vazia é JSON `null` (hosts só-chave); senha não vazia é a string mascarada `***`, nunca credenciais cruas.
 - Não há schema de material de chave de `secrets status` (o comando nunca emite a master-key); trate o JSON de status como metadado não sensível.

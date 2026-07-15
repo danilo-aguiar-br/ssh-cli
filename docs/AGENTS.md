@@ -55,8 +55,11 @@
 - REQUIRED: pass `--timeout-ms` for every `tunnel` invocation.
 - REQUIRED: treat `scp` as **regular files only** (no directories, no `-r`, no SFTP subsystem).
 - REQUIRED: never depend on crates.io **0.3.9** for SCP; that wire was broken — require **0.4.1+**.
-- REQUIRED: parse SCP success with `docs/schemas/scp-transfer.schema.json` (`ok`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`) on **stdout**.
+- REQUIRED: parse SCP success with `docs/schemas/scp-transfer.schema.json` (`ok`, `event` (`scp-transfer`), `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`) on **stdout**.
+- REQUIRED: redacted `vps export` empty secrets are empty strings, never `sshcli-enc:` ciphertext of empty (0.4.1 EXP-001).
 - REQUIRED: on `tunnel --json`, wait for one stdout object with `event: "tunnel_listening"` (`docs/schemas/tunnel-listening.schema.json`) before using the local port; process stays alive until timeout or signal.
+- REQUIRED: after `tunnel_listening`, deadline ends with exit **0** (TUN-002); pre-bind timeout remains **74**.
+- REQUIRED: `tunnel` / `health-check` may use `--password-stdin` / `--key` / `--key-passphrase` / `--key-passphrase-stdin` (0.4.1 CLI-005/006 parity with exec/scp).
 - REQUIRED: may pass `health-check --timeout <ms>` when host default timeout is too long or short.
 - REQUIRED: prefer `--password-stdin` / `--key` over argv secrets.
 - REQUIRED: install with `cargo install ssh-cli --locked` (or path install with pins).
@@ -81,10 +84,11 @@
 - Doctor: `ssh-cli vps doctor --json` returns layer, paths, schema, host count, `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out`, telemetry false.
 - Secrets: `ssh-cli secrets status --json` returns encryption mode without key material.
 - Exec family: `ssh-cli exec|sudo-exec|su-exec ... --json` returns stdout, stderr, exit_code, truncation flags, duration_ms.
-- Health: `ssh-cli health-check [--timeout <ms>] --json` returns name, status, latency_ms.
-- SCP: `ssh-cli scp upload|download <vps> <local> <remote> --json` returns transfer success on stdout (`scp-transfer.schema.json`); failures use error envelope on stderr.
+- Health: `ssh-cli health-check [--timeout <ms>] [--password-stdin|--key|--key-passphrase[-stdin]] --json` returns name, status, latency_ms.
+- SCP: `ssh-cli scp upload|download <vps> <local> <remote> --json` returns transfer success on stdout (`scp-transfer.schema.json` with required `event: "scp-transfer"`); failures use error envelope on stderr.
 - SCP operational facts: upload streams 32 KiB; download writes `{path}.ssh-cli.partial` then renames; mtime/mode preserved both directions.
-- Tunnel: `ssh-cli tunnel <vps> <local_port> <remote_host> <remote_port> --timeout-ms <ms> --json` emits `tunnel_listening` on stdout after bind.
+- Tunnel: `ssh-cli tunnel <vps> <local_port> <remote_host> <remote_port> --timeout-ms <ms> [--password-stdin|--key|--key-passphrase[-stdin]] --json` emits `tunnel_listening` on stdout after bind; post-bind deadline exits **0**; pre-bind timeout remains **74**.
+- Export: redacted `ssh-cli vps export` clears live secrets; empty serializes as `""` (never `sshcli-enc:`).
 - Empty password fields serialize as JSON `null`; non-empty secrets mask as `***`.
 - Validate payloads against schemas under `docs/schemas/`.
 

@@ -76,3 +76,4 @@
 - Run one-shot commands only; never expect a long-lived SSH daemon from this CLI.
 - Install with `--locked` to avoid accidental crypto re-resolve drift.
 - Prefer current **0.4.1+** for the supply-chain floor (russh 0.62.2) and for a working SCP wire (crates.io **0.3.9** SCP was inoperant).
+- Default redacted `vps export` clears secrets; empty secrets must serialize as empty strings, never encrypted `sshcli-enc:` blobs of empty values (0.4.1 EXP-001).

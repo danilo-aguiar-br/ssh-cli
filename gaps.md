@@ -53,7 +53,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC + AUD-SCP 010–023 + 
 | PA-IO-09 | event scp-transfer | **Feito** |
 | PA-M1 / M2 | replace_host_key + json erros health | **Feito** |
 | PA-TEST-041 | gaps_v041 | **Feito** |
-| PA-DOC-041 | product line + CHANGELOG | **Feito** |
+| PA-DOC-041 | product line + CHANGELOG + honesty AUD-POST em checklists/root docs (DOC-041 follow-up: export vazio sem `sshcli-enc:`, tunnel exit 0 pós-bind, auth flags tunnel/health, `event` scp-transfer, gaps_v041) | **Feito** |
 | PA-REL-06 | release 0.4.1 | **Feito local** (push/publish com OK) |
 
 ## Política

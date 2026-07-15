@@ -55,9 +55,12 @@
 - OBRIGATÓRIO: passar `--timeout-ms` em toda invocação de `tunnel`.
 - OBRIGATÓRIO: tratar `scp` como **somente arquivos regulares** (sem diretórios, sem `-r`, sem subsistema SFTP).
 - OBRIGATÓRIO: nunca depender do crates.io **0.3.9** para SCP; o wire estava quebrado — exija **0.4.1+**.
-- OBRIGATÓRIO: parsear sucesso SCP com `docs/schemas/scp-transfer.schema.json` (`ok`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`) no **stdout**.
-- OBRIGATÓRIO: em `tunnel --json`, aguardar um objeto stdout com `event: "tunnel_listening"` (`docs/schemas/tunnel-listening.schema.json`) antes de usar a porta local; o processo permanece vivo até timeout ou sinal.
-- OBRIGATÓRIO: pode passar `health-check --timeout <ms>` quando o timeout padrão do host for longo ou curto demais.
+- OBRIGATÓRIO: parsear sucesso SCP com `docs/schemas/scp-transfer.schema.json` (`ok`, `event` = `"scp-transfer"`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`) no **stdout**.
+- OBRIGATÓRIO: em `tunnel --json`, aguardar um objeto stdout com `event: "tunnel_listening"` (`docs/schemas/tunnel-listening.schema.json`) antes de usar a porta local; o processo permanece vivo até timeout ou sinal; após `tunnel_listening`, o deadline pós-bind sai com exit **0** (TUN-002); timeout pré-bind permanece **74**.
+- PERMITIDO: passar em `tunnel` as flags de auth `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` (paridade com exec/scp, CLI-005).
+- PERMITIDO: passar `health-check --timeout <ms>` quando o timeout padrão do host for longo ou curto demais.
+- PERMITIDO: passar em `health-check` as flags de auth `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` (CLI-006).
+- OBRIGATÓRIO: tratar `vps export` redacted como sem segredos vivos; secret vazio serializa como `""` e nunca blob `sshcli-enc:` (EXP-001).
 - OBRIGATÓRIO: preferir `--password-stdin` / `--key` a segredos em argv.
 - OBRIGATÓRIO: instalar com `cargo install ssh-cli --locked` (ou path com pins).
 - PROIBIDO: assumir conexão SSH longa entre runs de processo.
@@ -70,7 +73,7 @@
 
 ## Integrações de crate
 - Consumidores publicados dependem do contrato da CLI, não de API de lib instável.
-- Pine experimentos de lib em versão exata se linkar `ssh_cli` como lib.
+- Fixe experimentos de lib em versão exata se linkar `ssh_cli` como lib.
 - Prefira integração via binário no PATH para agentes.
 
 
@@ -81,10 +84,11 @@
 - Doctor: `ssh-cli vps doctor --json` retorna camada, paths, schema, contagem de hosts, `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out`, telemetry false.
 - Secrets: `ssh-cli secrets status --json` retorna modo de cifragem sem material de chave.
 - Família exec: `ssh-cli exec|sudo-exec|su-exec ... --json` retorna stdout, stderr, exit_code, flags de truncagem, duration_ms.
-- Health: `ssh-cli health-check [--timeout <ms>] --json` retorna name, status, latency_ms.
-- SCP: `ssh-cli scp upload|download <vps> <local> <remote> --json` retorna sucesso de transferência no stdout (`scp-transfer.schema.json`); falhas usam envelope de erro em stderr.
+- Health: `ssh-cli health-check [--timeout <ms>] [--password-stdin|--key|--key-passphrase[-stdin]] --json` retorna name, status, latency_ms.
+- SCP: `ssh-cli scp upload|download <vps> <local> <remote> --json` retorna sucesso de transferência no stdout (`scp-transfer.schema.json` com `event: "scp-transfer"`); falhas usam envelope de erro em stderr.
 - Fatos operacionais SCP: upload faz stream de 32 KiB; download grava `{path}.ssh-cli.partial` e renomeia; mtime/mode preservados nos dois sentidos.
-- Tunnel: `ssh-cli tunnel <vps> <porta_local> <host_remoto> <porta_remota> --timeout-ms <ms> --json` emite `tunnel_listening` no stdout após o bind.
+- Tunnel: `ssh-cli tunnel <vps> <porta_local> <host_remoto> <porta_remota> --timeout-ms <ms> [--password-stdin|--key|--key-passphrase[-stdin]] --json` emite `tunnel_listening` no stdout após o bind; deadline pós-bind → exit **0**; timeout pré-bind permanece **74**.
+- Export: `ssh-cli vps export` redacted limpa segredos; vazios como `""` (nunca `sshcli-enc:`).
 - Campos de senha vazios serializam como JSON `null`; segredos não vazios mascaram como `***`.
 - Valide payloads contra schemas em `docs/schemas/`.
 

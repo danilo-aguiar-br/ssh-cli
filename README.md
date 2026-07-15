@@ -56,7 +56,11 @@
 - SCP upload and download of **regular files only** (no recursive directories / no SFTP subsystem; first solid wire fix in **0.4.0**; patch **0.4.1** — avoid crates.io 0.3.9 SCP)
 - SCP flag parity with exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (contract `docs/schemas/scp-transfer.schema.json`)
 - SCP download writes `{path}.ssh-cli.partial` then atomic rename; preserve remote mtime/mode bi-directional; upload streams 32 KiB chunks
+- SCP JSON success requires `event: "scp-transfer"` (0.4.1 IO-009)
 - `tunnel --json` emits structured `tunnel_listening` after local bind
+- Tunnel post-bind deadline exits **0** after `tunnel_listening` (pre-bind timeout still **74**) (0.4.1 TUN-002)
+- Tunnel and health-check auth parity with exec/scp: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` as applicable (0.4.1 CLI-005/006)
+- Redacted `vps export` never emits `sshcli-enc:` for empty password — empty secrets serialize as empty strings (0.4.1 EXP-001)
 - Health-check latency probe with optional `--timeout`
 - Shell completions for bash zsh fish powershell
 - Secrets via stdin flags to avoid argv leaks
@@ -121,15 +125,15 @@ ssh-cli exec prod "hostname" --json
 | `ssh-cli vps remove <name>` | Delete host |
 | `ssh-cli vps path` | Print `config.toml` path |
 | `ssh-cli vps doctor [--json]` | Show XDG layer schema and paths |
-| `ssh-cli vps export` | Export hosts (secrets redacted by default) |
+| `ssh-cli vps export` | Export hosts (secrets redacted by default; empty secrets stay `""`, never fake `sshcli-enc:` ciphertext) |
 | `ssh-cli vps import --file` | Import hosts from TOML |
 | `ssh-cli connect <name>` | Write sibling `active` file |
 | `ssh-cli exec <vps> <cmd>` | One-shot remote command |
 | `ssh-cli sudo-exec <vps> <cmd>` | One-shot sudo with safe packing |
 | `ssh-cli su-exec <vps> <cmd>` | One-shot `su -` elevation |
-| `ssh-cli scp upload|download` | Regular files only (no `-r`/SFTP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--json` → `scp-transfer` schema; preserve mtime/mode |
-| `ssh-cli tunnel ... --timeout-ms N [--json]` | Bounded local port forward; `--json` emits `tunnel_listening` after bind |
-| `ssh-cli health-check [<vps>] [--timeout N]` | Connectivity probe (optional timeout ms) |
+| `ssh-cli scp upload|download` | Regular files only (no `-r`/SFTP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--json` → `scp-transfer` schema (required `event: "scp-transfer"`); preserve mtime/mode |
+| `ssh-cli tunnel ... --timeout-ms N [--json]` | Bounded local port forward; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`; `--json` emits `tunnel_listening` after bind; post-bind deadline exits **0** (pre-bind timeout still **74**) |
+| `ssh-cli health-check [<vps>] [--timeout N]` | Connectivity probe; optional `--timeout` ms; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]` |
 | `ssh-cli secrets status|init|reencrypt` | Master-key and at-rest encryption (never prints key) |
 | `ssh-cli completions <shell>` | Shell completion scripts |
 
@@ -215,6 +219,8 @@ ssh-cli exec prod "hostname" --json
 - Unexpected stderr noise in JSON pipelines: default log level is already `error`; set `RUST_LOG` only to `debug` (or `-v`) when diagnosing.
 - SCP from crates.io **0.3.9** fails or writes 0-byte remotes: upgrade to **0.4.1+** (wire fix); only regular files, not directories.
 - SCP download fails mid-transfer: destination stays absent or previous file intact (partial uses `.ssh-cli.partial`).
+- Redacted `vps export` on **0.4.0** wrote fake `sshcli-enc:` blobs for empty secrets: upgrade to **0.4.1+** (empty secrets stay empty strings).
+- Tunnel emitted `ok: true` / `tunnel_listening` then process exit **74** when the post-bind deadline hit on **0.4.0**: upgrade to **0.4.1+** (post-bind deadline exits **0**; pre-bind timeout still **74**).
 - macOS Gatekeeper blocks binary: run `xattr -d com.apple.quarantine /path/to/ssh-cli`.
 - Permission denied on config: ensure `chmod 600` on the XDG `config.toml` and `secrets.key`.
 

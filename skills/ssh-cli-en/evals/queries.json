@@ -18,7 +18,7 @@
       "should_trigger": true
     },
     {
-      "query": "upload a single file with scp --json and parse ok direction vps local remote bytes duration_ms",
+      "query": "upload a single file with scp --json and parse ok event scp-transfer direction vps local remote bytes duration_ms",
       "should_trigger": true
     },
     {
@@ -91,6 +91,34 @@
     },
     {
       "query": "scp download with password-stdin or key-passphrase-stdin without argv secrets",
+      "should_trigger": true
+    },
+    {
+      "query": "vps export redacted empty password must stay empty string never sshcli-enc blob",
+      "should_trigger": true
+    },
+    {
+      "query": "tunnel post-bind deadline after tunnel_listening must exit 0 not 74",
+      "should_trigger": true
+    },
+    {
+      "query": "tunnel with password-stdin and key-passphrase-stdin auth overrides",
+      "should_trigger": true
+    },
+    {
+      "query": "health-check with password-stdin key and key-passphrase-stdin overrides",
+      "should_trigger": true
+    },
+    {
+      "query": "health-check replace-host-key after human approval of host key mismatch",
+      "should_trigger": true
+    },
+    {
+      "query": "scp json success must include event scp-transfer discriminator",
+      "should_trigger": true
+    },
+    {
+      "query": "tunnel pre-bind timeout still exit 74 before listening",
       "should_trigger": true
     },
     {

@@ -2,7 +2,7 @@
 
 > CLI SSH multi-host one-shot para agentes de IA com storage XDG e sem daemon Node
 
-ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores remotos via stdin/stdout. Substitui processos long-lived Node SSH daemons persistentes por invocações nascer-executar-morrer, inventário multi-host XDG, auth por senha ou chave, packing seguro de sudo, su-exec, tunnels limitados, known_hosts TOFU, limites dual de comando/saída e **cifragem at-rest de segredos por padrão** (ChaCha20-Poly1305 + `secrets.key`). Telemetria é proibida. Prefira `cargo install ssh-cli --locked`. Linha de produto atual: **0.4.1** (inventário Fechado; russh 0.62.2).
+ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores remotos via stdin/stdout. Substitui processos long-lived Node SSH daemons persistentes por invocações nascer-executar-morrer, inventário multi-host XDG, auth por senha ou chave, packing seguro de sudo, su-exec, tunnels limitados, known_hosts TOFU, limites dual de comando/saída e **cifragem at-rest de segredos por padrão** (ChaCha20-Poly1305 + `secrets.key`). Telemetria é proibida. Prefira `cargo install ssh-cli --locked`. Linha de produto atual: **0.4.1** (inventário Fechado; russh 0.62.2; AUD-POST: export empty, tunnel exit 0, paridade auth tunnel/health, event scp-transfer).
 
 - Read this document in [English](llms.txt).
 - Índice expandido: [llms-full.txt](llms-full.txt)
@@ -29,9 +29,10 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - `exec` roda comando remoto one-shot
 - `sudo-exec` eleva com packing seguro `sh -c`
 - `su-exec` eleva com `su -` one-shot
-- `scp upload|download` transfere **somente arquivos regulares** (sem `-r` / sem SFTP; wire SCP do crates.io **0.3.9** estava quebrado — use **0.4.1**); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → contrato `docs/schemas/scp-transfer.schema.json`; download usa `.ssh-cli.partial` e rename; preserve mtime/mode; upload em stream 32 KiB
-- `tunnel` abre port-forward local limitado com `--timeout-ms` obrigatório; `--json` opcional emite `tunnel_listening` após bind
-- `health-check [--timeout]` sonda conectividade e latência
+- `scp upload|download` transfere **somente arquivos regulares** (sem `-r` / sem SFTP; wire SCP do crates.io **0.3.9** estava quebrado — use **0.4.1**); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → contrato `docs/schemas/scp-transfer.schema.json` com `event: "scp-transfer"` obrigatório; download usa `.ssh-cli.partial` e rename; preserve mtime/mode; upload em stream 32 KiB
+- `tunnel` abre port-forward local limitado com `--timeout-ms` obrigatório; `--json` opcional emite `tunnel_listening` após bind; deadline pós-bind sai **0** (não 74); auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`
+- `health-check [--timeout]` sonda conectividade e latência; auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`
+- `vps export` redacted limpa segredos; secret vazio serializa como `""` e nunca blob `sshcli-enc:`
 - `secrets status|init|reencrypt` gerencia master-key e cifragem at-rest (nunca imprime a chave)
 - `completions` emite scripts de completion
 
@@ -43,7 +44,8 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - Schema version de hosts novos é 2
 - Filtro de tracing default é **error**; `RUST_LOG` sobrescreve; `-v` ativa debug
 - Campos de senha vazios são JSON `null` em hosts só-chave (`vps list` / `show`); segredos não vazios mascaram como `"***"`
-- `health-check` aceita `--timeout <ms>`
+- Export redacted: secrets vazios como `""` (nunca `sshcli-enc:`); import de skeleton cross-machine permanece honesto
+- `health-check` aceita `--timeout <ms>` e flags de auth agent-safe
 - Segredos at-rest: **cifrados por padrão** (auto `secrets.key`); opt-out `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` só em testes
 - Telemetria é sempre false
 - Install: sempre prefira `--locked`

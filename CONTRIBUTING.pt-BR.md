@@ -28,7 +28,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Nunca suba MSRV sem issue explícita de discussão.
 
 ### Pins de dependência
-- A linha de produto **0.4.0** usa **russh 0.62.2** (desde 0.3.8) sem os pins COMPAT RC antigos; não reintroduza pins RC mortos sem issue.
+- A linha de produto **0.4.1** usa **russh 0.62.2** (desde 0.3.8) sem os pins COMPAT RC antigos; não reintroduza pins RC mortos sem issue.
 - Nunca rode `cargo update` cego no grafo crypto.
 - Rode `scripts/verify_install_resolve.sh` após qualquer mudança de dependência.
 
@@ -91,7 +91,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 ## Processo de release
 - Suba SemVer em `Cargo.toml` e atualize ambos os CHANGELOGs.
 - Rode suite completa, clippy `-D warnings`, `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps` e gate de install.
-- Confirme docs bilíngues da raiz (README, SECURITY, INTEGRATIONS, llms*) alinhadas à superfície do release (inclui `secrets`, cifragem default, SCP file-only + honestidade 0.3.9, schema `scp-transfer` e `tunnel --json`).
+- Confirme docs bilíngues da raiz (README, SECURITY, INTEGRATIONS, llms*) alinhadas à superfície do release (inclui `secrets`, cifragem default, SCP file-only + honestidade 0.3.9, schema `scp-transfer` com `event`, `tunnel --json` / exit 0 pós-bind, honestidade export empty-secret, paridade auth tunnel/health e gaps_v041).
 - Empacote com `cargo package --locked` e dry-run de publish quando necessário.
 - Tag `vX.Y.Z` só após gates verdes e **autorização explícita do maintainer**.
 - Prefira `cargo install ssh-cli --locked` na doc pública de install.

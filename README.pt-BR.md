@@ -54,10 +54,12 @@
 - Timeout com abort remoto best-effort
 - Tunnel limitado via `--timeout-ms` obrigatório
 - SCP upload e download de **arquivos regulares apenas** (sem diretórios recursivos / sem SFTP; wire sólido em **0.4.0**; patch **0.4.1** — evite SCP do crates.io 0.3.9)
-- Paridade de flags scp com exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (contrato `docs/schemas/scp-transfer.schema.json`)
+- Paridade de flags scp com exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (contrato `docs/schemas/scp-transfer.schema.json`; JSON de sucesso exige `event: "scp-transfer"`)
 - Download SCP grava `{path}.ssh-cli.partial` e rename atômico; preserve mtime/mode bi-direcional; upload em stream de 32 KiB
-- `tunnel --json` emite `tunnel_listening` estruturado após bind local
+- `tunnel --json` emite `tunnel_listening` estruturado após bind local; deadline pós-bind sai com exit **0** (não 74) após o agente receber `tunnel_listening`
+- Paridade de flags auth em `tunnel` e `health-check` com exec/scp: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`
 - Health-check de latência com `--timeout` opcional
+- Export redacted (`vps export`) limpa segredos e **nunca** emite ciphertext `sshcli-enc:…` para senha vazia (`""` serializa como string vazia)
 - Completions para bash zsh fish powershell
 - Segredos via flags stdin para evitar leak em argv
 - **Cifragem at-rest por padrão** (ChaCha20-Poly1305) com auto `secrets.key` XDG
@@ -121,15 +123,15 @@ ssh-cli exec prod "hostname" --json
 | `ssh-cli vps remove <name>` | Remove host |
 | `ssh-cli vps path` | Imprime caminho do `config.toml` |
 | `ssh-cli vps doctor [--json]` | Mostra camada XDG, schema e paths |
-| `ssh-cli vps export` | Exporta hosts (segredos mascarados por padrão) |
+| `ssh-cli vps export` | Exporta hosts (segredos mascarados por padrão; vazios como `""`, nunca blob `sshcli-enc:`) |
 | `ssh-cli vps import --file` | Importa hosts de TOML |
 | `ssh-cli connect <name>` | Grava arquivo irmão `active` |
 | `ssh-cli exec <vps> <cmd>` | Comando remoto one-shot |
 | `ssh-cli sudo-exec <vps> <cmd>` | sudo one-shot com packing seguro |
 | `ssh-cli su-exec <vps> <cmd>` | Elevação `su -` one-shot |
-| `ssh-cli scp upload|download` | Somente arquivos regulares (sem `-r`/SFTP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--json` → schema `scp-transfer`; preserve mtime/mode |
-| `ssh-cli tunnel ... --timeout-ms N [--json]` | Port-forward local com deadline; `--json` emite `tunnel_listening` após bind |
-| `ssh-cli health-check [<vps>] [--timeout N]` | Sonda de conectividade (timeout opcional em ms) |
+| `ssh-cli scp upload|download` | Somente arquivos regulares (sem `-r`/SFTP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--json` → schema `scp-transfer` com `event: "scp-transfer"`; preserve mtime/mode |
+| `ssh-cli tunnel ... --timeout-ms N [--json]` | Port-forward local com deadline; `--json` emite `tunnel_listening` após bind; pós-bind exit **0**; auth: `--password-stdin`, `--key`, `--key-passphrase[-stdin]` |
+| `ssh-cli health-check [<vps>] [--timeout N]` | Sonda de conectividade (timeout opcional em ms); auth: `--password-stdin`, `--key`, `--key-passphrase[-stdin]` |
 | `ssh-cli secrets status|init|reencrypt` | Master-key e cifragem at-rest (nunca imprime a chave) |
 | `ssh-cli completions <shell>` | Scripts de completion de shell |
 
@@ -214,6 +216,7 @@ ssh-cli exec prod "hostname" --json
 - sudo-exec desabilitado: remova `--disable-sudo` e defina `disable_sudo=false` no host.
 - Ruído inesperado em stderr em pipelines JSON: o nível default já é `error`; defina `RUST_LOG` só como `debug` (ou `-v`) ao diagnosticar.
 - SCP do crates.io **0.3.9** falha ou grava remoto 0 bytes: atualize para **0.4.1+** (fix de wire); só arquivos regulares, não diretórios.
+- Instalou **0.4.0** e `vps export` redacted mostra ciphertext `sshcli-enc:` para senha vazia, ou tunnel emite `ok:true` e depois exit **74**: atualize para **0.4.1+** (EXP-001 / TUN-002).
 - Download SCP falha no meio: destino ausente ou arquivo anterior intacto (parcial usa `.ssh-cli.partial`).
 - macOS Gatekeeper bloqueia o binário: rode `xattr -d com.apple.quarantine /path/to/ssh-cli`.
 - Permissão negada no config: garanta `chmod 600` no `config.toml` e no `secrets.key` XDG.

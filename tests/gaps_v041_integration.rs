@@ -221,6 +221,63 @@ fn gap_doc_product_line_041() {
 }
 
 #[test]
+fn gap_doc_041_root_honesty_aud_post() {
+    let readme = std::fs::read_to_string(root().join("README.md")).expect("README");
+    assert!(
+        readme.contains("scp-transfer") && readme.contains("event"),
+        "README must document SCP JSON event scp-transfer (IO-009)"
+    );
+    assert!(
+        readme.contains("password-stdin")
+            && readme.contains("tunnel")
+            && readme.contains("health-check"),
+        "README must document tunnel/health surface with auth stdin"
+    );
+    assert!(
+        readme.contains("empty")
+            || readme.contains("sshcli-enc")
+            || readme.contains("redacted"),
+        "README must document export empty-secret honesty (EXP-001)"
+    );
+    let security = std::fs::read_to_string(root().join("SECURITY.md")).expect("SECURITY");
+    assert!(
+        security.contains("0.4.1")
+            && (security.contains("empty") || security.contains("sshcli-enc")),
+        "SECURITY must mention 0.4.1 empty-secret export honesty"
+    );
+    let llms = std::fs::read_to_string(root().join("llms.txt")).expect("llms");
+    assert!(
+        llms.contains("scp-transfer") && llms.contains("password-stdin"),
+        "llms.txt must cover scp-transfer event and password-stdin parity"
+    );
+    let ch = std::fs::read_to_string(root().join("CHANGELOG.md")).expect("CHANGELOG");
+    assert!(
+        ch.contains("compare/v0.4.0...v0.4.1") || ch.contains("[0.4.1]:"),
+        "CHANGELOG must have 0.4.1 compare footer anchor"
+    );
+    let checklist =
+        std::fs::read_to_string(root().join("docs/RELEASE_CHECKLIST.md")).expect("checklist");
+    assert!(
+        checklist.contains("0.4.1")
+            && (checklist.contains("DOC-041") || checklist.contains("AUD-POST")),
+        "RELEASE_CHECKLIST must gate 0.4.1 DOC-041 / AUD-POST honesty"
+    );
+    let testing = std::fs::read_to_string(root().join("docs/TESTING.md")).expect("TESTING");
+    assert!(
+        testing.contains("0.4.1") && testing.contains("gaps_v041"),
+        "TESTING must state product line 0.4.1 and gaps_v041"
+    );
+    let skill = std::fs::read_to_string(root().join("skills/ssh-cli-en/SKILL.md")).expect("skill");
+    assert!(
+        skill.contains("scp-transfer")
+            && (skill.contains("sshcli-enc") || skill.contains("empty"))
+            && skill.contains("password-stdin"),
+        "skill en must teach scp-transfer, export empty honesty, auth stdin"
+    );
+}
+
+
+#[test]
 fn gap_cli_005_tunnel_source_passphrase() {
     let src = std::fs::read_to_string(root().join("src/tunnel.rs")).unwrap();
     assert!(

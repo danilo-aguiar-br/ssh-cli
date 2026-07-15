@@ -82,6 +82,7 @@
 ## Agents Validated per Platform
 - Linux hosts are the primary validation surface for agent subprocess runs.
 - macOS and Windows follow the same CLI contract and JSON schemas.
+- JSON contracts (`scp-transfer` event, `tunnel_listening`, auth flags for tunnel/health) are identical on every OS; see AGENTS.md and docs/schemas/.
 - Container agents must preserve exit codes and stdout/stderr separation.
 - Default tracing is error-level so agent stderr stays free of INFO prose unless `RUST_LOG` or `-v` is set.
 - Parse machine contracts from stdout only; treat stderr tracing as non-contract logs; JSON error envelopes use stderr when JSON mode is active.

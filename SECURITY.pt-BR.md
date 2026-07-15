@@ -66,6 +66,7 @@
 - CLI: `ssh-cli secrets status|init|reencrypt` (nunca imprime a master-key).
 - Opt-out só para testes: `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
 - **Nunca** logue master-key, senhas ou segredos decifrados.
+- `vps export` redacted limpa segredos; secret vazio serializa como `""` e **nunca** como blob `sshcli-enc:…` (EXP-001 / 0.4.1).
 - Mantenha `config.toml` com mode `0600` e restrinja locais de backup.
 - Revise erros de mudança de host key TOFU antes de usar `--replace-host-key`.
 - Nunca faça commit de inventários de host com segredos vivos.

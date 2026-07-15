@@ -86,3 +86,4 @@
 - Tracing padrão é nível error para manter stderr do agente livre de prosa INFO salvo `RUST_LOG` ou `-v`.
 - Parseie contratos de máquina só do stdout; trate tracing em stderr como log fora de contrato; envelopes de erro JSON usam stderr quando o modo JSON está ativo.
 - Helpers de E2E SSH real ficam em `scripts/e2e_real_ssh.sh` (anti-leak; só local; E01–E14).
+- Contratos JSON (`event` scp-transfer, `tunnel_listening`, flags de auth em tunnel/health) são idênticos em todo SO; veja AGENTS.pt-BR.md e docs/schemas/.

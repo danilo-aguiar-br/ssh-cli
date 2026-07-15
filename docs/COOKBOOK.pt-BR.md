@@ -22,8 +22,11 @@
 - Segredos at-rest: cifrados por padrão (auto `secrets.key`)
 - Instalação: `cargo install ssh-cli --locked`
 - Supply chain: russh 0.62.2; `cargo deny` com `yanked=deny`, `multiple-versions=warn`
-- SCP: somente arquivos regulares (sem `-r` / sem diretórios / sem SFTP); sufixo partial de download `.ssh-cli.partial`
+- SCP: somente arquivos regulares (sem `-r` / sem diretórios / sem SFTP); sufixo partial de download `.ssh-cli.partial`; JSON exige `event: "scp-transfer"`
 - Wire SCP: exija **0.4.1+** (crates.io **0.3.9** anunciava SCP mas era inoperante)
+- Export redacted: secrets vazios como `""` (nunca blob `sshcli-enc:`)
+- Tunnel pós-bind: deadline one-shot sai com exit **0** após `tunnel_listening` (TUN-002); timeout pré-bind permanece **74**
+- Auth tunnel/health: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`
 
 
 ## Como inicializar cifragem com master-key
@@ -97,6 +100,9 @@ ssh-cli exec prod "dmesg" --json
 ```bash
 ssh-cli vps add --name lab --host lab.example.com --user lab --key ~/.ssh/id_ed25519 --check
 ssh-cli health-check lab --json
+# overrides opcionais de auth (paridade com exec/scp desde 0.4.1):
+# printf '%s' "$PASS" | ssh-cli health-check lab --json --password-stdin
+# ssh-cli health-check lab --json --key ~/.ssh/id_ed25519
 ```
 
 
@@ -105,6 +111,8 @@ ssh-cli health-check lab --json
 ```bash
 # sobrescreva o timeout do host quando o padrão for longo ou curto demais para uma sonda rápida
 ssh-cli health-check lab --timeout 15000 --json
+# opcional: combine timeout com key ou password-stdin
+# ssh-cli health-check lab --timeout 15000 --json --key ~/.ssh/id_ed25519
 ```
 
 
@@ -142,6 +150,8 @@ ssh-cli secrets reencrypt
 
 ```bash
 ssh-cli vps export -o /tmp/hosts.mascarado.toml
+# secrets vazios serializam como "" — nunca ciphertext sshcli-enc: (EXP-001 / 0.4.1)
+# skeleton redacted pode ser importado cross-machine sem blob falso de senha vazia
 ssh-cli --config-dir /tmp/ssh-cli-copy vps import --file /tmp/hosts.mascarado.toml
 ```
 
@@ -154,6 +164,25 @@ ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000
 ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
 # stdout: {"ok":true,"event":"tunnel_listening","vps":"prod","local_port":18080,...}
 # schema: docs/schemas/tunnel-listening.schema.json
+# após tunnel_listening, deadline one-shot pós-bind sai com exit 0 (TUN-002); timeout pré-bind permanece 74
+# auth opcional (paridade exec/scp, CLI-005):
+printf '%s' "$PASS" | ssh-cli tunnel prod 18080 127.0.0.1 8080 \
+  --timeout-ms 30000 --json --password-stdin
+ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json \
+  --key ~/.ssh/id_ed25519
+```
+
+
+## Como fazer health-check com auth agent-safe
+
+```bash
+ssh-cli health-check prod --json
+ssh-cli health-check prod --timeout 5000 --json
+# paridade auth 0.4.1 (CLI-006):
+printf '%s' "$PASS" | ssh-cli health-check prod --json --password-stdin
+ssh-cli health-check prod --json --key ~/.ssh/id_ed25519
+printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
+  --key ~/.ssh/id_ed25519_enc --key-passphrase-stdin
 ```
 
 
@@ -165,6 +194,7 @@ ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
 ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
   --timeout 120000 --json
 # sucesso em stdout → docs/schemas/scp-transfer.schema.json
+# inclui event: "scp-transfer" obrigatório (IO-009)
 # falhas com --json → envelope de erro em stderr
 ssh-cli exec prod "tar -tzf /opt/app/app.tar.gz | head"
 ```

@@ -22,8 +22,11 @@
 - Secrets at rest: encrypted by default (auto `secrets.key`)
 - Install: `cargo install ssh-cli --locked`
 - Supply chain: russh 0.62.2; `cargo deny` with `yanked=deny`, `multiple-versions=warn`
-- SCP: regular files only (no `-r` / no directories / no SFTP); download partial suffix `.ssh-cli.partial`
+- SCP: regular files only (no `-r` / no directories / no SFTP); download partial suffix `.ssh-cli.partial`; success JSON requires `event: "scp-transfer"`
 - SCP wire: require **0.4.1+** (crates.io **0.3.9** advertised SCP but was inoperant)
+- Redacted export: empty secrets stay `""` (never `sshcli-enc:` blobs)
+- Tunnel post-bind: one-shot deadline exits **0** after `tunnel_listening` (TUN-002); pre-bind timeout remains **74**
+- Tunnel/health auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`
 
 
 ## How To Initialize Master-Key Encryption
@@ -97,6 +100,9 @@ ssh-cli exec prod "dmesg" --json
 ```bash
 ssh-cli vps add --name lab --host lab.example.com --user lab --key ~/.ssh/id_ed25519 --check
 ssh-cli health-check lab --json
+# optional auth overrides (parity with exec/scp since 0.4.1):
+# printf '%s' "$PASS" | ssh-cli health-check lab --json --password-stdin
+# ssh-cli health-check lab --json --key ~/.ssh/id_ed25519
 ```
 
 
@@ -105,6 +111,8 @@ ssh-cli health-check lab --json
 ```bash
 # override host timeout when the default is too long or too short for a quick probe
 ssh-cli health-check lab --timeout 15000 --json
+# optional: combine timeout with key or password-stdin
+# ssh-cli health-check lab --timeout 15000 --json --key ~/.ssh/id_ed25519
 ```
 
 
@@ -141,6 +149,7 @@ ssh-cli secrets reencrypt
 ## How To Export and Import Inventory Without Secrets
 
 ```bash
+# redacted export (EXP-001 / 0.4.1): empty secrets stay "" (never fake sshcli-enc: ciphertext of empty)
 ssh-cli vps export -o /tmp/hosts.redacted.toml
 ssh-cli --config-dir /tmp/ssh-cli-copy vps import --file /tmp/hosts.redacted.toml
 ```
@@ -154,6 +163,25 @@ ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000
 ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
 # stdout: {"ok":true,"event":"tunnel_listening","vps":"prod","local_port":18080,...}
 # schema: docs/schemas/tunnel-listening.schema.json
+# after tunnel_listening, post-bind one-shot deadline exits 0 (not 74; TUN-002); pre-bind timeout remains 74
+# optional auth overrides (CLI-005 parity with exec/scp):
+printf '%s' "$PASS" | ssh-cli tunnel prod 18080 127.0.0.1 8080 \
+  --timeout-ms 30000 --json --password-stdin
+ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json \
+  --key ~/.ssh/id_ed25519
+```
+
+
+## How To Health-Check with Agent-Safe Auth
+
+```bash
+ssh-cli health-check prod --json
+ssh-cli health-check prod --timeout 5000 --json
+# auth parity 0.4.1 (CLI-006):
+printf '%s' "$PASS" | ssh-cli health-check prod --json --password-stdin
+ssh-cli health-check prod --json --key ~/.ssh/id_ed25519
+printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
+  --key ~/.ssh/id_ed25519_enc --key-passphrase-stdin
 ```
 
 
@@ -165,6 +193,7 @@ ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
 ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
   --timeout 120000 --json
 # success stdout → docs/schemas/scp-transfer.schema.json
+# includes required event: "scp-transfer" (IO-009)
 # failures with --json → error envelope on stderr
 ssh-cli exec prod "tar -tzf /opt/app/app.tar.gz | head"
 ```

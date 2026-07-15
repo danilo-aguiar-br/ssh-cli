@@ -2,11 +2,11 @@
   "skill_name": "ssh-cli",
   "queries": [
     {
-      "query": "cadastrar minha vps de producao no inventario multi-host e rodar uname via ssh com json",
+      "query": "cadastrar minha vps de produção no inventário multi-host e rodar uname via ssh com json",
       "should_trigger": true
     },
     {
-      "query": "executar comando remoto em edge.example.com com autenticacao por chave privada e parse de stdout",
+      "query": "executar comando remoto em edge.example.com com autenticação por chave privada e parse de stdout",
       "should_trigger": true
     },
     {
@@ -18,15 +18,15 @@
       "should_trigger": true
     },
     {
-      "query": "upload de arquivo unico com scp --json e parse ok direction vps local remote bytes duration_ms",
+      "query": "upload de arquivo único com scp --json e parse ok event scp-transfer direction vps local remote bytes duration_ms",
       "should_trigger": true
     },
     {
-      "query": "scp download com --json esperar .ssh-cli.partial rename atomico e preserve mtime mode",
+      "query": "scp download com --json esperar .ssh-cli.partial rename atômico e preserve mtime mode",
       "should_trigger": true
     },
     {
-      "query": "recusar scp de diretorio somente arquivos regulares sem -r sem SFTP",
+      "query": "recusar scp de diretório somente arquivos regulares sem -r sem SFTP",
       "should_trigger": true
     },
     {
@@ -34,7 +34,7 @@
       "should_trigger": true
     },
     {
-      "query": "scp --timeout para copia longa nao usar --timeout-ms no scp",
+      "query": "scp --timeout para cópia longa não usar --timeout-ms no scp",
       "should_trigger": true
     },
     {
@@ -42,15 +42,15 @@
       "should_trigger": true
     },
     {
-      "query": "falha de bind do tunnel com --json ler envelope de erro no stderr e nao sucesso no stdout",
+      "query": "falha de bind do tunnel com --json ler envelope de erro no stderr e não sucesso no stdout",
       "should_trigger": true
     },
     {
-      "query": "secrets status falhou apos rotacionar master-key, como faco reencrypt do config.toml",
+      "query": "secrets status falhou após rotacionar master-key, como faço reencrypt do config.toml",
       "should_trigger": true
     },
     {
-      "query": "mismatch de host key TOFU qual flag substitui known_hosts apos aprovacao humana",
+      "query": "mismatch de host key TOFU qual flag substitui known_hosts após aprovação humana",
       "should_trigger": true
     },
     {
@@ -58,7 +58,7 @@
       "should_trigger": true
     },
     {
-      "query": "su-exec one-shot para virar root porque sudo esta desabilitado nesta maquina",
+      "query": "su-exec one-shot para virar root porque sudo está desabilitado nesta máquina",
       "should_trigger": true
     },
     {
@@ -66,15 +66,15 @@
       "should_trigger": true
     },
     {
-      "query": "health-check com override opcional de timeout e parse so de stdout json",
+      "query": "health-check com override de timeout e parse só de stdout json",
       "should_trigger": true
     },
     {
-      "query": "vps list json password null para host so-chave e mascarado para hosts com senha",
+      "query": "vps list json password null para host só-chave e mascarado para hosts com senha",
       "should_trigger": true
     },
     {
-      "query": "stderr do ssh-cli barulhento com INFO por padrao como agentes mantem logs limpos",
+      "query": "stderr do ssh-cli barulhento com INFO por padrão como agentes mantêm logs limpos",
       "should_trigger": true
     },
     {
@@ -82,7 +82,7 @@
       "should_trigger": true
     },
     {
-      "query": "parsear envelope de erro no stderr exit_code message remote_exit_code apos exec falho",
+      "query": "parsear envelope de erro no stderr exit_code message remote_exit_code após exec falho",
       "should_trigger": true
     },
     {
@@ -91,6 +91,34 @@
     },
     {
       "query": "scp download com password-stdin ou key-passphrase-stdin sem segredos no argv",
+      "should_trigger": true
+    },
+    {
+      "query": "vps export redacted senha vazia deve ficar string vazia nunca blob sshcli-enc",
+      "should_trigger": true
+    },
+    {
+      "query": "tunnel deadline pós-bind após tunnel_listening deve sair com exit 0 não 74",
+      "should_trigger": true
+    },
+    {
+      "query": "tunnel com password-stdin e key-passphrase-stdin overrides de auth",
+      "should_trigger": true
+    },
+    {
+      "query": "health-check com password-stdin key e key-passphrase-stdin overrides",
+      "should_trigger": true
+    },
+    {
+      "query": "health-check replace-host-key após aprovação humana de mismatch de host key",
+      "should_trigger": true
+    },
+    {
+      "query": "scp json de sucesso deve incluir event scp-transfer como discriminador",
+      "should_trigger": true
+    },
+    {
+      "query": "tunnel timeout pré-bind ainda exit 74 antes de listening",
       "should_trigger": true
     },
     {
@@ -126,7 +154,7 @@
       "should_trigger": false
     },
     {
-      "query": "plotar colunas de csv de vendas com grafico de linha em planilha",
+      "query": "plotar colunas de csv de vendas com gráfico de linha em planilha",
       "should_trigger": false
     },
     {

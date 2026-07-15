@@ -3,7 +3,7 @@
 > Run the right ssh-cli test profile without hanging on remote networks.
 
 - Read this document in [Portuguese (pt-BR)](TESTING.pt-BR.md).
-- Product line: **0.4.0**.
+- Product line: **0.4.1**.
 
 
 ## Why Categorized Tests
@@ -21,7 +21,7 @@
 - Agent I/O residual suite under `tests/gaps_v037_integration.rs`
 - Post-0.3.7 residual suite under `tests/gaps_v038_integration.rs`
 - Post-0.3.8 residual suite under `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC/DENY/CHG)
-- Post-0.3.9 / **0.4.0** suite `tests/gaps_v040_integration.rs`; AUD-POST **0.4.1** suite `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006)
+- Post-0.3.9 / **0.4.0** suite `tests/gaps_v040_integration.rs`; AUD-POST **0.4.1** suite `tests/gaps_v041_integration.rs` (EXP-001 export empty, TUN-002 post-bind exit 0, CLI-005/006 auth parity, IO-009 `event: scp-transfer`, REL-006, DOC-041 honesty)
 - Storage integration under `tests/storage_integration.rs`
 - Snapshot tests under `tests/snapshot_tests.rs`
 - SCP surface under `tests/scp_integration.rs`
@@ -99,5 +99,4 @@ bash scripts/e2e_real_ssh.sh --from-grok-config
 - Permission failures: confirm temp dirs are writable and mode assertions match the OS.
 - Encrypted fixture surprises: set `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` or provide a test master-key via env.
 - Unexpected quiet stderr: default is error-level tracing; set `RUST_LOG` or `-v` if you need debug lines.
-- SCP residual failures: run `cargo test --locked --test gaps_v040_integration
-cargo test --locked --test gaps_v041_integration` and read `gaps.md` AUD-SCP block.
+- SCP / AUD-POST residual failures: run `cargo test --locked --test gaps_v040_integration` and `cargo test --locked --test gaps_v041_integration`; read `gaps.md` AUD-SCP and AUD-POST blocks.
