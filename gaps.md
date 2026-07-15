@@ -146,3 +146,18 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | Telemetria | Ausente (só `telemetry: false` no doctor) |
 | Gaps de produto abertos | **0** |
 | REL-005 push/publish | **Aguardando OK** do mantenedor |
+
+## Re-auditoria sessão (2026-07-15, pós-compact)
+
+| Check | Resultado |
+|-------|----------|
+| Agent team REAUDIT-SCP | 18 gaps Abertos do paste → **todos RESOLVED** em HEAD |
+| Agent team GATES | fmt/clippy/-D/test lib 188/gaps_v040 17/deny **PASS** |
+| E2E real `--from-grok-config` | **PASS E01–E14** fails=0 |
+| context7 `/eugeny/russh` | Channel::exec documenta uso SCP |
+| docs-rs russh 0.62.2 | Channel::exec / data / data_bytes |
+| duckduckgo-search-cli | OpenSSH scp man / protocol refs |
+| atomwrite | disponível; inventário já fechado (sem reescrita)
+| Telemetria | Ausente |
+| REL-005 | **Aguardando OK** push+publish |
+
