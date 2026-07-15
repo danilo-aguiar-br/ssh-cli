@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/tunnel-listening.schema.json",
+  "title": "tunnel listening JSON",
+  "description": "Structured stdout payload after local bind for `ssh-cli tunnel ... --json` (or global --output-format json). Process stays alive until --timeout-ms or signal.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ok",
+    "event",
+    "vps",
+    "local_port",
+    "remote_host",
+    "remote_port",
+    "timeout_ms"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "event": {
+      "type": "string",
+      "const": "tunnel_listening"
+    },
+    "vps": {
+      "type": "string",
+      "description": "Registered VPS name used for the tunnel"
+    },
+    "local_port": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "Local listen port after bind"
+    },
+    "remote_host": {
+      "type": "string",
+      "description": "Remote host reached through the SSH channel"
+    },
+    "remote_port": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "Remote port reached through the SSH channel"
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Bound tunnel lifetime in milliseconds"
+    }
+  }
+}

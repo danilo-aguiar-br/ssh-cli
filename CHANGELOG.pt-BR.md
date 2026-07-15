@@ -32,6 +32,9 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Alterado
 - Versão 0.3.9 → **0.4.0**
 - Docs de product line documentam **somente arquivos regulares** (sem `-r` / sem SFTP) e a regressão wire SCP de 0.3.9 (DOC-004, SCP-019, REL-004)
+- Honestidade da raiz (SECURITY 0.4.x atual, INTEGRATIONS superfície real 0.4.0, CONTRIBUTING gaps_v040) (DOC-004b)
+- Honestidade de `docs/*`: AGENTS/HOW_TO_USE/COOKBOOK/MIGRATION/TESTING/RELEASE_CHECKLIST/CROSS_PLATFORM + índice de schemas cobrem SCP file-only, partial, stream 32 KiB, preserve, `scp --json`, `tunnel --json` / `tunnel_listening` e aviso wire 0.3.9 (DOC-004c)
+- Adicionado `docs/schemas/tunnel-listening.schema.json` para o contrato de agente IO-008
 - `scp` honra `--replace-host-key` global e `--output-format json` global
 
 ### Segurança / honestidade

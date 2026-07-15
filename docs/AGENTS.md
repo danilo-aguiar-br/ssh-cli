@@ -4,7 +4,7 @@
 
 - Read this document in [Portuguese (pt-BR)](AGENTS.pt-BR.md).
 - Pair with [../INTEGRATIONS.md](../INTEGRATIONS.md) and [../skills/ssh-cli-en/SKILL.md](../skills/ssh-cli-en/SKILL.md).
-- Product line: **0.4.0** (closed inventory; russh 0.62.2).
+- Product line: **0.4.0** (closed inventory; russh 0.62.2; AUD-SCP + IO-007/008 closed).
 
 
 ## Why
@@ -46,12 +46,17 @@
 ### Imperative contract for authors
 - REQUIRED: invoke `ssh-cli` as a subprocess and wait for exit (one-shot).
 - REQUIRED: parse stdout JSON when `--json` or `--output-format json` is set (auto JSON when stdout is not a TTY).
-- REQUIRED: treat stderr tracing as non-contract logs; do not parse stderr as JSON.
+- REQUIRED: treat stderr tracing as non-contract logs; do not parse stderr as success JSON.
+- REQUIRED: when JSON errors mode is active (`--json` / effective JSON on scp|tunnel|global format), parse failure envelopes on **stderr** (`exit_code`, `message`, optional `remote_exit_code`) via `docs/schemas/error-envelope.schema.json`.
 - REQUIRED: expect default tracing level error; set `RUST_LOG` or `-v` only when debugging.
 - REQUIRED: register hosts with `vps add` before repeated remote work.
 - REQUIRED: supply password or key; empty credentials are rejected at write time.
 - REQUIRED: treat empty password in list/show JSON as `null` (key-only hosts); non-empty is masked `***`.
 - REQUIRED: pass `--timeout-ms` for every `tunnel` invocation.
+- REQUIRED: treat `scp` as **regular files only** (no directories, no `-r`, no SFTP subsystem).
+- REQUIRED: never depend on crates.io **0.3.9** for SCP; that wire was broken — require **0.4.0+**.
+- REQUIRED: parse SCP success with `docs/schemas/scp-transfer.schema.json` (`ok`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`) on **stdout**.
+- REQUIRED: on `tunnel --json`, wait for one stdout object with `event: "tunnel_listening"` (`docs/schemas/tunnel-listening.schema.json`) before using the local port; process stays alive until timeout or signal.
 - REQUIRED: may pass `health-check --timeout <ms>` when host default timeout is too long or short.
 - REQUIRED: prefer `--password-stdin` / `--key` over argv secrets.
 - REQUIRED: install with `cargo install ssh-cli --locked` (or path install with pins).
@@ -60,6 +65,7 @@
 - FORBIDDEN: enable or emit product telemetry.
 - FORBIDDEN: retry blindly on exit 64, 65, 66, or 77.
 - FORBIDDEN: print or store master-key material from `secrets` commands.
+- FORBIDDEN: treat SCP directory trees or recursive `-r` as supported.
 
 
 ## Crate Integrations
@@ -76,6 +82,9 @@
 - Secrets: `ssh-cli secrets status --json` returns encryption mode without key material.
 - Exec family: `ssh-cli exec|sudo-exec|su-exec ... --json` returns stdout, stderr, exit_code, truncation flags, duration_ms.
 - Health: `ssh-cli health-check [--timeout <ms>] --json` returns name, status, latency_ms.
+- SCP: `ssh-cli scp upload|download <vps> <local> <remote> --json` returns transfer success on stdout (`scp-transfer.schema.json`); failures use error envelope on stderr.
+- SCP operational facts: upload streams 32 KiB; download writes `{path}.ssh-cli.partial` then renames; mtime/mode preserved both directions.
+- Tunnel: `ssh-cli tunnel <vps> <local_port> <remote_host> <remote_port> --timeout-ms <ms> --json` emits `tunnel_listening` on stdout after bind.
 - Empty password fields serialize as JSON `null`; non-empty secrets mask as `***`.
 - Validate payloads against schemas under `docs/schemas/`.
 

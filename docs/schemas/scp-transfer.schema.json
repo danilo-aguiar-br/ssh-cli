@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/scp-transfer.schema.json",
   "title": "scp transfer JSON",
-  "description": "Structured success payload for `ssh-cli scp upload|download --json` (or global --output-format json). Regular files only.",
+  "description": "Structured success payload on stdout for `ssh-cli scp upload|download --json` (or global --output-format json). Regular files only. Failures use error-envelope.schema.json on stderr.",
   "type": "object",
   "additionalProperties": true,
   "required": [

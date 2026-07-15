@@ -7,11 +7,11 @@
 
 
 ## Nota de latência
-- Espere CRUD local sub-segundo e connect SSH dominado pelo RTT de rede.
+- Espere CRUD local em sub-segundo e cold connect SSH dominado pelo RTT de rede.
 - Prefira comandos one-shot a tunnels quando uma única ação remota basta.
 
 
-## Referência de defaults
+## Referência de valores padrão
 - Porta padrão: 22
 - Timeout padrão: 60000 ms
 - max_command_chars padrão: 1000
@@ -20,8 +20,10 @@
 - Senha vazia em list/show JSON: `null` (hosts só-chave); não vazia mascara como `***`
 - Telemetria: desligada
 - Segredos at-rest: cifrados por padrão (auto `secrets.key`)
-- Install: `cargo install ssh-cli --locked`
+- Instalação: `cargo install ssh-cli --locked`
 - Supply chain: russh 0.62.2; `cargo deny` com `yanked=deny`, `multiple-versions=warn`
+- SCP: somente arquivos regulares (sem `-r` / sem diretórios / sem SFTP); sufixo partial de download `.ssh-cli.partial`
+- Wire SCP: exija **0.4.0+** (crates.io **0.3.9** anunciava SCP mas era inoperante)
 
 
 ## Como inicializar cifragem com master-key
@@ -33,7 +35,7 @@ ssh-cli secrets status --json
 ```
 
 
-## Como cadastrar host com senha (stdin, sem leak em argv)
+## Como cadastrar host com senha (stdin, sem vazar em argv)
 
 ```bash
 printf '%s' 'demo-password-not-real' | ssh-cli vps add \
@@ -61,7 +63,7 @@ ssh-cli exec prod "hostname && uptime" --json
 ## Como rodar sudo seguro com comandos compostos
 
 ```bash
-# packing usa `sh -c` seguro; metacaracteres ficam no shell remoto
+# packing usa `sh -c` seguro; metacaracteres ficam dentro do shell remoto
 ssh-cli sudo-exec prod "apt-get update && apt-get install -y curl" --description "bootstrap curl"
 ```
 
@@ -74,11 +76,11 @@ ssh-cli su-exec prod "whoami"
 ```
 
 
-## Como rejeitar cedo comandos grandes do agente
+## Como rejeitar cedo comandos grandes de agente
 
 ```bash
 ssh-cli vps edit prod --max-command-chars 1000
-# comando longo é rejeitado antes do SSH se exceder o limite
+# comando longo é rejeitado antes do SSH quando passa do limite (max_command_chars)
 ```
 
 
@@ -101,12 +103,12 @@ ssh-cli health-check lab --json
 ## Como sondar com timeout customizado
 
 ```bash
-# sobrescreva o timeout do host quando o padrão for longo ou curto demais para um probe
+# sobrescreva o timeout do host quando o padrão for longo ou curto demais para uma sonda rápida
 ssh-cli health-check lab --timeout 15000 --json
 ```
 
 
-## Como manter o stderr do agente limpo
+## Como manter stderr do agente limpo
 
 ```bash
 # tracing padrão é error: stderr de JSON/tunnel fica sem prosa INFO
@@ -132,7 +134,7 @@ ssh-cli secrets status --json
 ```bash
 ssh-cli secrets init
 ssh-cli secrets reencrypt
-# senhas no config.toml viram blobs sshcli-enc:v1:…
+# senhas em config.toml viram blobs sshcli-enc:v1:…
 ```
 
 
@@ -148,21 +150,39 @@ ssh-cli --config-dir /tmp/ssh-cli-copy vps import --file /tmp/hosts.mascarado.to
 
 ```bash
 ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000
+# agentes: aguarde tunnel_listening antes de usar a porta local
+ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
+# stdout: {"ok":true,"event":"tunnel_listening","vps":"prod","local_port":18080,...}
+# schema: docs/schemas/tunnel-listening.schema.json
 ```
 
 
-## Como transferir artefato de release
+## Como transferir artefato de release (somente arquivo regular)
 
 ```bash
-ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz
+# Exija 0.4.0+ — wire SCP do crates.io 0.3.9 estava quebrado (remoto 0 bytes / timeout)
+# Sem diretórios / sem -r / sem SFTP
+ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
+  --timeout 120000 --json
+# sucesso em stdout → docs/schemas/scp-transfer.schema.json
+# falhas com --json → envelope de erro em stderr
 ssh-cli exec prod "tar -tzf /opt/app/app.tar.gz | head"
+```
+
+
+## Como baixar arquivo remoto com segurança
+
+```bash
+ssh-cli scp download prod /var/log/app.log ./app.log --json
+# em falha o path final fica intacto; intermediário é ./app.log.ssh-cli.partial
+# mtime/mode preservados nos dois sentidos (remoto scp -tp/-fp)
 ```
 
 
 ## Como tratar rotação de host key com segurança (TOFU)
 
 ```bash
-# a primeira falha reporta divergência; só após revisão humana:
+# a primeira falha reporta mismatch; só após revisão humana:
 ssh-cli --replace-host-key exec prod "true"
 ```
 
@@ -178,7 +198,8 @@ ssh-cli --disable-sudo exec prod "id"
 ## Como rodar E2E SSH real sem logar segredos
 
 ```bash
-# prefira env SSH_CLI_E2E_*; --from-grok-config é local de maintainer ($HOME)
+# prefira env SSH_CLI_E2E_*; --from-grok-config é local do mantenedor ($HOME only)
+# matriz oficial E01–E14 (E10–E14: SCP upload/download/cmp/missing/preserve)
 # imprime só PASS/FAIL — nunca host/user/password
 bash scripts/e2e_real_ssh.sh --from-grok-config
 ```

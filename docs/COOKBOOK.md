@@ -22,6 +22,8 @@
 - Secrets at rest: encrypted by default (auto `secrets.key`)
 - Install: `cargo install ssh-cli --locked`
 - Supply chain: russh 0.62.2; `cargo deny` with `yanked=deny`, `multiple-versions=warn`
+- SCP: regular files only (no `-r` / no directories / no SFTP); download partial suffix `.ssh-cli.partial`
+- SCP wire: require **0.4.0+** (crates.io **0.3.9** advertised SCP but was inoperant)
 
 
 ## How To Initialize Master-Key Encryption
@@ -148,14 +150,32 @@ ssh-cli --config-dir /tmp/ssh-cli-copy vps import --file /tmp/hosts.redacted.tom
 
 ```bash
 ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000
+# agents: wait for tunnel_listening before using the local port
+ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
+# stdout: {"ok":true,"event":"tunnel_listening","vps":"prod","local_port":18080,...}
+# schema: docs/schemas/tunnel-listening.schema.json
 ```
 
 
-## How To Transfer a Release Artifact
+## How To Transfer a Release Artifact (regular file only)
 
 ```bash
-ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz
+# Require 0.4.0+ — crates.io 0.3.9 SCP wire was broken (0-byte remote / timeout)
+# No directories / no -r / no SFTP
+ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
+  --timeout 120000 --json
+# success stdout → docs/schemas/scp-transfer.schema.json
+# failures with --json → error envelope on stderr
 ssh-cli exec prod "tar -tzf /opt/app/app.tar.gz | head"
+```
+
+
+## How To Download a Remote File Safely
+
+```bash
+ssh-cli scp download prod /var/log/app.log ./app.log --json
+# on failure the final path is untouched; intermediate is ./app.log.ssh-cli.partial
+# mtime/mode preserved both directions (remote scp -tp/-fp)
 ```
 
 
@@ -179,6 +199,7 @@ ssh-cli --disable-sudo exec prod "id"
 
 ```bash
 # prefer env SSH_CLI_E2E_*; --from-grok-config is maintainer-local ($HOME only)
+# official matrix E01–E14 (E10–E14: SCP upload/download/cmp/missing/preserve)
 # prints only PASS/FAIL — never host/user/password
 bash scripts/e2e_real_ssh.sh --from-grok-config
 ```

@@ -4,7 +4,7 @@
 
 - Leia este documento em [inglês](AGENTS.md).
 - Combine com [../INTEGRATIONS.pt-BR.md](../INTEGRATIONS.pt-BR.md) e [../skills/ssh-cli-pt/SKILL.md](../skills/ssh-cli-pt/SKILL.md).
-- Linha de produto: **0.4.0** (inventário Fechado; russh 0.62.2).
+- Linha de produto: **0.4.0** (inventário Fechado; russh 0.62.2; AUD-SCP + IO-007/008 fechados).
 
 
 ## Por quê
@@ -46,12 +46,17 @@
 ### Contrato imperativo para autores
 - OBRIGATÓRIO: invocar `ssh-cli` como subprocesso e aguardar o exit (one-shot).
 - OBRIGATÓRIO: parsear JSON de stdout quando `--json` ou `--output-format json` (JSON auto se stdout não é TTY).
-- OBRIGATÓRIO: tratar tracing em stderr como log fora de contrato; não parsear stderr como JSON.
+- OBRIGATÓRIO: tratar tracing em stderr como log fora de contrato; não parsear stderr como JSON de sucesso.
+- OBRIGATÓRIO: quando o modo de erros JSON está ativo (`--json` / JSON efetivo em scp|tunnel|formato global), parsear envelopes de falha em **stderr** (`exit_code`, `message`, opcional `remote_exit_code`) via `docs/schemas/error-envelope.schema.json`.
 - OBRIGATÓRIO: esperar tracing padrão no nível error; definir `RUST_LOG` ou `-v` só ao diagnosticar.
 - OBRIGATÓRIO: cadastrar hosts com `vps add` antes de trabalho remoto repetido.
 - OBRIGATÓRIO: fornecer senha ou chave; credencial vazia é rejeitada na gravação.
 - OBRIGATÓRIO: tratar senha vazia em list/show JSON como `null` (hosts só-chave); não vazia mascara `***`.
 - OBRIGATÓRIO: passar `--timeout-ms` em toda invocação de `tunnel`.
+- OBRIGATÓRIO: tratar `scp` como **somente arquivos regulares** (sem diretórios, sem `-r`, sem subsistema SFTP).
+- OBRIGATÓRIO: nunca depender do crates.io **0.3.9** para SCP; o wire estava quebrado — exija **0.4.0+**.
+- OBRIGATÓRIO: parsear sucesso SCP com `docs/schemas/scp-transfer.schema.json` (`ok`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`) no **stdout**.
+- OBRIGATÓRIO: em `tunnel --json`, aguardar um objeto stdout com `event: "tunnel_listening"` (`docs/schemas/tunnel-listening.schema.json`) antes de usar a porta local; o processo permanece vivo até timeout ou sinal.
 - OBRIGATÓRIO: pode passar `health-check --timeout <ms>` quando o timeout padrão do host for longo ou curto demais.
 - OBRIGATÓRIO: preferir `--password-stdin` / `--key` a segredos em argv.
 - OBRIGATÓRIO: instalar com `cargo install ssh-cli --locked` (ou path com pins).
@@ -60,6 +65,7 @@
 - PROIBIDO: habilitar ou emitir telemetria de produto.
 - PROIBIDO: retry cego em exit 64, 65, 66 ou 77.
 - PROIBIDO: imprimir ou armazenar material de master-key dos comandos `secrets`.
+- PROIBIDO: tratar árvores de diretório SCP ou `-r` recursivo como suportados.
 
 
 ## Integrações de crate
@@ -76,6 +82,9 @@
 - Secrets: `ssh-cli secrets status --json` retorna modo de cifragem sem material de chave.
 - Família exec: `ssh-cli exec|sudo-exec|su-exec ... --json` retorna stdout, stderr, exit_code, flags de truncagem, duration_ms.
 - Health: `ssh-cli health-check [--timeout <ms>] --json` retorna name, status, latency_ms.
+- SCP: `ssh-cli scp upload|download <vps> <local> <remote> --json` retorna sucesso de transferência no stdout (`scp-transfer.schema.json`); falhas usam envelope de erro em stderr.
+- Fatos operacionais SCP: upload faz stream de 32 KiB; download grava `{path}.ssh-cli.partial` e renomeia; mtime/mode preservados nos dois sentidos.
+- Tunnel: `ssh-cli tunnel <vps> <porta_local> <host_remoto> <porta_remota> --timeout-ms <ms> --json` emite `tunnel_listening` no stdout após o bind.
 - Campos de senha vazios serializam como JSON `null`; segredos não vazios mascaram como `***`.
 - Valide payloads contra schemas em `docs/schemas/`.
 

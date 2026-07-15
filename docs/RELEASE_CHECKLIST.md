@@ -5,7 +5,7 @@
 - Read this document in [Portuguese (pt-BR)](RELEASE_CHECKLIST.pt-BR.md).
 - Release target / product line: **0.4.0**.
 - Canonical inventory: [../gaps.md](../gaps.md).
-- Residual suite: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG).
+- Residual suites: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG); `tests/gaps_v040_integration.rs` (SCP-010..023, DOC-004, IO-007/007b/008, REL-004, TEST-004).
 
 
 ## Purpose
@@ -20,10 +20,10 @@
 2. Clippy clean — `cargo clippy --all-targets -- -D warnings` exits 0.
 3. Supply chain deny (DENY-002) — `cargo deny check` exits 0; no russh CVE `ignore`; `yanked=deny`; empty `ignore = []`.
 4. Install resolve — `bash scripts/verify_install_resolve.sh` exits 0; russh at security floor (≥ 0.60.3; product line uses 0.62.2).
-5. Full tests — `cargo test` green (lib + integration + gaps_v037 + gaps_v038 + gaps_v039).
-6. Gap suites 1:1 — all `gap_*` tests in `tests/gaps_v038_integration.rs` and `tests/gaps_v039_integration.rs` green; **gaps_v039** residual suite green (LOG/JSON/CLI/DOC/DENY/CHG).
+5. Full tests — `cargo test` green (lib + integration + gaps_v037 + gaps_v038 + gaps_v039 + **gaps_v040**).
+6. Gap suites 1:1 — all `gap_*` tests in `tests/gaps_v038_integration.rs`, `tests/gaps_v039_integration.rs`, and `tests/gaps_v040_integration.rs` green.
 7. Local e2e (no real VPS) — help, fake VPS CRUD, completions behave as documented.
-8. Real VPS smoke (when available) — `health-check` / `exec`; record outcome in `gaps.md` without secrets.
+8. Real VPS smoke (when available) — `health-check` / `exec` plus SCP matrix **E10–E14** via `scripts/e2e_real_ssh.sh` when credentials exist; record outcome in `gaps.md` without secrets.
 9. Inventory versioned — `gaps.md` is tracked (not gitignored); `git check-ignore gaps.md` is empty.
 10. Honest pre/post-fix evidence in inventory (DOC-002 / inventory integrity).
 11. Version string (REL-002) — `ssh-cli --version` matches Cargo version plus git hash; reports `-dirty` when the tree is dirty.
@@ -45,14 +45,23 @@
     - `docs/RELEASE_CHECKLIST.md`, `docs/RELEASE_CHECKLIST.pt-BR.md`
 17. JSON empty password is null (JSON-001) — runtime: key-only `vps show|list --json` emits `"password": null` (not `"***"`); non-empty remains masked `***`. Schema: `docs/schemas/vps-show.schema.json` (and list via `$ref`) declares `password` type as `string` | `null`.
 18. Health-check timeout (CLI-004) — `health-check --timeout <ms>` is accepted (clap parse), aligned with exec overrides; covered by gaps_v039.
-19. CHANGELOG anchors (CHG-001) — `CHANGELOG.md` has section `## [0.4.0]` and compare/footer anchor for 0.4.0 (and prior 0.3.8 as needed).
+19. CHANGELOG anchors (CHG-001) — `CHANGELOG.md` has section `## [0.4.0]` and compare/footer anchor for 0.4.0 (and prior 0.3.9 as needed).
 20. Optional package dry-run — `cargo package --allow-dirty --list` succeeds; never auto-publish.
+21. DOC-004 / SCP honesty (0.4.0) — product-line surfaces document:
+    - SCP **regular files only** (no directories / no `-r` / no SFTP)
+    - crates.io **0.3.9** advertised SCP but wire was broken; do not promise working SCP on 0.3.9
+    - `docs/schemas/scp-transfer.schema.json` exists and is indexed (`docs/schemas/README.md`, `llms-full.txt`)
+    - download partial suffix **`.ssh-cli.partial`**
+    - `tunnel --json` / `tunnel_listening` and/or scp agent JSON surface in README/INTEGRATIONS/AGENTS
+    - SECURITY Supported Versions brands **0.4.x** as current line (not 0.3.x)
+    - `cargo test --locked --test gaps_v040_integration` green (includes DOC-004 gates)
 
 
 ## How to verify residuals quickly
 
 ```bash
 cargo test --locked --test gaps_v039_integration
+cargo test --locked --test gaps_v040_integration
 cargo deny check
 bash scripts/verify_install_resolve.sh
 ssh-cli --version
@@ -62,8 +71,10 @@ ssh-cli --version
 - JSON-001: key-only host show JSON contains `"password": null`; schema file contains null in password type.
 - CLI-004: `health-check --timeout 50` is not "unexpected argument".
 - DOC-003: product-line files (including this checklist pair) contain `0.4.0`.
+- DOC-004: README/INTEGRATIONS/AGENTS/HOW_TO_USE/COOKBOOK/MIGRATION mention file-only SCP and 0.3.9 wire warning; scp-transfer schema present.
 - DENY-002: `deny.toml` has `yanked = "deny"`, `ignore = []`, multiple-versions policy documented.
 - CHG-001 / REL: CHANGELOG section + local tag `v0.4.0` without unauthorized push.
+- TEST-004 / SCP: gaps_v040 covers wire, schema, partial path, preserve, e2e script E10–E14.
 
 
 ## Policy
@@ -82,5 +93,8 @@ ssh-cli --version
 - [../deny.toml](../deny.toml) — supply-chain policy
 - [../scripts/verify_install_resolve.sh](../scripts/verify_install_resolve.sh) — install re-resolve gate
 - [../tests/gaps_v039_integration.rs](../tests/gaps_v039_integration.rs) — residual gates LOG/JSON/CLI/DOC/DENY/CHG
+- [../tests/gaps_v040_integration.rs](../tests/gaps_v040_integration.rs) — residual gates SCP/IO/DOC-004/REL-004
 - [schemas/vps-show.schema.json](schemas/vps-show.schema.json) — password `null` | masked `***`
+- [schemas/scp-transfer.schema.json](schemas/scp-transfer.schema.json) — SCP success JSON (files only)
+- [schemas/tunnel-listening.schema.json](schemas/tunnel-listening.schema.json) — tunnel bind event
 - [schemas/README.md](schemas/README.md) — schema index (product line 0.4.0)

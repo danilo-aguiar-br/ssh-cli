@@ -65,6 +65,14 @@
 - Atomic writes + flock protect concurrent one-shot processes on the same config.
 
 
+## SCP portability
+- SCP is **regular files only** on every platform (no recursive directory transfer; no SFTP subsystem).
+- Failed or in-progress downloads use sibling path ending in **`.ssh-cli.partial`**, then rename into place (platform-agnostic atomic pattern).
+- Upload streams in 32 KiB chunks on every OS (avoids full-file RAM load).
+- mtime/mode preserve follows OpenSSH-style remote `-p` / `T` line; on Unix local permissions APIs apply modes; on Windows permission bits may not match Unix octal semantics — do not assume full POSIX ACL fidelity.
+- Real-SSH matrix E10–E14 in `scripts/e2e_real_ssh.sh` is primarily validated on Linux hosts.
+
+
 ## Performance by Target
 - Linux cold start is the baseline under 100 ms target.
 - musl builds may trade allocator characteristics; enable `musl-allocator` when needed.
@@ -76,5 +84,5 @@
 - macOS and Windows follow the same CLI contract and JSON schemas.
 - Container agents must preserve exit codes and stdout/stderr separation.
 - Default tracing is error-level so agent stderr stays free of INFO prose unless `RUST_LOG` or `-v` is set.
-- Parse machine contracts from stdout only; treat stderr tracing as non-contract logs.
-- Real SSH E2E helpers live in `scripts/e2e_real_ssh.sh` (anti-leak; local only).
+- Parse machine contracts from stdout only; treat stderr tracing as non-contract logs; JSON error envelopes use stderr when JSON mode is active.
+- Real SSH E2E helpers live in `scripts/e2e_real_ssh.sh` (anti-leak; local only; E01–E14).

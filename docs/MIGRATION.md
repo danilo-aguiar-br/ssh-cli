@@ -51,10 +51,16 @@
 ### Since 0.4.0 (current)
 - **SCP wire fix:** crates.io **0.3.9** advertised SCP but the protocol implementation was broken (literal `\\n` header, empty ACK). Upgrade to **0.4.0** before relying on `scp upload|download`.
 - SCP is **regular files only** (no `-r` / no SFTP). Use `--timeout` for large files (covers connect + transfer). Success JSON via `--json` / `--output-format json` (`docs/schemas/scp-transfer.schema.json`).
+- SCP download writes `{path}.ssh-cli.partial` then atomic rename; mode/times applied on the **partial** before rename.
+- SCP upload streams in **32 KiB** chunks (no full-file `fs::read` into RAM).
+- Preserve mtime/mode bi-directional (remote `scp -tp` / `-fp`; parse `T` + `C` mode).
+- SCP flag parity with exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json`.
+- `scp --json` failures emit JSON **error envelope on stderr** (`exit_code`, `message`) — parity with tunnel (IO-007b).
+- `tunnel --json` emits one stdout object `event: "tunnel_listening"` after local bind (`docs/schemas/tunnel-listening.schema.json`); still requires `--timeout-ms`.
 - Default tracing level is error (not info); `-v` enables debug; `RUST_LOG` overrides — JSON/tunnel stderr stays clean by default.
 - Empty or missing password on key-only VPS serializes as JSON `null` (not `"***"`); non-empty still masks as `***`; human text show uses "(não definida)" for empty.
 - `health-check` accepts `--timeout <ms>` override (aligned with exec).
-- Product-line docs aligned to 0.4.0; suites `tests/gaps_v039_integration.rs` + `tests/gaps_v040_integration.rs`.
+- Product-line docs aligned to 0.4.0; suites `tests/gaps_v039_integration.rs` + `tests/gaps_v040_integration.rs`; official e2e **E01–E14** (E10–E14 cover SCP).
 
 
 ## Step-by-Step Migration
@@ -100,11 +106,16 @@ ssh-cli su-exec prod "id"
 
 ### Update agent wrappers
 - Pass `--timeout-ms` for tunnels.
+- On `tunnel --json`, wait for `event == "tunnel_listening"` before using the local port.
+- Parse SCP success with `docs/schemas/scp-transfer.schema.json`.
+- On SCP/tunnel `--json` failure, parse stderr error envelope (not human prose).
+- Treat SCP as regular files only; do not send directory trees.
+- Re-test transfers after leaving **0.3.9** (that release SCP was not trustworthy).
 - Treat `--maxChars` as input limit, not output limit.
 - Prefer `--password-stdin` for secrets.
 - Handle host-key mismatch errors before forcing replace.
 - Expect encrypted `config.toml` values prefixed with `sshcli-enc:v1:`.
-- Expect default tracing error; set `RUST_LOG` or `-v` only when debugging; do not parse stderr as JSON.
+- Expect default tracing error; set `RUST_LOG` or `-v` only when debugging; do not parse stderr as success JSON.
 - Treat empty password in list/show JSON as `null` for key-only hosts.
 - May pass `health-check --timeout <ms>` when host default timeout is too long or short.
 - Expect process exit `1` (with `remote_exit_code` in JSON envelope) when the remote command fails.
@@ -131,6 +142,11 @@ ssh-cli su-exec prod "id"
 - Empty password → JSON `null`; non-empty → string `***`.
 - Human text show still uses "(não definida)" for empty password.
 
+### Transfer / tunnel events (0.4.0)
+- SCP success: `docs/schemas/scp-transfer.schema.json`
+- Tunnel listening: `docs/schemas/tunnel-listening.schema.json`
+- Failures in JSON mode: `docs/schemas/error-envelope.schema.json` on stderr
+
 
 ## Compatibility Notes
 - Existing TOML hosts load and migrate field defaults on read/save paths.
@@ -139,9 +155,11 @@ ssh-cli su-exec prod "id"
 - Always-trust host key behavior is gone in release builds.
 - Default encryption is on; plaintext requires explicit opt-out env (tests).
 - Default tracing is error; INFO prose is not expected on agent stderr.
+- SCP remains file-only by design in 0.4.0 (not a temporary limitation).
 
 
 ## Rollback
 - Reinstall a previous version with an exact version pin if required.
 - Keep a redacted export via `vps export` before major experiments.
 - If rolling back below 0.3.6, encrypted blobs need the matching master key or a plaintext re-export while still on 0.3.6+.
+- If rolling back to **0.3.9**, do not expect working SCP wire (upgrade again to 0.4.0+ for transfers).

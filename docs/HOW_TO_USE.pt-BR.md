@@ -4,7 +4,7 @@
 
 - Leia este documento em [inglês](HOW_TO_USE.md).
 - Volte ao [README.pt-BR.md](../README.pt-BR.md) para o mapa completo de comandos.
-- Linha de produto documentada aqui: **0.4.0** (GAP-001–014 fechados; auditoria residual LOG/JSON/CLI fechada).
+- Linha de produto documentada aqui: **0.4.0** (GAP-001–014 fechados; residual LOG/JSON/CLI fechado; correção wire AUD-SCP + JSON de agente para scp/tunnel fechados).
 
 
 ## Pré-requisitos
@@ -13,6 +13,7 @@
 - Tenha senha ou chave privada OpenSSH para esse host.
 - Prefira um XDG config home gravável para storage multi-host.
 - Instale com `cargo install ssh-cli --locked` (após 0.4.0 no crates.io; até lá use `--path . --locked` a partir do checkout).
+- Não dependa do crates.io **0.3.9** para SCP: aquela release anunciava transferência, mas o protocolo wire estava quebrado (arquivos remotos de 0 bytes ou timeouts). Use **0.4.0+**.
 
 
 ## Primeiro comando em 60 segundos
@@ -39,7 +40,13 @@ ssh-cli exec demo "uname -a" --json
 - Marque host ativo com `ssh-cli connect demo`.
 - Rode trabalho privilegiado com `ssh-cli sudo-exec demo "systemctl status nginx" --json` (packing seguro `sh -c`).
 - Eleve com `ssh-cli su-exec` quando a senha `su` estiver no registro do host.
-- Transfira arquivos com `ssh-cli scp upload demo ./app.tgz /tmp/app.tgz`.
+- Transfira **somente arquivos regulares** (sem diretórios, sem `-r`, sem SFTP) com `ssh-cli scp upload demo ./app.tgz /tmp/app.tgz`.
+- Baixe com `ssh-cli scp download demo /var/log/app.log ./app.log`.
+- Prefira JSON de agente: `ssh-cli scp upload demo ./app.tgz /tmp/app.tgz --json` (schema `docs/schemas/scp-transfer.schema.json`).
+- Flags SCP com paridade ao exec: `--timeout` (connect + transfer), `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json`.
+- Download com falha não deixa o destino final corrompido: grava `{path}.ssh-cli.partial`, aplica mode/times no partial e faz rename atômico.
+- Upload faz stream em blocos de 32 KiB (não carrega o arquivo inteiro na RAM).
+- mtime/mode são preservados nos dois sentidos automaticamente (remoto `scp -tp` / `-fp`; sem flag extra do usuário).
 - Gerencie master-key com `ssh-cli secrets status|init|reencrypt` (nunca imprime a chave).
 
 
@@ -61,6 +68,7 @@ ssh-cli exec demo "uname -a" --json
 - Re-cifre inventário plaintext após upgrade: `ssh-cli secrets reencrypt`.
 - Espere JSON automático quando stdout não é TTY, salvo `--output-format`.
 - Espere senha vazia em hosts só-chave como JSON `null` (não `"***"`); senhas não vazias mascaram como `***`; texto humano em show usa "(não definida)" para vazio.
+- Em falha de `scp --json`, parseie o envelope de erro JSON em **stderr** (`exit_code`, `message`), não prosa humana.
 
 
 ## Configuração
@@ -79,6 +87,7 @@ ssh-cli exec demo "uname -a" --json
 - `health-check [--timeout <ms>]` sonda conectividade e imprime latência (`vps add --check` após cadastro); sobrescreva o timeout quando o padrão do host for longo ou curto demais.
 - Nível de tracing padrão é error para manter stderr de JSON e tunnel limpos; use `RUST_LOG` ou `-v` (debug) ao diagnosticar.
 - `tunnel` exige porta local, host remoto, porta remota e `--timeout-ms`.
+- Opcional: `tunnel --json` emite `event: "tunnel_listening"` estruturado no stdout após o bind local (`docs/schemas/tunnel-listening.schema.json`).
 - `completions` grava scripts de completion no stdout.
 - `su-exec` exige senha `su` configurada no registro do host.
 - `secrets` gerencia a master-key de cifragem sem nunca imprimi-la.

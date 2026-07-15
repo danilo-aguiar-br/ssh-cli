@@ -209,6 +209,10 @@ fn gap_doc_004_root_security_integrations_honest() {
         llms_full.contains("scp-transfer.schema.json"),
         "llms-full must index scp-transfer schema"
     );
+    assert!(
+        llms_full.contains("tunnel-listening.schema.json"),
+        "llms-full must index tunnel-listening schema"
+    );
     let contrib = std::fs::read_to_string(root().join("CONTRIBUTING.md")).expect("CONTRIBUTING");
     assert!(
         contrib.contains("gaps_v040"),
@@ -217,6 +221,71 @@ fn gap_doc_004_root_security_integrations_honest() {
     assert!(
         contrib.contains("E10") || contrib.contains("E01–E14") || contrib.contains("E01-E14"),
         "CONTRIBUTING must mention official e2e SCP matrix E10+"
+    );
+}
+
+#[test]
+fn gap_doc_004c_docs_folder_scp_tunnel_honest() {
+    let agents = std::fs::read_to_string(root().join("docs/AGENTS.md")).expect("AGENTS");
+    assert!(
+        agents.contains("scp-transfer") && agents.contains("tunnel_listening"),
+        "docs/AGENTS.md must document scp-transfer and tunnel_listening contracts"
+    );
+    assert!(
+        agents.to_lowercase().contains("regular files only")
+            || agents.contains("file-only")
+            || agents.contains("no directories"),
+        "docs/AGENTS.md must document SCP file-only"
+    );
+    let howto = std::fs::read_to_string(root().join("docs/HOW_TO_USE.md")).expect("HOW_TO_USE");
+    assert!(
+        howto.contains("0.3.9") && howto.contains(".ssh-cli.partial"),
+        "docs/HOW_TO_USE.md must warn 0.3.9 and document partial downloads"
+    );
+    let cook = std::fs::read_to_string(root().join("docs/COOKBOOK.md")).expect("COOKBOOK");
+    assert!(
+        cook.contains("tunnel_listening") && cook.contains("scp-transfer"),
+        "docs/COOKBOOK.md must include tunnel_listening and scp-transfer recipes"
+    );
+    let mig = std::fs::read_to_string(root().join("docs/MIGRATION.md")).expect("MIGRATION");
+    assert!(
+        mig.contains("tunnel_listening")
+            && mig.contains(".ssh-cli.partial")
+            && mig.contains("32 KiB"),
+        "docs/MIGRATION.md 0.4.0 section must cover tunnel JSON, partial, stream"
+    );
+    let testing = std::fs::read_to_string(root().join("docs/TESTING.md")).expect("TESTING");
+    assert!(
+        testing.contains("gaps_v040")
+            && (testing.contains("E10") || testing.contains("E01–E14") || testing.contains("E01-E14")),
+        "docs/TESTING.md must list gaps_v040 and e2e E10+"
+    );
+    let release = std::fs::read_to_string(root().join("docs/RELEASE_CHECKLIST.md")).expect("RELEASE");
+    assert!(
+        release.contains("gaps_v040") && release.contains("DOC-004"),
+        "docs/RELEASE_CHECKLIST.md must gate gaps_v040 and DOC-004"
+    );
+    let cross = std::fs::read_to_string(root().join("docs/CROSS_PLATFORM.md")).expect("CROSS");
+    let cross_l = cross.to_lowercase();
+    assert!(
+        cross.contains(".ssh-cli.partial")
+            && (cross_l.contains("regular files only")
+                || cross.contains("file-only")
+                || cross_l.contains("regular files")),
+        "docs/CROSS_PLATFORM.md must document SCP portability"
+    );
+    let schema_idx =
+        std::fs::read_to_string(root().join("docs/schemas/README.md")).expect("schemas README");
+    assert!(
+        schema_idx.contains("scp-transfer.schema.json")
+            && schema_idx.contains("tunnel-listening.schema.json"),
+        "docs/schemas/README.md must index scp-transfer and tunnel-listening"
+    );
+    assert!(
+        root()
+            .join("docs/schemas/tunnel-listening.schema.json")
+            .is_file(),
+        "missing tunnel-listening.schema.json"
     );
 }
 
@@ -230,6 +299,16 @@ fn gap_rel_004_changelog_039_scp_broken_e_040() {
             && (lower.contains("broken") || lower.contains("inoperant") || lower.contains("wire")),
         "CHANGELOG must honestly mention 0.3.9 SCP wire issue"
     );
+}
+
+#[test]
+fn gap_io_008_tunnel_schema_listening() {
+    let schema = root().join("docs/schemas/tunnel-listening.schema.json");
+    assert!(schema.is_file(), "missing {}", schema.display());
+    let body = std::fs::read_to_string(&schema).unwrap();
+    assert!(body.contains("tunnel_listening"));
+    assert!(body.contains("local_port"));
+    assert!(body.contains("timeout_ms"));
 }
 
 #[test]

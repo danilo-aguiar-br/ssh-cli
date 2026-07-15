@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/error-envelope.schema.json",
   "title": "Error semantics for agents",
+  "description": "Emitted on stderr when JSON errors mode is active (--json, global --output-format json, or effective JSON on scp/tunnel). Not a success payload.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
@@ -11,7 +12,7 @@
     },
     "message": {
       "type": "string",
-      "description": "Human error text on stderr when not using structured success JSON"
+      "description": "Human-readable error text carried inside the JSON envelope on stderr"
     },
     "remote_exit_code": {
       "type": "integer",

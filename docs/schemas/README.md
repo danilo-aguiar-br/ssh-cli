@@ -1,7 +1,7 @@
 # JSON Schemas Index
 
 ## English
-- This directory versions machine-readable JSON contracts for ssh-cli stdout payloads (**0.4.0**). Includes `scp-transfer.schema.json` for `scp upload|download` success JSON (regular files only).
+- This directory versions machine-readable JSON contracts for ssh-cli stdout/stderr payloads (**0.4.0**).
 - Validate agent parsers against these schemas before treating fields as stable.
 - `vps-list.schema.json` contracts `ssh-cli vps list --json`.
 - `vps-show.schema.json` contracts `ssh-cli vps show <name> --json`.
@@ -13,13 +13,15 @@
 - `su-exec.schema.json` contracts `ssh-cli su-exec ... --json`.
 - `health-check.schema.json` contracts `ssh-cli health-check --json`.
 - Optional CLI `--timeout` on `health-check` does not change response schema fields.
-- `error-envelope.schema.json` documents exit-code oriented failure semantics for agents.
+- `scp-transfer.schema.json` contracts `ssh-cli scp upload|download --json` **success on stdout** (regular files only; no directories / no `-r` / no SFTP).
+- `tunnel-listening.schema.json` contracts the post-bind stdout event for `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`).
+- `error-envelope.schema.json` contracts **stderr** failure payloads when JSON errors mode is active (`--json` / global `--output-format json` / effective JSON on scp and tunnel): fields `exit_code`, `message`, optional `remote_exit_code`.
 - Secrets in list/show payloads: empty password is JSON `null` (key-only hosts); non-empty password is the masked string `***`, never raw credentials.
 - There is no schema for `secrets status` key material (command never emits the master key); treat status JSON as non-sensitive metadata only.
 - `telemetry` in doctor output is always false.
 
 ## Português Brasileiro
-- Este diretório versiona contratos JSON legíveis por máquina para payloads stdout do ssh-cli (**0.4.0**).
+- Este diretório versiona contratos JSON legíveis por máquina para payloads stdout/stderr do ssh-cli (**0.4.0**).
 - Valide parsers de agentes contra estes schemas antes de tratar campos como estáveis.
 - `vps-list.schema.json` cobre `ssh-cli vps list --json`.
 - `vps-show.schema.json` cobre `ssh-cli vps show <name> --json`.
@@ -31,7 +33,9 @@
 - `su-exec.schema.json` cobre `ssh-cli su-exec ... --json`.
 - `health-check.schema.json` cobre `ssh-cli health-check --json`.
 - O CLI opcional `--timeout` em `health-check` não altera os campos do schema de resposta.
-- `error-envelope.schema.json` documenta semântica de falha orientada a exit codes para agentes.
+- `scp-transfer.schema.json` cobre sucesso em **stdout** de `ssh-cli scp upload|download --json` (somente arquivos regulares; sem diretórios / sem `-r` / sem SFTP).
+- `tunnel-listening.schema.json` cobre o evento pós-bind em stdout de `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`).
+- `error-envelope.schema.json` cobre payloads de falha em **stderr** quando o modo de erros JSON está ativo (`--json` / `--output-format json` global / JSON efetivo em scp e tunnel): campos `exit_code`, `message`, opcional `remote_exit_code`.
 - Segredos em list/show: senha vazia é JSON `null` (hosts só-chave); senha não vazia é a string mascarada `***`, nunca credenciais cruas.
 - Não há schema de material de chave de `secrets status` (o comando nunca emite a master-key); trate o JSON de status como metadado não sensível.
 - `telemetry` no doctor é sempre false.

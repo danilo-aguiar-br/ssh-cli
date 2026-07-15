@@ -49,6 +49,7 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - [su-exec.schema.json](docs/schemas/su-exec.schema.json)
 - [health-check.schema.json](docs/schemas/health-check.schema.json)
 - [scp-transfer.schema.json](docs/schemas/scp-transfer.schema.json) (`scp upload|download --json`; regular files only)
+- [tunnel-listening.schema.json](docs/schemas/tunnel-listening.schema.json) (`tunnel --json` post-bind event)
 - [error-envelope.schema.json](docs/schemas/error-envelope.schema.json)
 
 ## Commands (product surface 0.4.0)
