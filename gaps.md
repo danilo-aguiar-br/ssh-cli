@@ -116,3 +116,21 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 - Código: `src/ssh/cliente.rs`, `src/scp.rs`, `src/cli.rs`, `src/tunnel.rs`, `src/output.rs`
 - Testes: `tests/gaps_v040_integration.rs`, `tests/tunnel_integration.rs`, unit wire, `scripts/e2e_real_ssh.sh`
 - Schemas: `docs/schemas/scp-transfer.schema.json`
+
+## Revalidação (2026-07-15, sessão re-auditoria)
+
+| Gate | Resultado |
+|------|-----------|
+| Agent team explore (SCP+CLI) | **22/22 PASS** código real |
+| `cargo fmt --check` | **OK** (fmt residual em `parse_header_scp`) |
+| `cargo clippy --locked --all-targets -D warnings` | **OK** |
+| `cargo test --locked` | **OK** (188 unit + integrations; gaps_v040=16) |
+| `cargo deny check` | **OK** (advisories/bans/licenses/sources) |
+| `scripts/e2e_real_ssh.sh --from-grok-config` | **PASS E01–E14** fails=0 |
+| context7 `/eugeny/russh` | trust **9.7** |
+| docs-rs russh **0.62.2** `Channel::exec` | SCP via canal documentado |
+| duckduckgo-search-cli | OpenSSH scp/`-p` consultado |
+| atomwrite | `llms*.txt` DOC-004 residual file-only |
+| Telemetria | Ausente (só `telemetry: false` no doctor) |
+| Gaps de produto abertos | **0** |
+| REL-005 push/publish | **Aguardando OK** do mantenedor |

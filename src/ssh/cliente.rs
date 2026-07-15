@@ -454,9 +454,8 @@ mod real {
             )));
         }
         let mode_oct = &mode_token[1..];
-        let mode: u32 = u32::from_str_radix(mode_oct, 8).map_err(|_| {
-            ErroSshCli::CanalFalhou(format!("mode SCP inválido: {mode_oct}"))
-        })?;
+        let mode: u32 = u32::from_str_radix(mode_oct, 8)
+            .map_err(|_| ErroSshCli::CanalFalhou(format!("mode SCP inválido: {mode_oct}")))?;
 
         let tamanho = partes[1].parse().map_err(|_| {
             ErroSshCli::CanalFalhou(format!("tamanho inválido no header: {}", partes[1]))

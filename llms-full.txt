@@ -53,7 +53,7 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 ## Commands (product surface 0.4.0)
 - `vps add|list|show|edit|remove|path|doctor|export|import`
 - `connect`, `exec`, `sudo-exec`, `su-exec`
-- `scp upload|download`, `tunnel --timeout-ms`, `health-check [--timeout]`
+- `scp upload|download` (**regular files only**; no `-r`/SFTP; avoid crates.io **0.3.9** broken SCP wire — use **0.4.0**), `tunnel --timeout-ms`, `health-check [--timeout]`
 - `secrets status|init|reencrypt`
 - `completions`
 
