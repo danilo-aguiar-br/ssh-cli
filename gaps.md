@@ -6,7 +6,7 @@
 |-------|--------|
 | Versão de código | **0.4.0** (`Cargo.toml`) |
 | Data | **2026-07-15** |
-| Escopo | Fechamento total AUD-SCP-2026-07-15 + SCP-023b + IO-008 |
+| Escopo | Fechamento total AUD-SCP-2026-07-15 + SCP-023b + IO-008 + residual re-audit (022b/007b/020b) |
 | Status deste inventário | **Fechado (0 Abertos)** |
 | Suite de regressão | `gaps_v038` + `gaps_v039` + `gaps_v040` + e2e E01–E14 |
 | Supply-chain | **russh 0.62.2**; `yanked=deny`; `ignore=[]` |
@@ -18,7 +18,7 @@
 
 Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 
-### Bloco AUD-SCP-2026-07-15 → **0.4.0** (18 + 023b + IO-008)
+### Bloco AUD-SCP-2026-07-15 → **0.4.0** (18 + 023b + IO-008 + residual)
 
 | ID | Título | Status | Teste / evidência |
 |----|--------|--------|-------------------|
@@ -32,15 +32,18 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | GAP-SSH-SCP-017 | Flags scp sem paridade | **Resolvido (0.4.0)** | `gap_scp_017_*` |
 | GAP-SSH-SCP-018 | Upload `fs::read` total | **Resolvido (0.4.0)** | stream 32 KiB |
 | GAP-SSH-SCP-019 | Sem `-r` / dirs | **Resolvido (0.4.0)** por design file-only | `gap_scp_019_*` + DOC-004 |
-| GAP-SSH-SCP-020 | Sucesso hardcoded PT | **Resolvido (0.4.0)** | i18n |
+| GAP-SSH-SCP-020 | Sucesso hardcoded PT | **Resolvido (0.4.0)** | i18n EN/PT success + validação |
+| GAP-SSH-SCP-020b | Validação SCP EN-only | **Resolvido (0.4.0)** | `ScpUploadSomenteArquivo` / `ScpDownloadLocalNaoDiretorio` |
 | GAP-SSH-SCP-021 | Schema JSON transfer | **Resolvido (0.4.0)** | `scp-transfer.schema.json` |
 | GAP-SSH-SCP-022 | Download parcial no disco | **Resolvido (0.4.0)** | `.ssh-cli.partial` + rename + fsync pai |
+| GAP-SSH-SCP-022b | Mode pós-rename residual | **Resolvido (0.4.0)** | mode/times no **partial** antes do rename |
 | GAP-SSH-SCP-023 | Preserve mtime/mode bi-dir | **Resolvido (0.4.0)** | `-tp`/`-fp` + mode + set_times; E14 |
 | GAP-SSH-SCP-023b | Download sem -p/mode | **Resolvido (0.4.0)** | `comando_scp_remoto` + `aplicar_mode_local` |
 | GAP-SSH-REL-004 | 0.3.9 anunciava SCP quebrado | **Resolvido (0.4.0)** | CHANGELOG honesty |
 | GAP-SSH-DOC-004 | Docs sem file-only / alerta 0.3.9 | **Resolvido (0.4.0)** | product line |
 | GAP-SSH-TEST-004 | Integração scp só surface | **Resolvido (0.4.0)** | `gaps_v040` |
 | GAP-SSH-IO-007 | Sucesso scp sem JSON | **Resolvido (0.4.0)** | `imprimir_transferencia_json` |
+| GAP-SSH-IO-007b | `scp --json` sem envelope erro | **Resolvido (0.4.0)** | `definir_json_erros` + `gap_io_007b_*` |
 | GAP-SSH-IO-008 | `tunnel` sem `--json` local | **Resolvido (0.4.0)** | `gap_io_008_tunnel_json_flag` + `imprimir_tunnel_listening_json` |
 | GAP-SSH-HYG-001 | `rust_out` dirty | **Resolvido (0.4.0)** | `.gitignore` |
 | GAP-SSH-SCP-001 | Valida local antes connect | **Resolvido** (pré) | suite gaps_v038/v040 |
@@ -52,6 +55,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | PA-SCP-01..13 | **Feito** |
 | PA-SCP-023b | **Feito** |
 | PA-IO-008 | **Feito** |
+| PA-SCP-022b / 020b / IO-007b | **Feito** (re-auditoria agent teams) |
 
 ## Processo (não é gap de código)
 
@@ -73,7 +77,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | Métrica | Valor |
 |---------|--------|
 | Gaps abertos de produto | **0** |
-| Gaps AUD-SCP + pós-auditoria resolvidos | **22** |
+| Gaps AUD-SCP + pós-auditoria resolvidos | **25** |
 | russh | **0.62.2** |
 | Telemetria | Ausente |
 | E2E | E01–E14 |
@@ -103,34 +107,42 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | Raiz | Paridade agent-first incompleta no subcomando tunnel |
 | Contra-medida | `--json` + `event: tunnel_listening` após bind; erros via envelope JSON |
 
+## Causa raiz — residual re-audit agent teams
+
+| ID | Sintoma | Fix |
+|----|---------|-----|
+| SCP-022b | mode/times após rename → falha deixava `local` “sucesso parcial” | `aplicar_mode_local` + times no **partial** antes do rename |
+| IO-007b | `scp --json` não setava `definir_json_erros` (tunnel já fazia) | `cli.rs` scp: `definir_json_erros(true)` se json efetivo |
+| SCP-020b | validação dir/file hardcoded EN | `Mensagem::ScpUploadSomenteArquivo` / `ScpDownloadLocalNaoDiretorio` EN+PT |
+
 ## Tools obrigatórios (sessão)
 
-- GraphRAG: `rules_rust_ssh`, `cli_com_clap`, `cli_stdin_stdout`, `escrita_atomica`, testes/json
+- GraphRAG: `rules_rust_ssh`, `cli_com_clap`, `cli_one_shot`, `cli_stdin_stdout`, `escrita_atomica`, hardening, testes, publish
 - `context7 library russh` (trust 9.7) + docs Channel/exec
-- `mcp docs-rs` russh **0.62.2** `Channel` (exec implementa SCP tunnel)
-- `duckduckgo-search-cli` OpenSSH scp `-p` / linha T
+- `mcp docs-rs` russh **0.62.2** `Channel` (`exec` documenta SCP tunnel)
+- `duckduckgo-search-cli` OpenSSH scp protocol C/T/ACK
 - `atomwrite` para este inventário
 
 ## Referências
 
-- Código: `src/ssh/cliente.rs`, `src/scp.rs`, `src/cli.rs`, `src/tunnel.rs`, `src/output.rs`
-- Testes: `tests/gaps_v040_integration.rs`, `tests/tunnel_integration.rs`, unit wire, `scripts/e2e_real_ssh.sh`
+- Código: `src/ssh/cliente.rs`, `src/scp.rs`, `src/cli.rs`, `src/tunnel.rs`, `src/output.rs`, `src/i18n.rs`
+- Testes: `tests/gaps_v040_integration.rs`, unit wire, `scripts/e2e_real_ssh.sh`
 - Schemas: `docs/schemas/scp-transfer.schema.json`
 
-## Revalidação (2026-07-15, sessão re-auditoria)
+## Revalidação (2026-07-15, residual re-audit)
 
 | Gate | Resultado |
 |------|-----------|
-| Agent team explore (SCP+CLI) | **22/22 PASS** código real |
-| `cargo fmt --check` | **OK** (fmt residual em `parse_header_scp`) |
+| Agent team explore (SCP+CLI) | **22/22 PASS** + 3 residuais → **fechados** |
+| `cargo fmt` | **OK** |
 | `cargo clippy --locked --all-targets -D warnings` | **OK** |
-| `cargo test --locked` | **OK** (188 unit + integrations; gaps_v040=16) |
+| `cargo test --locked` | **OK** (188 unit + integrations; gaps_v040=17) |
 | `cargo deny check` | **OK** (advisories/bans/licenses/sources) |
 | `scripts/e2e_real_ssh.sh --from-grok-config` | **PASS E01–E14** fails=0 |
 | context7 `/eugeny/russh` | trust **9.7** |
 | docs-rs russh **0.62.2** `Channel::exec` | SCP via canal documentado |
-| duckduckgo-search-cli | OpenSSH scp/`-p` consultado |
-| atomwrite | `llms*.txt` DOC-004 residual file-only |
+| duckduckgo-search-cli | OpenSSH scp C/T/ACK consultado |
+| atomwrite | este `gaps.md` |
 | Telemetria | Ausente (só `telemetry: false` no doctor) |
 | Gaps de produto abertos | **0** |
 | REL-005 push/publish | **Aguardando OK** do mantenedor |

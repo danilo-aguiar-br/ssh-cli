@@ -770,7 +770,11 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             };
             let password = ler_stdin_se(password_stdin, password)?;
             let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
+            // GAP-SSH-IO-007b: --json local ou --format json global → envelope de erro JSON.
             let json_efetivo = json_local || formato == FormatoSaida::Json;
+            if json_efetivo {
+                crate::output::definir_json_erros(true);
+            }
             crate::scp::executar_scp(
                 acao,
                 config_override,

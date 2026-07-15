@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SCP wire protocol** was broken on crates.io **0.3.9** (header used literal `\\n` instead of real newline `0x0a`; ACK/EOF sent empty data instead of byte `0x00`; status not validated; download header/terminator incorrect) — SCP-010..013
 - Remote SCP path shell-escape for spaces and meta-characters (SCP-014)
 - Unit tests no longer crystalize the broken header form (SCP-015)
-- Download no longer leaves a partial final file on failure: write `{path}.ssh-cli.partial` then atomic rename (SCP-022)
+- Download no longer leaves a partial final file on failure: write `{path}.ssh-cli.partial` then atomic rename (SCP-022); mode/times applied on the **partial** before rename (SCP-022b)
 - Upload no longer loads the entire file into RAM (`fs::read`); streams in 32 KiB chunks (SCP-018)
+- `scp --json` enables the JSON error envelope on stderr (parity with tunnel; IO-007b)
+- SCP file-only validation messages are i18n EN/PT (SCP-020b)
 
 ### Added
 - Official e2e E10–E14 SCP coverage in `scripts/e2e_real_ssh.sh` (upload, download, `cmp`, missing remote, mode/mtime preserve) (SCP-016, SCP-023)

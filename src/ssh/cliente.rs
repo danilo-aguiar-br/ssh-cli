@@ -853,9 +853,9 @@ mod real {
             let local_str = local.display().to_string();
 
             if local.is_dir() {
-                return Err(ErroSshCli::ArgumentoInvalido(
-                    "upload only supports regular files (no directories / no -r)".to_string(),
-                ));
+                return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
+                    crate::i18n::Mensagem::ScpUploadSomenteArquivo,
+                )));
             }
 
             let metadados = std::fs::metadata(local).map_err(|e| {
@@ -867,9 +867,9 @@ mod real {
             })?;
 
             if !metadados.is_file() {
-                return Err(ErroSshCli::ArgumentoInvalido(
-                    "upload only supports regular files".to_string(),
-                ));
+                return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
+                    crate::i18n::Mensagem::ScpUploadSomenteArquivo,
+                )));
             }
 
             let tamanho = metadados.len();
@@ -986,10 +986,9 @@ mod real {
             use std::time::{Duration as StdDuration, Instant, UNIX_EPOCH};
 
             if local.is_dir() {
-                return Err(ErroSshCli::ArgumentoInvalido(
-                    "download local path must be a file path, not an existing directory"
-                        .to_string(),
-                ));
+                return Err(ErroSshCli::ArgumentoInvalido(crate::i18n::t(
+                    crate::i18n::Mensagem::ScpDownloadLocalNaoDiretorio,
+                )));
             }
 
             let inicio = Instant::now();
@@ -1111,6 +1110,20 @@ mod real {
                     }
                 }
 
+                // SCP-022b: aplicar mode/times no partial ANTES do rename atômico.
+                // Assim falha de metadados não deixa `local` com conteúdo de sucesso parcial.
+                aplicar_mode_local(&partial, mode_remoto)?;
+                if let Some((mtime, atime)) = times {
+                    let mtime_st = UNIX_EPOCH + StdDuration::from_secs(mtime);
+                    let atime_st = UNIX_EPOCH + StdDuration::from_secs(atime);
+                    let ft = std::fs::FileTimes::new()
+                        .set_modified(mtime_st)
+                        .set_accessed(atime_st);
+                    if let Ok(f) = std::fs::File::options().write(true).open(&partial) {
+                        let _ = f.set_times(ft);
+                    }
+                }
+
                 std::fs::rename(&partial, local).map_err(ErroSshCli::Io)?;
                 // GraphRAG escrita atômica: fsync do diretório pai após rename (best-effort).
                 if let Some(pai) = local.parent() {
@@ -1118,19 +1131,6 @@ mod real {
                         if let Ok(dir) = std::fs::File::open(pai) {
                             let _ = dir.sync_all();
                         }
-                    }
-                }
-
-                // SCP-023: mode do header C + mtime/atime da linha T (se o source enviou com -p).
-                aplicar_mode_local(local, mode_remoto)?;
-                if let Some((mtime, atime)) = times {
-                    let mtime_st = UNIX_EPOCH + StdDuration::from_secs(mtime);
-                    let atime_st = UNIX_EPOCH + StdDuration::from_secs(atime);
-                    let ft = std::fs::FileTimes::new()
-                        .set_modified(mtime_st)
-                        .set_accessed(atime_st);
-                    if let Ok(f) = std::fs::File::options().write(true).open(local) {
-                        let _ = f.set_times(ft);
                     }
                 }
 
@@ -1149,6 +1149,8 @@ mod real {
                 }
                 Ok(Err(e)) => {
                     let _ = std::fs::remove_file(&partial);
+                    // Se rename já ocorreu e algo falhou depois (fsync best-effort não falha),
+                    // ainda removemos partial; `local` só existe após rename bem-sucedido.
                     Err(e)
                 }
                 Err(_) => {

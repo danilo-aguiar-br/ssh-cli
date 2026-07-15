@@ -47,9 +47,9 @@ pub async fn executar_scp(
         } => {
             // GAP-SSH-SCP-001 / SCP-019: validar arquivo local antes do connect.
             if local.is_dir() {
-                return Err(ErroSshCli::ArgumentoInvalido(
-                    "upload only supports regular files (no directories / no -r)".to_string(),
-                )
+                return Err(ErroSshCli::ArgumentoInvalido(i18n::t(
+                    Mensagem::ScpUploadSomenteArquivo,
+                ))
                 .into());
             }
             if !local.is_file() {
@@ -79,10 +79,9 @@ pub async fn executar_scp(
             ..
         } => {
             if local.is_dir() {
-                return Err(ErroSshCli::ArgumentoInvalido(
-                    "download local path must be a file path, not an existing directory"
-                        .to_string(),
-                )
+                return Err(ErroSshCli::ArgumentoInvalido(i18n::t(
+                    Mensagem::ScpDownloadLocalNaoDiretorio,
+                ))
                 .into());
             }
 
@@ -449,7 +448,9 @@ mod testes {
         assert!(r.is_err());
         let msg = format!("{:?}", r.err().unwrap());
         assert!(
-            msg.contains("regular files") || msg.contains("ArgumentoInvalido"),
+            msg.contains("regular files")
+                || msg.contains("arquivos regulares")
+                || msg.contains("ArgumentoInvalido"),
             "msg={msg}"
         );
     }

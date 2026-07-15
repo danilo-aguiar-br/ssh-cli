@@ -258,6 +258,11 @@ fn gap_scp_022_partial_suffix_na_fonte() {
         !src.contains("std::fs::read(local)"),
         "upload must not load entire file with fs::read"
     );
+    // SCP-022b: mode/times no partial antes do rename (sem residual pós-rename).
+    assert!(
+        src.contains("aplicar_mode_local(&partial") || src.contains("aplicar_mode_local(&partial,"),
+        "mode must be applied on partial before rename"
+    );
 }
 
 #[test]
@@ -265,8 +270,32 @@ fn gap_scp_020_i18n_mensagens() {
     let src = std::fs::read_to_string(root().join("src/i18n.rs")).unwrap();
     assert!(src.contains("ScpUploadConcluido"));
     assert!(src.contains("ScpDownloadConcluido"));
+    assert!(src.contains("ScpUploadSomenteArquivo"));
+    assert!(src.contains("ScpDownloadLocalNaoDiretorio"));
     assert!(src.contains("Upload completed"));
     assert!(src.contains("Upload concluído") || src.contains("Upload concluido"));
+}
+
+/// IO-007b: `scp --json` local promove envelope de erro JSON (paridade tunnel).
+#[test]
+#[serial]
+fn gap_io_007b_scp_json_local_envelope_erro() {
+    let tmp = TempDir::new().unwrap();
+    add_host(&tmp, "jsonscp");
+    cmd(&tmp)
+        .args([
+            "scp",
+            "upload",
+            "jsonscp",
+            "--json",
+            tmp.path().to_str().unwrap(),
+            "/tmp/x",
+        ])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("\"exit_code\"").and(predicate::str::contains("\"message\"")),
+        );
 }
 
 #[test]

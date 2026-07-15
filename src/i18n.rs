@@ -142,6 +142,10 @@ pub enum Mensagem {
         /// Duração em milissegundos.
         ms: u64,
     },
+    /// Upload recusado: path local é diretório (file-only, sem -r).
+    ScpUploadSomenteArquivo,
+    /// Download recusado: path local já é diretório.
+    ScpDownloadLocalNaoDiretorio,
 }
 
 impl Mensagem {
@@ -235,6 +239,12 @@ fn en(msg: &Mensagem) -> String {
         Mensagem::ScpDownloadConcluido { bytes, ms } => {
             format!("Download completed: {bytes} bytes in {ms}ms")
         }
+        Mensagem::ScpUploadSomenteArquivo => {
+            "upload only supports regular files (no directories / no -r)".to_string()
+        }
+        Mensagem::ScpDownloadLocalNaoDiretorio => {
+            "download local path must be a file path, not an existing directory".to_string()
+        }
     }
 }
 
@@ -282,6 +292,12 @@ fn pt(msg: &Mensagem) -> String {
         }
         Mensagem::ScpDownloadConcluido { bytes, ms } => {
             format!("Download concluído: {bytes} bytes em {ms}ms")
+        }
+        Mensagem::ScpUploadSomenteArquivo => {
+            "upload só suporta arquivos regulares (sem diretórios / sem -r)".to_string()
+        }
+        Mensagem::ScpDownloadLocalNaoDiretorio => {
+            "caminho local de download deve ser arquivo, não diretório existente".to_string()
         }
     }
 }
