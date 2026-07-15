@@ -54,7 +54,10 @@
 - Timeout com abort remoto best-effort
 - Tunnel limitado via `--timeout-ms` obrigatório
 - SCP upload e download de **arquivos regulares apenas** (sem diretórios recursivos / sem SFTP; wire sólido em **0.4.0** — evite SCP do crates.io 0.3.9)
-- Health-check com latência e `--timeout` opcional
+- Paridade de flags scp com exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (contrato `docs/schemas/scp-transfer.schema.json`)
+- Download SCP grava `{path}.ssh-cli.partial` e rename atômico; preserve mtime/mode bi-direcional; upload em stream de 32 KiB
+- `tunnel --json` emite `tunnel_listening` estruturado após bind local
+- Health-check de latência com `--timeout` opcional
 - Completions para bash zsh fish powershell
 - Segredos via flags stdin para evitar leak em argv
 - **Cifragem at-rest por padrão** (ChaCha20-Poly1305) com auto `secrets.key` XDG
@@ -124,8 +127,8 @@ ssh-cli exec prod "hostname" --json
 | `ssh-cli exec <vps> <cmd>` | Comando remoto one-shot |
 | `ssh-cli sudo-exec <vps> <cmd>` | sudo one-shot com packing seguro |
 | `ssh-cli su-exec <vps> <cmd>` | Elevação `su -` one-shot |
-| `ssh-cli scp upload|download` | Transferência de arquivo regular (flags: `--timeout`, `--key`, `--json`, …) |
-| `ssh-cli tunnel ... --timeout-ms N` | Port-forward local com deadline |
+| `ssh-cli scp upload|download` | Somente arquivos regulares (sem `-r`/SFTP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--json` → schema `scp-transfer`; preserve mtime/mode |
+| `ssh-cli tunnel ... --timeout-ms N [--json]` | Port-forward local com deadline; `--json` emite `tunnel_listening` após bind |
 | `ssh-cli health-check [<vps>] [--timeout N]` | Sonda de conectividade (timeout opcional em ms) |
 | `ssh-cli secrets status|init|reencrypt` | Master-key e cifragem at-rest (nunca imprime a chave) |
 | `ssh-cli completions <shell>` | Scripts de completion de shell |
@@ -209,7 +212,9 @@ ssh-cli exec prod "hostname" --json
 - Comando rejeitado por tamanho: aumente `max_command_chars` ou encurte o comando.
 - Config com secrets cifrados sem chave: rode `ssh-cli secrets init` ou restaure `secrets.key` / env.
 - sudo-exec desabilitado: remova `--disable-sudo` e defina `disable_sudo=false` no host.
-- Ruído inesperado em stderr em pipelines JSON: o nível de log default já é `error`; defina `RUST_LOG` só para `debug` (ou `-v`) ao diagnosticar.
+- Ruído inesperado em stderr em pipelines JSON: o nível default já é `error`; defina `RUST_LOG` só como `debug` (ou `-v`) ao diagnosticar.
+- SCP do crates.io **0.3.9** falha ou grava remoto 0 bytes: atualize para **0.4.0+** (fix de wire); só arquivos regulares, não diretórios.
+- Download SCP falha no meio: destino ausente ou arquivo anterior intacto (parcial usa `.ssh-cli.partial`).
 - macOS Gatekeeper bloqueia o binário: rode `xattr -d com.apple.quarantine /path/to/ssh-cli`.
 - Permissão negada no config: garanta `chmod 600` no `config.toml` e no `secrets.key` XDG.
 

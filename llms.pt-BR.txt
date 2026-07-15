@@ -29,8 +29,8 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - `exec` roda comando remoto one-shot
 - `sudo-exec` eleva com packing seguro `sh -c`
 - `su-exec` eleva com `su -` one-shot
-- `scp upload|download` transfere **somente arquivos regulares** (sem `-r` / sem SFTP; wire SCP do crates.io **0.3.9** estava quebrado — use **0.4.0**)
-- `tunnel` abre port-forward local limitado com `--timeout-ms` obrigatório
+- `scp upload|download` transfere **somente arquivos regulares** (sem `-r` / sem SFTP; wire SCP do crates.io **0.3.9** estava quebrado — use **0.4.0**); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → contrato `docs/schemas/scp-transfer.schema.json`; download usa `.ssh-cli.partial` e rename; preserve mtime/mode; upload em stream 32 KiB
+- `tunnel` abre port-forward local limitado com `--timeout-ms` obrigatório; `--json` opcional emite `tunnel_listening` após bind
 - `health-check [--timeout]` sonda conectividade e latência
 - `secrets status|init|reencrypt` gerencia master-key e cifragem at-rest (nunca imprime a chave)
 - `completions` emite scripts de completion

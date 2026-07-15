@@ -173,6 +173,51 @@ fn gap_doc_004_product_line_040_e_file_only() {
             || lower.contains("not directories"),
         "README must document file-only SCP limit"
     );
+    assert!(
+        readme.contains("scp-transfer") || readme.contains("tunnel_listening"),
+        "README must surface scp-transfer and/or tunnel_listening for agents"
+    );
+    assert!(
+        readme.contains(".ssh-cli.partial") || lower.contains("partial"),
+        "README must document partial download path"
+    );
+}
+
+#[test]
+fn gap_doc_004_root_security_integrations_honest() {
+    let sec = std::fs::read_to_string(root().join("SECURITY.md")).expect("SECURITY");
+    assert!(
+        sec.contains("0.4.x") && sec.contains("current line"),
+        "SECURITY Supported Versions must brand 0.4.x as current line"
+    );
+    assert!(
+        !sec.contains("| 0.3.x | Supported | Yes, current line |"),
+        "SECURITY must not claim 0.3.x is the current product line"
+    );
+    let integ = std::fs::read_to_string(root().join("INTEGRATIONS.md")).expect("INTEGRATIONS");
+    assert!(
+        integ.contains("0.4.0")
+            && (integ.contains("scp-transfer") || integ.contains("tunnel_listening")),
+        "INTEGRATIONS 0.4.0 must document real SCP/tunnel surface"
+    );
+    assert!(
+        integ.contains("0.3.9"),
+        "INTEGRATIONS must keep 0.3.9 residual facts under their own version bullet"
+    );
+    let llms_full = std::fs::read_to_string(root().join("llms-full.txt")).expect("llms-full");
+    assert!(
+        llms_full.contains("scp-transfer.schema.json"),
+        "llms-full must index scp-transfer schema"
+    );
+    let contrib = std::fs::read_to_string(root().join("CONTRIBUTING.md")).expect("CONTRIBUTING");
+    assert!(
+        contrib.contains("gaps_v040"),
+        "CONTRIBUTING must mention gaps_v040 regression suite"
+    );
+    assert!(
+        contrib.contains("E10") || contrib.contains("E01–E14") || contrib.contains("E01-E14"),
+        "CONTRIBUTING must mention official e2e SCP matrix E10+"
+    );
 }
 
 #[test]

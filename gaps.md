@@ -6,7 +6,7 @@
 |-------|--------|
 | Versão de código | **0.4.0** (`Cargo.toml`) |
 | Data | **2026-07-15** |
-| Escopo | Fechamento total AUD-SCP-2026-07-15 + SCP-023b + IO-008 + residual re-audit (022b/007b/020b) |
+| Escopo | Fechamento total AUD-SCP-2026-07-15 + SCP-023b + IO-008 + residual re-audit + **auditoria docs raiz 0.4.0** |
 | Status deste inventário | **Fechado (0 Abertos)** |
 | Suite de regressão | `gaps_v038` + `gaps_v039` + `gaps_v040` + e2e E01–E14 |
 | Supply-chain | **russh 0.62.2**; `yanked=deny`; `ignore=[]` |
@@ -41,6 +41,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | GAP-SSH-SCP-023b | Download sem -p/mode | **Resolvido (0.4.0)** | `comando_scp_remoto` + `aplicar_mode_local` |
 | GAP-SSH-REL-004 | 0.3.9 anunciava SCP quebrado | **Resolvido (0.4.0)** | CHANGELOG honesty |
 | GAP-SSH-DOC-004 | Docs sem file-only / alerta 0.3.9 | **Resolvido (0.4.0)** | product line |
+| GAP-SSH-DOC-004b | Raiz: SECURITY 0.3.x current + INTEGRATIONS 0.4.0=0.3.9 + llms schema omit + CONTRIBUTING sem v040 | **Resolvido (0.4.0)** | `gap_doc_004_root_security_integrations_honest` |
 | GAP-SSH-TEST-004 | Integração scp só surface | **Resolvido (0.4.0)** | `gaps_v040` |
 | GAP-SSH-IO-007 | Sucesso scp sem JSON | **Resolvido (0.4.0)** | `imprimir_transferencia_json` |
 | GAP-SSH-IO-007b | `scp --json` sem envelope erro | **Resolvido (0.4.0)** | `definir_json_erros` + `gap_io_007b_*` |
@@ -77,7 +78,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC-001..003).
 | Métrica | Valor |
 |---------|--------|
 | Gaps abertos de produto | **0** |
-| Gaps AUD-SCP + pós-auditoria resolvidos | **25** |
+| Gaps AUD-SCP + pós-auditoria resolvidos | **26** (inclui DOC-004b raiz) |
 | russh | **0.62.2** |
 | Telemetria | Ausente |
 | E2E | E01–E14 |

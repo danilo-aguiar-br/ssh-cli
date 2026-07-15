@@ -9,7 +9,8 @@
 
 | Versão | Status | Correções de segurança |
 | --- | --- | --- |
-| 0.3.x | Suportada | Sim, linha atual |
+| 0.4.x | Suportada | Sim, **linha atual** |
+| 0.3.x | Limitada | Só críticas quando viável; no crates.io **0.3.9** o SCP anunciado tinha wire inoperante — atualize para **0.4.0+** para transferências |
 | 0.2.x | Limitada | Só correções críticas quando viável |
 | 0.1.x | Sem suporte | Sem patches |
 | < 0.1 | Sem suporte | Sem patches |
@@ -74,4 +75,4 @@
 - Desabilite elevação com `--disable-sudo` quando o workflow não deve escalar.
 - Rode apenas comandos one-shot; nunca espere um daemon SSH de longa duração desta CLI.
 - Instale com `--locked` para evitar drift de re-resolve crypto.
-- Prefira a linha atual **0.4.0+** para o piso de supply-chain (russh 0.62.2).
+- Prefira a linha atual **0.4.0+** para o piso de supply-chain (russh 0.62.2) e para SCP com wire funcional (crates.io **0.3.9** SCP era inoperante).

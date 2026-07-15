@@ -2,7 +2,7 @@
 
 > Complete discovery map for one-shot multi-host SSH automation
 
-ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start the binary, run one operation, and the process exits. Multi-host credentials live under XDG via directories::ProjectDirs. Authentication accepts password or OpenSSH private key. sudo uses secure `sh -c` packing. su-exec provides real elevation. known_hosts implements TOFU. config writes are atomic with flock. Secrets in config.toml are **encrypted by default** (ChaCha20-Poly1305; auto `secrets.key`). Install is gated with crypto pins for clean `cargo install --locked`. Product line **0.4.0** closes residual post-0.3.8 audit gaps; russh 0.62.2.
+ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start the binary, run one operation, and the process exits. Multi-host credentials live under XDG via directories::ProjectDirs. Authentication accepts password or OpenSSH private key. sudo uses secure `sh -c` packing. su-exec provides real elevation. known_hosts implements TOFU. config writes are atomic with flock. Secrets in config.toml are **encrypted by default** (ChaCha20-Poly1305; auto `secrets.key`). Install is gated with crypto pins for clean `cargo install --locked`. Product line **0.4.0** closes AUD-SCP + residual post-0.3.9 gaps (solid SCP wire, file-only transfers, tunnel JSON); russh 0.62.2.
 
 - Portuguese discovery file: [llms.pt-BR.txt](llms.pt-BR.txt)
 - Short index: [llms.txt](llms.txt)
@@ -48,12 +48,14 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - [sudo-exec.schema.json](docs/schemas/sudo-exec.schema.json)
 - [su-exec.schema.json](docs/schemas/su-exec.schema.json)
 - [health-check.schema.json](docs/schemas/health-check.schema.json)
+- [scp-transfer.schema.json](docs/schemas/scp-transfer.schema.json) (`scp upload|download --json`; regular files only)
 - [error-envelope.schema.json](docs/schemas/error-envelope.schema.json)
 
 ## Commands (product surface 0.4.0)
 - `vps add|list|show|edit|remove|path|doctor|export|import`
 - `connect`, `exec`, `sudo-exec`, `su-exec`
-- `scp upload|download` (**regular files only**; no `-r`/SFTP; avoid crates.io **0.3.9** broken SCP wire — use **0.4.0**), `tunnel --timeout-ms`, `health-check [--timeout]`
+- `scp upload|download` (**regular files only**; no `-r`/SFTP; avoid crates.io **0.3.9** broken SCP wire — use **0.4.0**): flags `--timeout|--password-stdin|--key|--key-passphrase[-stdin]|--json` → `scp-transfer`; download `.ssh-cli.partial` then rename; preserve mtime/mode; stream upload 32 KiB
+- `tunnel --timeout-ms` [and `--json` → `tunnel_listening` after bind], `health-check [--timeout]`
 - `secrets status|init|reencrypt`
 - `completions`
 
