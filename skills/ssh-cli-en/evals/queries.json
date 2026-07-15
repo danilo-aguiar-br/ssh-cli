@@ -14,11 +14,35 @@
       "should_trigger": true
     },
     {
-      "query": "open a short-lived ssh tunnel with timeout-ms to forward local 18080 to remote 8080",
+      "query": "open a short-lived ssh tunnel with timeout-ms and --json wait for event tunnel_listening before using local 18080",
       "should_trigger": true
     },
     {
-      "query": "upload a tarball with scp and then health-check the host",
+      "query": "upload a single file with scp --json and parse ok direction vps local remote bytes duration_ms",
+      "should_trigger": true
+    },
+    {
+      "query": "scp download with --json expect .ssh-cli.partial then atomic rename and preserve mtime mode",
+      "should_trigger": true
+    },
+    {
+      "query": "refuse scp of a directory regular files only no -r no SFTP",
+      "should_trigger": true
+    },
+    {
+      "query": "scp transfer failed under --json parse stderr error envelope exit_code message",
+      "should_trigger": true
+    },
+    {
+      "query": "scp --timeout for long file copy do not use --timeout-ms on scp",
+      "should_trigger": true
+    },
+    {
+      "query": "upload large artifact with scp streaming 32KiB chunks not full file in RAM",
+      "should_trigger": true
+    },
+    {
+      "query": "tunnel bind failure with --json read stderr error envelope not stdout success",
       "should_trigger": true
     },
     {
@@ -63,6 +87,10 @@
     },
     {
       "query": "vps add nonstandard ssh port 2222 with --check then connect active host",
+      "should_trigger": true
+    },
+    {
+      "query": "scp download with password-stdin or key-passphrase-stdin without argv secrets",
       "should_trigger": true
     },
     {

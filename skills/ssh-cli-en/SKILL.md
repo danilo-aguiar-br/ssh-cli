@@ -1,6 +1,6 @@
 ---
 name: ssh-cli
-description: This skill MUST auto-activate when the user or agent needs remote SSH ops via the ssh-cli one-shot binary. Inputs are host name, host IP, user, key path or password-stdin, remote command, paths, tunnel ports, timeout ms. Outputs are sysexits exits, stdout success JSON (stdout stderr exit_code truncated_stdout truncated_stderr duration_ms), stderr error JSON (exit_code message remote_exit_code), masked registry JSON (password null key-only, *** when stored). Covers vps add list show edit remove path doctor export import, connect, exec, sudo-exec sh -c packing, su-exec, scp upload download, tunnel mandatory timeout-ms, health-check optional timeout, secrets status init reencrypt ChaCha20-Poly1305, --quiet, default error logs (-v or RUST_LOG only for debug), TOFU replace-host-key, mode 0600, completions bash zsh fish elvish powershell, cargo install locked. NEVER emit telemetry. NEVER keep a long-lived SSH daemon. NEVER leak secrets into logs.
+description: This skill MUST auto-activate for remote SSH via ssh-cli one-shot even without naming ssh-cli. Inputs host name IP user key or password-stdin command paths tunnel ports timeout ms. Outputs sysexits, exec JSON (stdout stderr exit_code truncated_stdout truncated_stderr duration_ms), scp JSON (ok direction vps local remote bytes duration_ms), tunnel JSON (ok event tunnel_listening vps local_port remote_host remote_port timeout_ms), stderr error (exit_code message remote_exit_code), registry password null or ***. Covers vps CRUD path doctor export import connect exec sudo-exec packing su-exec scp upload download files-only no-r no-SFTP --json --timeout .ssh-cli.partial rename 32KiB stream mtime mode preserve tunnel required --timeout-ms --json wait tunnel_listening health-check --timeout secrets status init reencrypt --quiet default error logs TOFU replace-host-key mode 0600 completions cargo install locked. NEVER telemetry. NEVER long-lived SSH daemon. NEVER leak secrets. NEVER recursive scp dirs.
 ---
 
 # ssh-cli Agent Skill
@@ -8,38 +8,41 @@ description: This skill MUST auto-activate when the user or agent needs remote S
 ## Mission
 ### REQUIRED
 - MUST treat this skill as SUPREME LAW for every `ssh-cli` invocation
-- MUST run `ssh-cli` as a one-shot subprocess birth-execute-die
-- MUST wait for process exit before parsing stdout or stderr
+- MUST ALWAYS run `ssh-cli` as a one-shot subprocess birth-execute-die
+- MUST wait for process exit before parsing stdout or stderr except for long-lived `tunnel` until timeout or signal
 - MUST use stored hosts from `vps add` instead of ad-hoc chat secrets
-- MUST pass `--json` when the caller needs structured success output
+- MUST pass `--json` when the agent needs structured success output
 - MUST copy the ready formulas in this skill and only substitute placeholders
+- MUST keep this skill consolidated as operational formulas only
 
 ### FORBIDDEN
-- MUST NOT keep a long-lived SSH session across process runs
-- MUST NOT introduce a long-lived product daemon for this surface
-- MUST NOT emit or enable telemetry
-- MUST NOT log live passwords, passphrases, or master-key material
-- MUST NOT invent CLI flags that are not listed in this skill
-- MUST NOT write version-by-version changelog stories inside this skill
+- MUST NEVER keep a long-lived SSH session across process runs except the active bound `tunnel` until deadline
+- MUST NEVER introduce a long-lived product daemon for this surface
+- MUST NEVER emit or enable telemetry
+- MUST NEVER log live passwords, passphrases, or master-key material
+- MUST NEVER invent CLI flags that are not listed in this skill
+- MUST NEVER write version-by-version changelog stories inside this skill
 
 
 ## When to Invoke
 ### REQUIRED
 - MUST auto-activate on remote SSH, VPS registry, multi-host inventory, XDG config
 - MUST auto-activate on `exec`, `sudo-exec`, `su-exec`, `scp`, `tunnel`, `health-check`
+- MUST auto-activate on file transfer, regular-file copy over SSH, scp upload or download
+- MUST auto-activate on local port forward, bounded SSH tunnel, `tunnel_listening`
 - MUST auto-activate on secrets at rest, master-key, `secrets.key`, reencrypt
 - MUST auto-activate on TOFU known_hosts, host-key mismatch, replace-host-key
 - MUST auto-activate on agent devops that needs remote shell without interactive TTY
 - MUST auto-activate even when the user describes the problem without naming ssh-cli
 
 ### FORBIDDEN
-- MUST NOT wait for an explicit skill request when remote SSH ops are implied
+- MUST NEVER wait for an explicit skill request when remote SSH ops are implied
 
 
 ## Install and Binary Check
 ### REQUIRED
 - MUST install with lock-aligned resolve when packaging is required
-- MUST verify the binary after install or upgrade
+- MUST verify the binary after install or upgrade before relying on scp or tunnel
 - MUST refuse to guide users past crypto pin failures without a fixed release
 
 ### Correct Pattern
@@ -58,15 +61,16 @@ ssh-cli --help
 - MUST force JSON with `--json` or `--output-format json` for agent parsing
 - MUST send human logs only to stderr and parse only stdout as success data
 - MUST expect default log level `error` so stderr stays clean for agents
-- MUST use `-v` (raises verbosity to `debug`) or `RUST_LOG` only when debugging
+- MUST use `-v` or `RUST_LOG` only when debugging
 - MUST use `-q` / `--quiet` to suppress non-JSON human prose when required
+- MUST treat `scp --json`, `tunnel --json`, and global JSON format as activating stderr error envelopes on failure
 - MUST parse failure envelopes from stderr JSON when the process exit is non-zero and JSON mode is active
 
 ### FORBIDDEN
-- MUST NOT mix stderr logs into the success JSON parse stream
-- MUST NOT assume a previous process left an open SSH channel
-- MUST NOT expect INFO progress prose on stderr by default
-- MUST NOT parse stderr as success JSON for exec-family results
+- MUST NEVER mix stderr logs into the success JSON parse stream
+- MUST NEVER assume a previous process left an open SSH channel
+- MUST NEVER expect INFO progress prose on stderr by default
+- MUST NEVER parse stderr as success JSON
 
 ### Correct Pattern
 
@@ -74,7 +78,6 @@ ssh-cli --help
 ssh-cli exec prod "uname -a" --json
 echo $?
 ssh-cli -q exec prod "true" --json
-# debug only when diagnosing
 ssh-cli -v exec prod "true" --json
 RUST_LOG=debug ssh-cli exec prod "true" --json
 ```
@@ -96,12 +99,12 @@ RUST_LOG=debug ssh-cli exec prod "true" --json
 - MUST require human approval before `export --include-secrets`
 
 ### FORBIDDEN
-- MUST NOT create empty-credential hosts
-- MUST NOT invent fake passwords for key-only hosts
-- MUST NOT treat masked `***` as a real password value
-- MUST NOT commit raw secret inventories to git
-- MUST NOT assume `.env` files are read at runtime
-- MUST NOT print decrypted secrets into chat logs
+- MUST NEVER create empty-credential hosts
+- MUST NEVER invent fake passwords for key-only hosts
+- MUST NEVER treat masked `***` as a real password value
+- MUST NEVER commit raw secret inventories to git
+- MUST NEVER assume `.env` files are read at runtime
+- MUST NEVER print decrypted secrets into chat logs
 
 ### Correct Pattern
 
@@ -143,10 +146,10 @@ ssh-cli health-check prod --json
 - MUST expect list/show JSON `password` to be `null` for key-only hosts and `***` when a password is stored
 
 ### FORBIDDEN
-- MUST NOT invent fake passwords for key-only hosts
-- MUST NOT treat JSON `null` password as a bug or as a missing field to fabricate
-- MUST NOT print key passphrases or SSH passwords
-- MUST NOT store secrets in shell history when stdin is available
+- MUST NEVER invent fake passwords for key-only hosts
+- MUST NEVER treat JSON `null` password as a bug or as a missing field to fabricate
+- MUST NEVER print key passphrases or SSH passwords
+- MUST NEVER store secrets in shell history when stdin is available
 
 ### Correct Pattern
 
@@ -166,11 +169,11 @@ printf '%s' "$SSH_PASSWORD" | ssh-cli exec app "id" --json --password-stdin
 - MUST run `secrets init` when an explicit master-key file or keyring entry is required
 - MUST run `secrets reencrypt` after rotating the master-key material
 - MUST keep `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` restricted to automated tests only
-- MUST never print the master-key value
+- MUST NEVER print the master-key value
 
 ### FORBIDDEN
-- MUST NOT log `SSH_CLI_SECRETS_KEY`, key file contents, or decrypted host secrets
-- MUST NOT enable plaintext secrets in production agent flows
+- MUST NEVER log `SSH_CLI_SECRETS_KEY`, key file contents, or decrypted host secrets
+- MUST NEVER enable plaintext secrets in production agent flows
 
 ### Correct Pattern
 
@@ -200,8 +203,8 @@ ssh-cli secrets reencrypt
 - MUST pass exec-family `--timeout <ms>` when the host default deadline is too short
 
 ### FORBIDDEN
-- MUST NOT ignore `truncated_stdout` or `truncated_stderr` when summarizing output to the user
-- MUST NOT retry exit 64 65 66 77 without changing inputs
+- MUST NEVER ignore `truncated_stdout` or `truncated_stderr` when summarizing output to the user
+- MUST NEVER retry exit 64 65 66 77 without changing inputs
 
 ### Correct Pattern
 
@@ -219,11 +222,11 @@ ssh-cli exec prod "long-agent-command-here" --json
 - MUST configure sudo password on the host or pass `--sudo-password` or stdin variant
 - MUST use `su-exec` only when the `su` password is configured
 - MUST honor global `--disable-sudo` and host `disable_sudo`
-- MUST treat elevation as one-shot and never assume a sticky elevated shell
+- MUST treat elevation as one-shot and NEVER assume a sticky elevated shell
 
 ### FORBIDDEN
-- MUST NOT manually prepend raw `sudo` to `exec` when `sudo-exec` exists
-- MUST NOT assume a persistent elevated shell across invocations
+- MUST NEVER manually prepend raw `sudo` to `exec` when `sudo-exec` exists
+- MUST NEVER assume a persistent elevated shell across invocations
 
 ### Correct Pattern
 
@@ -235,29 +238,91 @@ ssh-cli --disable-sudo exec prod "id" --json
 ```
 
 
-## Transfers Tunnels Health
+## SCP Transfers
 ### REQUIRED
-- MUST use `scp upload` or `scp download` for file copy
-- MUST pass `--timeout-ms` on every `tunnel` command
-- MUST use `health-check` to verify connectivity after host changes
-- MUST pass optional `--timeout <ms>` on `health-check` when a non-default deadline is needed
-- MUST bound tunnels and exit when the deadline ends
+- MUST use `scp upload` or `scp download` for regular-file copy only
+- MUST pass `--json` on every agent-parsed transfer
+- MUST parse scp success only from stdout with fields `ok`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`
+- MUST treat `ok` as true and `direction` as `upload` or `download` only
+- MUST use argument order `upload <vps> <local> <remote>` and `download <vps> <remote> <local>`
+- MUST pass optional `--timeout <ms>` on scp when connect-plus-transfer needs a longer deadline
+- MUST prefer `--password-stdin` and `--key-passphrase-stdin` over argv secrets on scp
+- MUST allow `--key` override on scp the same way as exec
+- MUST expect upload to stream in 32 KiB chunks without full-file RAM load
+- MUST expect download to write sibling path ending in `.ssh-cli.partial` then rename into place
+- MUST expect mtime and mode preserve both directions without an extra user flag
+- MUST parse scp hard failures from stderr error envelope when JSON mode is active
 
 ### FORBIDDEN
-- MUST NOT open unbounded tunnels
-- MUST NOT leave tunnel processes intentionally detached forever
-- MUST NOT invent a different timeout flag name for `health-check` (MUST use `--timeout`, MUST NOT use `--timeout-ms` on health-check)
+- MUST NEVER pass directories as local or remote scp paths
+- MUST NEVER invent recursive flags such as `-r`
+- MUST NEVER treat scp as an SFTP subsystem
+- MUST NEVER use `--timeout-ms` on scp (that flag is tunnel-only)
+- MUST NEVER parse scp success as exec-family `stdout`/`stderr`/`exit_code` JSON
+- MUST NEVER treat a leftover `.ssh-cli.partial` path as the final success artifact after a completed download
+- MUST NEVER invent a required user-facing preserve flag for mtime or mode
 
 ### Correct Pattern
 
 ```bash
-ssh-cli scp upload prod ./app.tgz /tmp/app.tgz
-ssh-cli scp download prod /var/log/app.log ./app.log
-ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000
+ssh-cli scp upload prod ./app.tgz /tmp/app.tgz --json
+ssh-cli scp download prod /var/log/app.log ./app.log --json
+ssh-cli scp upload prod ./big.bin /tmp/big.bin --json --timeout 300000
+printf '%s' "$PASS" | ssh-cli scp download prod /etc/app.env ./app.env --json --password-stdin
+printf '%s' "$KEY_PASS" | ssh-cli scp upload prod ./payload.bin /tmp/payload.bin --json --key ~/.ssh/id_ed25519_enc --key-passphrase-stdin
+# success stdout => {"ok":true,"direction":"upload|download","vps":"...","local":"...","remote":"...","bytes":N,"duration_ms":N}
+# non-zero exit => stderr {"exit_code":N,"message":"..."} optional remote_exit_code
+```
+
+
+## Tunnel
+### REQUIRED
+- MUST pass `--timeout-ms` on every `tunnel` command
+- MUST pass `--json` when the agent needs a structured ready signal
+- MUST wait for one stdout object with `event` equal to `tunnel_listening` before using the local port
+- MUST parse tunnel ready fields `ok`, `event`, `vps`, `local_port`, `remote_host`, `remote_port`, `timeout_ms`
+- MUST leave the tunnel process running until `--timeout-ms` deadline or signal
+- MUST parse tunnel hard failures from stderr error envelope when JSON mode is active
+- MUST allow `--key` override on tunnel when required
+
+### FORBIDDEN
+- MUST NEVER open unbounded tunnels
+- MUST NEVER leave tunnel processes intentionally detached forever
+- MUST NEVER use the local port before `tunnel_listening` when `--json` is set
+- MUST NEVER treat tunnel start as complete on process spawn alone
+- MUST NEVER use `--timeout` instead of `--timeout-ms` on tunnel
+- MUST NEVER invent `--password-stdin` on tunnel if not listed here
+
+### Correct Pattern
+
+```bash
+ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
+# wait for stdout => {"ok":true,"event":"tunnel_listening","vps":"prod","local_port":18080,"remote_host":"127.0.0.1","remote_port":8080,"timeout_ms":30000}
+# then use 127.0.0.1:18080; process stays alive until deadline or SIGINT/SIGTERM
+ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json --key ~/.ssh/id_ed25519
+```
+
+
+## Health-check
+### REQUIRED
+- MUST use `health-check` to verify connectivity after host changes
+- MUST pass optional `--timeout <ms>` on `health-check` when a non-default deadline is needed
+- MUST NEVER use `--timeout-ms` on health-check
+
+### Correct Pattern
+
+```bash
 ssh-cli health-check prod --json
 ssh-cli health-check prod --timeout 5000 --json
 ssh-cli health-check --json
 ```
+
+
+## Timeout Flag Matrix
+### REQUIRED
+- MUST pass `--timeout-ms` only on `tunnel` and ALWAYS as mandatory
+- MUST pass `--timeout` on `scp`, exec-family, and `health-check` when overriding deadlines
+- MUST NEVER interchange `--timeout` and `--timeout-ms` across subcommands
 
 
 ## Host Keys and Storage Safety
@@ -269,8 +334,8 @@ ssh-cli health-check --json
 - MUST use `--config-dir` or `SSH_CLI_HOME` for isolated agent sandboxes
 
 ### FORBIDDEN
-- MUST NOT auto-replace host keys without user approval
-- MUST NOT disable TOFU for convenience in production agent flows
+- MUST NEVER auto-replace host keys without user approval
+- MUST NEVER disable TOFU for convenience in production agent flows
 
 ### Correct Pattern
 
@@ -308,8 +373,8 @@ ssh-cli completions powershell
 - MUST surface `remote_exit_code` from the stderr error envelope when present
 
 ### FORBIDDEN
-- MUST NOT swallow non-zero exits
-- MUST NOT confuse remote command failure with local CLI usage failure
+- MUST NEVER swallow non-zero exits
+- MUST NEVER confuse remote command failure with local CLI usage failure
 
 ### Correct Pattern
 
@@ -322,20 +387,24 @@ ssh-cli exec missing-host "true" --json; echo $?
 
 ## JSON Parsing Contract
 ### REQUIRED
-- MUST parse only stdout as success JSON when `--json` is set and exit is 0 or remote command result is returned on stdout
-- MUST read fields `stdout`, `stderr`, `exit_code`, `truncated_stdout`, `truncated_stderr`, and `duration_ms` on exec-family results
-- MUST parse stderr error envelope fields `exit_code`, `message`, and optional `remote_exit_code` on hard failures in JSON mode
+- MUST parse only stdout as success JSON when JSON mode is active and exit is success-path
+- MUST read exec-family fields `stdout`, `stderr`, `exit_code`, `truncated_stdout`, `truncated_stderr`, `duration_ms`
+- MUST read scp success fields `ok`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`
+- MUST read tunnel ready fields `ok`, `event`, `vps`, `local_port`, `remote_host`, `remote_port`, `timeout_ms`
+- MUST treat tunnel `event` as the constant string `tunnel_listening`
+- MUST parse stderr error envelope fields `exit_code`, `message`, and optional `remote_exit_code` on hard failures in JSON mode including scp and tunnel
 - MUST treat list show doctor secrets status payloads as opaque typed objects and only use documented fields
-- MUST treat list/show `password` as JSON `null` when empty or absent (key-only host)
-- MUST treat list/show `password` as masked string `***` when a password is stored
+- MUST treat list/show `password` as JSON `null` when empty or absent and as `***` when stored
 - MUST treat list/show `sudo_password`, `su_password`, and `key_passphrase` as `null` or `***` the same way
 - MUST report truncation to the user when `truncated_stdout` or `truncated_stderr` is true
 
 ### FORBIDDEN
-- MUST NOT invent missing JSON keys
-- MUST NOT invent fake passwords when `password` is `null`
-- MUST NOT pretty-print secrets found inside unexpected fields
-- MUST NOT parse stderr for success JSON data
+- MUST NEVER invent missing JSON keys
+- MUST NEVER invent fake passwords when `password` is `null`
+- MUST NEVER pretty-print secrets found inside unexpected fields
+- MUST NEVER parse stderr for success JSON data
+- MUST NEVER parse scp success as exec-family fields
+- MUST NEVER parse tunnel ready as exec-family fields
 
 ### Correct Pattern
 
@@ -345,7 +414,11 @@ ssh-cli vps show prod --json
 # key-only host => "password": null
 # password host  => "password": "***"
 ssh-cli exec prod "uname -a" --json
-# success stdout => stdout/stderr/exit_code/truncated_*/duration_ms
+# exec success => stdout/stderr/exit_code/truncated_*/duration_ms
+ssh-cli scp upload prod ./f.bin /tmp/f.bin --json
+# scp success => ok/direction/vps/local/remote/bytes/duration_ms
+ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 10000 --json
+# tunnel ready => ok/event/vps/local_port/remote_host/remote_port/timeout_ms
 ```
 
 
@@ -376,8 +449,10 @@ RUST_LOG=debug ssh-cli -v exec prod "true" --json
 4. THEN register or edit host with password-or-key credentials
 5. THEN run `ssh-cli health-check <name> --json` (add `--timeout <ms>` when needed)
 6. THEN run `exec` or `sudo-exec` or `su-exec` with `--json`
-7. THEN parse process exit, success stdout JSON fields, or stderr error envelope before answering the user
-8. FINALLY never leave secrets or master-key in durable logs
+7. THEN for file transfer run `scp upload|download` with `--json` and parse scp-transfer fields
+8. THEN for port forward run `tunnel` with mandatory `--timeout-ms` and `--json`; wait for `tunnel_listening` before use
+9. THEN parse process exit, success stdout schema for the command family, or stderr error envelope before answering the user
+10. FINALLY NEVER leave secrets or master-key in durable logs
 
 ### Correct Pattern
 
@@ -388,21 +463,27 @@ ssh-cli secrets status --json
 ssh-cli vps add --name prod --host prod.example.com --user deploy --key ~/.ssh/id_ed25519 --check
 ssh-cli health-check prod --json
 ssh-cli exec prod "uname -a && df -h" --json --description "baseline"
+ssh-cli scp upload prod ./artifact.tgz /tmp/artifact.tgz --json
+ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
 ```
 
 
 ## Absolute Prohibitions
 ### FORBIDDEN
-- MUST NOT keep SSH sessions open between agent turns
-- MUST NOT reintroduce long-lived Node or protocol daemons for this product surface
-- MUST NOT leak secrets into argv when stdin variants exist
-- MUST NOT ignore host-key mismatch
-- MUST NOT open tunnels without `--timeout-ms`
-- MUST NOT expect INFO progress prose on stderr by default
-- MUST NOT invent fake passwords for key-only hosts when JSON shows `null`
-- MUST NOT document historical version changelogs inside this skill
-- MUST NOT invent version-by-version feature stories
-- MUST NOT paste live credentials into examples or logs
+- MUST NEVER keep SSH sessions open between agent turns except an active bound tunnel until deadline
+- MUST NEVER reintroduce long-lived Node or protocol daemons for this product surface
+- MUST NEVER leak secrets into argv when stdin variants exist
+- MUST NEVER ignore host-key mismatch
+- MUST NEVER open tunnels without `--timeout-ms`
+- MUST NEVER use the tunnel local port before `tunnel_listening` when JSON mode is on
+- MUST NEVER scp directories or invent recursive transfer
+- MUST NEVER treat scp success JSON as exec-family fields
+- MUST NEVER leave download `.ssh-cli.partial` paths as the final deliverable after success
+- MUST NEVER expect INFO progress prose on stderr by default
+- MUST NEVER invent fake passwords for key-only hosts when JSON shows `null`
+- MUST NEVER document historical version changelogs inside this skill
+- MUST NEVER invent version-by-version feature stories
+- MUST NEVER paste live credentials into examples or logs
 
 
 ## Ready Formula Sheet
@@ -430,9 +511,18 @@ ssh-cli -q exec <NAME> "<CMD>" --json
 ssh-cli sudo-exec <NAME> "<CMD>" --json
 printf '%s' "$SUDO" | ssh-cli sudo-exec <NAME> "<CMD>" --json --sudo-password-stdin
 ssh-cli su-exec <NAME> "<CMD>" --json
-ssh-cli scp upload <NAME> <LOCAL> <REMOTE>
-ssh-cli scp download <NAME> <REMOTE> <LOCAL>
-ssh-cli tunnel <NAME> <LOCAL_PORT> <REMOTE_HOST> <REMOTE_PORT> --timeout-ms <MS>
+
+# scp transfers (regular files only; agent MUST use --json)
+ssh-cli scp upload <NAME> <LOCAL_FILE> <REMOTE_FILE> --json
+ssh-cli scp download <NAME> <REMOTE_FILE> <LOCAL_FILE> --json
+ssh-cli scp upload <NAME> <LOCAL_FILE> <REMOTE_FILE> --json --timeout <MS>
+printf '%s' "$PASS" | ssh-cli scp download <NAME> <REMOTE_FILE> <LOCAL_FILE> --json --password-stdin
+printf '%s' "$KEY_PASS" | ssh-cli scp upload <NAME> <LOCAL_FILE> <REMOTE_FILE> --json --key <KEY_PATH> --key-passphrase-stdin
+
+# tunnel (mandatory --timeout-ms; wait for tunnel_listening before use)
+ssh-cli tunnel <NAME> <LOCAL_PORT> <REMOTE_HOST> <REMOTE_PORT> --timeout-ms <MS> --json
+
+# health
 ssh-cli health-check <NAME> --json
 ssh-cli health-check <NAME> --timeout <MS> --json
 ssh-cli health-check --json
@@ -467,6 +557,8 @@ ssh-cli --version
 - MUST re-read this skill before every non-trivial ssh-cli workflow
 - MUST use stored hosts, stdin secrets, JSON output, and one-shot execution
 - MUST parse only stdout for success JSON and keep default stderr quiet
-- MUST parse stderr error envelopes on hard failures
+- MUST parse stderr error envelopes on hard failures including scp and tunnel
+- MUST wait for `tunnel_listening` before using a tunnel local port
+- MUST treat scp as regular files only with partial-then-rename downloads
 - MUST fail closed on auth, host-key, and usage errors
 - MUST keep this skill consolidated as operational formulas only

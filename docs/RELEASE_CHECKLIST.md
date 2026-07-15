@@ -53,8 +53,9 @@
     - `docs/schemas/scp-transfer.schema.json` exists and is indexed (`docs/schemas/README.md`, `llms-full.txt`)
     - download partial suffix **`.ssh-cli.partial`**
     - `tunnel --json` / `tunnel_listening` and/or scp agent JSON surface in README/INTEGRATIONS/AGENTS
+    - bilingual `skills/ssh-cli-en` and `skills/ssh-cli-pt` teach scp-transfer, tunnel_listening, file-only, partial, 32 KiB, timeout matrix (DOC-004d)
     - SECURITY Supported Versions brands **0.4.x** as current line (not 0.3.x)
-    - `cargo test --locked --test gaps_v040_integration` green (includes DOC-004 gates)
+    - `cargo test --locked --test gaps_v040_integration` green (includes DOC-004 / DOC-004d gates)
 
 
 ## How to verify residuals quickly
@@ -72,6 +73,7 @@ ssh-cli --version
 - CLI-004: `health-check --timeout 50` is not "unexpected argument".
 - DOC-003: product-line files (including this checklist pair) contain `0.4.0`.
 - DOC-004: README/INTEGRATIONS/AGENTS/HOW_TO_USE/COOKBOOK/MIGRATION mention file-only SCP and 0.3.9 wire warning; scp-transfer schema present.
+- DOC-004d: `skills/ssh-cli-en` and `skills/ssh-cli-pt` teach scp-transfer, tunnel_listening, file-only, partial, 32 KiB stream, and timeout matrix; evals cover the surface.
 - DENY-002: `deny.toml` has `yanked = "deny"`, `ignore = []`, multiple-versions policy documented.
 - CHG-001 / REL: CHANGELOG section + local tag `v0.4.0` without unauthorized push.
 - TEST-004 / SCP: gaps_v040 covers wire, schema, partial path, preserve, e2e script E10–E14.

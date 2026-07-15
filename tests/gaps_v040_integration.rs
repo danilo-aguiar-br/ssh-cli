@@ -289,6 +289,116 @@ fn gap_doc_004c_docs_folder_scp_tunnel_honest() {
     );
 }
 
+
+#[test]
+fn gap_doc_004d_skills_scp_tunnel_honest() {
+    // Skills must teach agents the 0.4.0 scp/tunnel contracts without version-story prose.
+    for rel in [
+        "skills/ssh-cli-en/SKILL.md",
+        "skills/ssh-cli-pt/SKILL.md",
+    ] {
+        let body = std::fs::read_to_string(root().join(rel)).expect(rel);
+        let lower = body.to_ascii_lowercase();
+        assert!(
+            body.contains("tunnel_listening"),
+            "{rel} must document tunnel_listening ready event"
+        );
+        assert!(
+            body.contains(".ssh-cli.partial"),
+            "{rel} must document partial download path"
+        );
+        assert!(
+            body.contains("32 KiB") || body.contains("32KiB"),
+            "{rel} must document 32 KiB upload stream"
+        );
+        assert!(
+            lower.contains("files-only")
+                || lower.contains("file-only")
+                || lower.contains("regular-file")
+                || lower.contains("regular file")
+                || body.contains("somente-arquivo")
+                || body.contains("só-arquivo")
+                || body.contains("arquivo regular"),
+            "{rel} must document scp regular-files-only"
+        );
+        assert!(
+            body.contains("ok")
+                && body.contains("direction")
+                && body.contains("bytes")
+                && body.contains("duration_ms"),
+            "{rel} must document scp-transfer success fields"
+        );
+        assert!(
+            body.contains("local_port")
+                && body.contains("remote_host")
+                && body.contains("remote_port")
+                && body.contains("timeout_ms"),
+            "{rel} must document tunnel_listening fields"
+        );
+        assert!(
+            body.contains("scp upload")
+                && body.contains("--json")
+                && body.contains("tunnel")
+                && body.contains("--timeout-ms"),
+            "{rel} must include scp --json and tunnel --timeout-ms formulas"
+        );
+        assert!(
+            !body.contains("0.4.0 did")
+                && !body.contains("0.3.9 did")
+                && !body.contains("in version 0.3.9")
+                && !body.contains("versão 0.3.9")
+                && !body.contains("na versão 0.3.9"),
+            "{rel} must stay consolidated without version-story prose"
+        );
+        let fm = body
+            .strip_prefix("---\n")
+            .and_then(|s| s.split_once("\n---"))
+            .map(|(a, _)| a)
+            .expect("frontmatter");
+        let desc = fm
+            .lines()
+            .find(|l| l.starts_with("description:"))
+            .expect("description")
+            .trim_start_matches("description:")
+            .trim();
+        assert!(
+            desc.chars().count() < 1024,
+            "{rel} description must be < 1024 chars (got {})",
+            desc.chars().count()
+        );
+        assert_eq!(
+            desc.matches(':').count(),
+            0,
+            "{rel} description must not contain ':' in content"
+        );
+        assert!(
+            desc.contains("tunnel_listening")
+                && (desc.contains("files-only")
+                    || desc.contains("só-arquivo")
+                    || desc.contains("file-only")
+                    || desc.contains("regular")),
+            "{rel} description must surface scp file-only + tunnel_listening for auto-activation"
+        );
+    }
+    for rel in [
+        "skills/ssh-cli-en/evals/queries.json",
+        "skills/ssh-cli-pt/evals/queries.json",
+    ] {
+        let q = std::fs::read_to_string(root().join(rel)).expect(rel);
+        assert!(
+            q.contains("tunnel_listening")
+                && (q.contains(".ssh-cli.partial") || q.contains("ssh-cli.partial"))
+                && (q.contains("files only")
+                    || q.contains("regular files")
+                    || q.contains("arquivos regulares")
+                    || q.contains("somente arquivo")
+                    || q.contains("directory")
+                    || q.contains("diretorio")),
+            "{rel} evals must cover tunnel_listening + partial + file-only surface"
+        );
+    }
+}
+
 #[test]
 fn gap_rel_004_changelog_039_scp_broken_e_040() {
     let ch = std::fs::read_to_string(root().join("CHANGELOG.md")).expect("CHANGELOG");

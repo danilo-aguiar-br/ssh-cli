@@ -53,8 +53,9 @@
     - `docs/schemas/scp-transfer.schema.json` existe e está indexado (`docs/schemas/README.md`, `llms-full.txt`)
     - sufixo partial de download **`.ssh-cli.partial`**
     - `tunnel --json` / `tunnel_listening` e/ou superfície JSON de scp em README/INTEGRATIONS/AGENTS
+    - skills bilíngues `skills/ssh-cli-en` e `skills/ssh-cli-pt` ensinam scp-transfer, tunnel_listening, file-only, partial, 32 KiB, matriz de timeout (DOC-004d)
     - SECURITY Supported Versions marca **0.4.x** como linha atual (não 0.3.x)
-    - `cargo test --locked --test gaps_v040_integration` verde (inclui gates DOC-004)
+    - `cargo test --locked --test gaps_v040_integration` verde (inclui gates DOC-004 / DOC-004d)
 
 
 ## Como verificar residuals rápido
@@ -72,6 +73,7 @@ ssh-cli --version
 - CLI-004: `health-check --timeout 50` não é "unexpected argument".
 - DOC-003: arquivos de product line (incluindo este par de checklists) contêm `0.4.0`.
 - DOC-004: README/INTEGRATIONS/AGENTS/HOW_TO_USE/COOKBOOK/MIGRATION mencionam SCP file-only e aviso de wire 0.3.9; schema scp-transfer presente.
+- DOC-004d: `skills/ssh-cli-en` e `skills/ssh-cli-pt` ensinam scp-transfer, tunnel_listening, file-only, partial, stream 32 KiB e matriz de timeout; evals cobrem a superfície.
 - DENY-002: `deny.toml` tem `yanked = "deny"`, `ignore = []`, política multiple-versions documentada.
 - CHG-001 / REL: seção no CHANGELOG + tag local `v0.4.0` sem push não autorizado.
 - TEST-004 / SCP: gaps_v040 cobre wire, schema, path partial, preserve, script e2e E10–E14.

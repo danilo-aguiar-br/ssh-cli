@@ -14,11 +14,35 @@
       "should_trigger": true
     },
     {
-      "query": "abrir tunnel ssh de curta duracao com timeout-ms encaminhando 18080 local para 8080 remoto",
+      "query": "abrir tunnel ssh com timeout-ms e --json aguardar event tunnel_listening antes de usar porta local 18080",
       "should_trigger": true
     },
     {
-      "query": "fazer upload de tarball com scp e depois health-check do host",
+      "query": "upload de arquivo unico com scp --json e parse ok direction vps local remote bytes duration_ms",
+      "should_trigger": true
+    },
+    {
+      "query": "scp download com --json esperar .ssh-cli.partial rename atomico e preserve mtime mode",
+      "should_trigger": true
+    },
+    {
+      "query": "recusar scp de diretorio somente arquivos regulares sem -r sem SFTP",
+      "should_trigger": true
+    },
+    {
+      "query": "transferencia scp falhou com --json parsear envelope de erro no stderr exit_code message",
+      "should_trigger": true
+    },
+    {
+      "query": "scp --timeout para copia longa nao usar --timeout-ms no scp",
+      "should_trigger": true
+    },
+    {
+      "query": "upload de artefato grande com scp streaming 32KiB sem carregar arquivo inteiro em RAM",
+      "should_trigger": true
+    },
+    {
+      "query": "falha de bind do tunnel com --json ler envelope de erro no stderr e nao sucesso no stdout",
       "should_trigger": true
     },
     {
@@ -63,6 +87,10 @@
     },
     {
       "query": "vps add com porta ssh 2222 e --check depois connect do host ativo",
+      "should_trigger": true
+    },
+    {
+      "query": "scp download com password-stdin ou key-passphrase-stdin sem segredos no argv",
       "should_trigger": true
     },
     {

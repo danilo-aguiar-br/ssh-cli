@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Product-line docs document **regular files only** (no `-r` / no SFTP subsystem) and the 0.3.9 SCP wire regression (DOC-004, SCP-019, REL-004)
 - Root docs honesty (SECURITY 0.4.x current, INTEGRATIONS real 0.4.0 surface, CONTRIBUTING gaps_v040) (DOC-004b)
 - `docs/*` honesty: AGENTS/HOW_TO_USE/COOKBOOK/MIGRATION/TESTING/RELEASE_CHECKLIST/CROSS_PLATFORM + schemas index cover SCP file-only, partial, 32 KiB stream, preserve, `scp --json`, `tunnel --json` / `tunnel_listening`, and 0.3.9 wire warning (DOC-004c)
+- `skills/*` honesty: bilingual agent skills + evals teach SCP file-only, scp-transfer JSON, `.ssh-cli.partial`, 32 KiB stream, mtime/mode preserve, tunnel `--json` / `tunnel_listening`, timeout flag matrix (DOC-004d)
 - Added `docs/schemas/tunnel-listening.schema.json` for IO-008 agent contract
 - `scp` honors global `--replace-host-key` and global `--output-format json`
 
