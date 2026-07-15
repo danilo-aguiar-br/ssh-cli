@@ -4,7 +4,7 @@
 
 - Read this document in [English](HOW_TO_USE.md).
 - Volte ao [README.pt-BR.md](../README.pt-BR.md) para o mapa completo de comandos.
-- Linha de produto documentada aqui: **0.3.6** (GAP-001–014 fechados).
+- Linha de produto documentada aqui: **0.3.9** (GAP-001–014 fechados; auditoria residual LOG/JSON/CLI fechada).
 
 
 ## Pré-requisitos
@@ -12,7 +12,7 @@
 - Garanta conectividade de rede até o host SSH alvo.
 - Tenha senha ou chave privada OpenSSH para esse host.
 - Prefira um XDG config home gravável para storage multi-host.
-- Instale com `cargo install ssh-cli --locked` (após 0.3.6 no crates.io; até lá use `--path . --locked` a partir do checkout).
+- Instale com `cargo install ssh-cli --locked` (após 0.3.9 no crates.io; até lá use `--path . --locked` a partir do checkout).
 
 
 ## Primeiro comando em 60 segundos
@@ -60,6 +60,7 @@ ssh-cli exec demo "uname -a" --json
 - Importe hosts com `ssh-cli vps import --file hosts.toml`.
 - Re-cifre inventário plaintext após upgrade: `ssh-cli secrets reencrypt`.
 - Espere JSON automático quando stdout não é TTY, salvo `--output-format`.
+- Espere senha vazia em hosts só-chave como JSON `null` (não `"***"`); senhas não vazias mascaram como `***`; texto humano em show usa "(não definida)" para vazio.
 
 
 ## Configuração
@@ -69,13 +70,14 @@ ssh-cli exec demo "uname -a" --json
 - Espere arquivos irmãos `active`, `known_hosts` e `secrets.key` ao lado do config.
 - Sobrescreva o diretório só em testes com `--config-dir` ou `SSH_CLI_HOME`.
 - Armazene timeout, max_command_chars, max_output_chars, segredos sudo e su por host.
-- **Cifragem at-rest por padrão** (ChaCha20-Poly1305): segredos viram blobs `sshcli-enc:v1:…`.
+- Cifragem at-rest por padrão (ChaCha20-Poly1305): segredos viram blobs `sshcli-enc:v1:…`.
 - Ordem da master-key: `SSH_CLI_SECRETS_KEY` → `SSH_CLI_SECRETS_KEY_FILE` → keyring (`SSH_CLI_USE_KEYRING=1`) → XDG `secrets.key`.
 - Opt-out só para testes: `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
 
 
 ## Subcomandos não cobertos acima
-- `health-check` sonda conectividade e imprime latência (`vps add --check` após cadastro).
+- `health-check [--timeout <ms>]` sonda conectividade e imprime latência (`vps add --check` após cadastro); sobrescreva o timeout quando o padrão do host for longo ou curto demais.
+- Nível de tracing padrão é error para manter stderr de JSON e tunnel limpos; use `RUST_LOG` ou `-v` (debug) ao diagnosticar.
 - `tunnel` exige porta local, host remoto, porta remota e `--timeout-ms`.
 - `completions` grava scripts de completion no stdout.
 - `su-exec` exige senha `su` configurada no registro do host.

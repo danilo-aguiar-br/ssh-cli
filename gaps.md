@@ -61,8 +61,9 @@ Todos **Resolvidos** — ver seções anteriores e commit `94941e4` (0.3.8).
 ## GAP-SSH-DOC-003
 
 | Status | **Resolvido (0.3.9)** |
-| Arquivos | `llms.txt`, `llms.pt-BR.txt`, `llms-full.txt`, `README*.md`, `docs/AGENTS*.md`, `INTEGRATIONS*.md` |
-| Teste | `gap_doc_003_version_contem_039` |
+| Arquivos | Product line **0.3.9** + comportamentos LOG/JSON/CLI em `README*`, `llms*`, `INTEGRATIONS*`, `docs/HOW_TO_USE*`, `COOKBOOK*`, `MIGRATION*`, `TESTING*`, `CROSS_PLATFORM*`, `AGENTS*`, `schemas/README`, `skills/*` |
+| Testes | `gap_doc_003_version_contem_039`, `gap_doc_003_product_line_docs_contem_039`, `gap_doc_003_residual_behaviors_documentados` |
+| Nota | Auditoria GraphRAG 2026-07-15 fechou docs que ainda diziam **0.3.6** como linha atual |
 
 ## GAP-SSH-DENY-002
 

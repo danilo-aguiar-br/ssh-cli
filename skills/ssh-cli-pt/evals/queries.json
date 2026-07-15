@@ -42,6 +42,18 @@
       "should_trigger": true
     },
     {
+      "query": "health-check com override opcional de timeout e parse so de stdout json",
+      "should_trigger": true
+    },
+    {
+      "query": "vps list json password null para host so-chave e mascarado para hosts com senha",
+      "should_trigger": true
+    },
+    {
+      "query": "stderr do ssh-cli barulhento com INFO por padrao como agentes mantem logs limpos",
+      "should_trigger": true
+    },
+    {
       "query": "escrever um componente react que busca clima de uma api publica",
       "should_trigger": false
     },

@@ -3,7 +3,7 @@
 > Copy executable recipes that solve real multi-host SSH agent problems.
 
 - Read this document in [Portuguese (pt-BR)](COOKBOOK.pt-BR.md).
-- Product line: **0.3.6**.
+- Product line: **0.3.9**.
 
 
 ## Latency Note
@@ -16,9 +16,12 @@
 - Timeout default: 60000 ms
 - max_command_chars default: 1000
 - max_output_chars default: 100000
+- Tracing default: error (`-v` → debug; `RUST_LOG` overrides)
+- Empty password in list/show JSON: `null` (key-only hosts); non-empty masks as `***`
 - Telemetry: disabled
-- Secrets at rest: **encrypted by default** (auto `secrets.key`)
+- Secrets at rest: encrypted by default (auto `secrets.key`)
 - Install: `cargo install ssh-cli --locked`
+- Supply chain: russh 0.62.2; `cargo deny` with `yanked=deny`, `multiple-versions=warn`
 
 
 ## How To Initialize Master-Key Encryption
@@ -92,6 +95,25 @@ ssh-cli exec prod "dmesg" --json
 ```bash
 ssh-cli vps add --name lab --host lab.example.com --user lab --key ~/.ssh/id_ed25519 --check
 ssh-cli health-check lab --json
+```
+
+
+## How To Probe With Custom Timeout
+
+```bash
+# override host timeout when the default is too long or too short for a quick probe
+ssh-cli health-check lab --timeout 15000 --json
+```
+
+
+## How To Keep Agent stderr Clean
+
+```bash
+# default tracing is error: JSON/tunnel stderr stays free of INFO prose
+ssh-cli exec lab "true" --json
+# only when debugging:
+# RUST_LOG=debug ssh-cli exec lab "true" --json
+# ssh-cli -v exec lab "true" --json
 ```
 
 

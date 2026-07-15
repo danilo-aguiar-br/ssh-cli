@@ -54,13 +54,15 @@
 - Timeout com abort remoto best-effort
 - Tunnel limitado via `--timeout-ms` obrigatório
 - SCP upload e download
-- Health-check com latência
+- Health-check com latência e `--timeout` opcional
 - Completions para bash zsh fish powershell
 - Segredos via flags stdin para evitar leak em argv
 - **Cifragem at-rest por padrão** (ChaCha20-Poly1305) com auto `secrets.key` XDG
 - UX de master-key: `secrets status|init|reencrypt`
 - known_hosts TOFU e escrita atômica do config com flock
-- Pins crypto para `cargo install --locked` limpo (GAP-014)
+- Hosts só-chave: senha vazia serializa como JSON `null` (não `"***"`) em `vps list` / `show`
+- Filtro de tracing default é `error` (stderr limpo para agentes); override com `RUST_LOG` ou `-v` (debug)
+- Install com russh 0.62.2 para `cargo install --locked` limpo
 
 
 ## Início rápido
@@ -96,6 +98,7 @@ ssh-cli exec prod "hostname" --json
 - Prefira `--password-stdin` / `--key` a segredos em argv.
 - Adicione hosts com senha via `vps add --password` ou `--password-stdin`.
 - Adicione hosts com chave via `vps add --key ~/.ssh/id_ed25519`.
+- Em hosts só-chave, campos de senha vazios serializam como JSON `null` em `vps list` / `show` (segredos não vazios mascaram como `"***"`).
 - Marque o host ativo com `connect <name>`.
 - Rode shells remotos com `exec <vps> "<cmd>"`.
 - Eleve com `sudo-exec` ou `su-exec` quando configurado.
@@ -123,7 +126,7 @@ ssh-cli exec prod "hostname" --json
 | `ssh-cli su-exec <vps> <cmd>` | Elevação `su -` one-shot |
 | `ssh-cli scp upload|download` | Transferência de arquivos |
 | `ssh-cli tunnel ... --timeout-ms N` | Port-forward local com deadline |
-| `ssh-cli health-check [<vps>]` | Sonda de conectividade |
+| `ssh-cli health-check [<vps>] [--timeout N]` | Sonda de conectividade (timeout opcional em ms) |
 | `ssh-cli secrets status|init|reencrypt` | Master-key e cifragem at-rest (nunca imprime a chave) |
 | `ssh-cli completions <shell>` | Scripts de completion de shell |
 
@@ -141,9 +144,10 @@ ssh-cli exec prod "hostname" --json
 | `SSH_CLI_ALLOW_PLAINTEXT_SECRETS` | Opt-out da cifragem default (**só testes**) | `1` |
 | `NO_COLOR` | Desativa cores ANSI | `1` |
 | `CLICOLOR_FORCE` | Força cores ANSI | `1` |
-| `RUST_LOG` | Filtro de tracing | `debug` |
+| `RUST_LOG` | Filtro de tracing (nível default é `error`) | `debug` |
 
 - Prefira flags CLI a environment em runs de agentes em produção.
+- O filtro de tracing default é `error` para manter stderr limpo; defina `RUST_LOG` só ao depurar (ou passe `-v` para debug).
 - Nunca coloque senhas SSH em variáveis de ambiente; use inventário + stdin.
 - Variáveis de master-key cifraram **segredos no disco**, não substituem senha SSH.
 
@@ -152,6 +156,7 @@ ssh-cli exec prod "hostname" --json
 ### Conecte agentes só com subprocessos one-shot
 - Invoque `ssh-cli` como subprocesso com argv explícito.
 - Prefira `--json` ou `--output-format json` para parsing de máquina.
+- Faça parse só do stdout; o nível de log default é `error`, então stderr fica silencioso em pipelines JSON — defina `RUST_LOG` só para debug quando precisar.
 - Mapeie exits não zero com semântica sysexits antes de retry.
 - Cadastre hosts uma vez via `vps add` e chame `exec` por tarefa.
 - Passe segredos com `--password-stdin` quando history de argv for arriscado.
@@ -175,6 +180,7 @@ ssh-cli exec prod "hostname" --json
 | `143` | SIGTERM |
 
 - Prefira `--json` ou JSON automático quando stdout não é TTY (`--output-format` sobrescreve).
+- Tracing default é `error`, então tratamento de exit e JSON em stdout ficam sem ruído INFO; use `RUST_LOG=debug` ou `-v` só ao diagnosticar.
 - Faça retry só em IO/timeout transitório (`74`), nunca em auth (`77`) ou uso (`64`).
 
 
@@ -203,6 +209,7 @@ ssh-cli exec prod "hostname" --json
 - Comando rejeitado por tamanho: aumente `max_command_chars` ou encurte o comando.
 - Config com secrets cifrados sem chave: rode `ssh-cli secrets init` ou restaure `secrets.key` / env.
 - sudo-exec desabilitado: remova `--disable-sudo` e defina `disable_sudo=false` no host.
+- Ruído inesperado em stderr em pipelines JSON: o nível de log default já é `error`; defina `RUST_LOG` só para `debug` (ou `-v`) ao diagnosticar.
 - macOS Gatekeeper bloqueia o binário: rode `xattr -d com.apple.quarantine /path/to/ssh-cli`.
 - Permissão negada no config: garanta `chmod 600` no `config.toml` e no `secrets.key` XDG.
 

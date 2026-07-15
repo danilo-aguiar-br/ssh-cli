@@ -3,7 +3,7 @@
 > Escape a cola SSH específica de SO com um binário Rust portátil.
 
 - Read this document in [English](CROSS_PLATFORM.md).
-- Linha de produto: **0.3.6**.
+- Linha de produto: **0.3.9**.
 
 
 ## A dor que você já conhece
@@ -75,4 +75,6 @@
 - Hosts Linux são a superfície primária de validação de subprocessos de agentes.
 - macOS e Windows seguem o mesmo contrato CLI e schemas JSON.
 - Agentes em container devem preservar exit codes e separação stdout/stderr.
+- Tracing padrão é error para o stderr do agente ficar sem prosa INFO salvo `RUST_LOG` ou `-v`.
+- Parseie contratos de máquina só do stdout; trate tracing em stderr como log fora de contrato.
 - Helpers de E2E SSH real ficam em `scripts/e2e_real_ssh.sh` (anti-leak; só local).

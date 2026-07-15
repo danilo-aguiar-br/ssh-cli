@@ -3,7 +3,7 @@
 > Copie receitas executáveis que resolvem problemas reais de SSH multi-host com agentes.
 
 - Read this document in [English](COOKBOOK.md).
-- Linha de produto: **0.3.6**.
+- Linha de produto: **0.3.9**.
 
 
 ## Nota de latência
@@ -16,9 +16,12 @@
 - Timeout padrão: 60000 ms
 - max_command_chars padrão: 1000
 - max_output_chars padrão: 100000
+- Tracing padrão: error (`-v` → debug; `RUST_LOG` sobrescreve)
+- Senha vazia em list/show JSON: `null` (hosts só-chave); não vazia mascara como `***`
 - Telemetria: desligada
-- Segredos at-rest: **cifrados por padrão** (auto `secrets.key`)
+- Segredos at-rest: cifrados por padrão (auto `secrets.key`)
 - Install: `cargo install ssh-cli --locked`
+- Supply chain: russh 0.62.2; `cargo deny` com `yanked=deny`, `multiple-versions=warn`
 
 
 ## Como inicializar cifragem com master-key
@@ -92,6 +95,25 @@ ssh-cli exec prod "dmesg" --json
 ```bash
 ssh-cli vps add --name lab --host lab.example.com --user lab --key ~/.ssh/id_ed25519 --check
 ssh-cli health-check lab --json
+```
+
+
+## Como sondar com timeout customizado
+
+```bash
+# sobrescreva o timeout do host quando o padrão for longo ou curto demais para um probe
+ssh-cli health-check lab --timeout 15000 --json
+```
+
+
+## Como manter o stderr do agente limpo
+
+```bash
+# tracing padrão é error: stderr de JSON/tunnel fica sem prosa INFO
+ssh-cli exec lab "true" --json
+# só ao diagnosticar:
+# RUST_LOG=debug ssh-cli exec lab "true" --json
+# ssh-cli -v exec lab "true" --json
 ```
 
 

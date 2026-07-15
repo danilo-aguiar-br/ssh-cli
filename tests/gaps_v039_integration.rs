@@ -179,6 +179,87 @@ fn gap_doc_003_version_contem_039() {
         .stdout(predicate::str::contains("0.3.9"));
 }
 
+/// Product-line public docs must state **0.3.9** (not stale 0.3.6-as-current).
+#[test]
+fn gap_doc_003_product_line_docs_contem_039() {
+    const FILES: &[&str] = &[
+        "README.md",
+        "README.pt-BR.md",
+        "llms.txt",
+        "llms.pt-BR.txt",
+        "llms-full.txt",
+        "INTEGRATIONS.md",
+        "INTEGRATIONS.pt-BR.md",
+        "docs/AGENTS.md",
+        "docs/AGENTS.pt-BR.md",
+        "docs/HOW_TO_USE.md",
+        "docs/HOW_TO_USE.pt-BR.md",
+        "docs/COOKBOOK.md",
+        "docs/COOKBOOK.pt-BR.md",
+        "docs/MIGRATION.md",
+        "docs/MIGRATION.pt-BR.md",
+        "docs/TESTING.md",
+        "docs/TESTING.pt-BR.md",
+        "docs/CROSS_PLATFORM.md",
+        "docs/CROSS_PLATFORM.pt-BR.md",
+        "docs/schemas/README.md",
+    ];
+    for path in FILES {
+        let body = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("ler {path}: {e}"));
+        assert!(
+            body.contains("0.3.9"),
+            "{path} deve mencionar product line 0.3.9"
+        );
+        // HOW_TO_USE/COOKBOOK/TESTING/CROSS_PLATFORM must not claim current line is only 0.3.6
+        if path.contains("HOW_TO_USE")
+            || path.contains("COOKBOOK")
+            || path.contains("TESTING")
+            || path.contains("CROSS_PLATFORM")
+            || path.contains("schemas/README")
+        {
+            assert!(
+                !body.contains("Product line: **0.3.6**")
+                    && !body.contains("Linha de produto: **0.3.6**")
+                    && !body.contains("product line documented here: **0.3.6**")
+                    && !body.contains("Linha de produto documentada aqui: **0.3.6**")
+                    && !body.contains("payloads (**0.3.6**)"),
+                "{path} ainda declara product line 0.3.6 como atual"
+            );
+        }
+    }
+}
+
+/// Residual audit behaviors must appear in agent-facing docs (LOG/JSON/CLI).
+#[test]
+fn gap_doc_003_residual_behaviors_documentados() {
+    let agents = std::fs::read_to_string("docs/AGENTS.md").expect("AGENTS");
+    let readme = std::fs::read_to_string("README.md").expect("README");
+    let skill = std::fs::read_to_string("skills/ssh-cli-en/SKILL.md").expect("skill en");
+    for (label, body) in [("AGENTS", agents.as_str()), ("README", readme.as_str())] {
+        assert!(
+            body.to_ascii_lowercase().contains("error")
+                && (body.contains("RUST_LOG") || body.contains("tracing")),
+            "{label} deve documentar default tracing error / RUST_LOG"
+        );
+        assert!(
+            body.contains("null"),
+            "{label} deve documentar password JSON null"
+        );
+        assert!(
+            body.contains("health-check") && body.contains("--timeout"),
+            "{label} deve documentar health-check --timeout"
+        );
+    }
+    assert!(
+        skill.contains("null")
+            && skill.contains("--timeout")
+            && skill.contains("error")
+            && !skill.contains("0.3.9 did")
+            && !skill.contains("in version 0.3.9"),
+        "skill en deve consolidar null/timeout/error sem changelog por versão"
+    );
+}
+
 // --- DENY-002 policy still yanked=deny ignore empty ---
 
 #[test]

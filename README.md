@@ -54,13 +54,15 @@
 - Timeout with best-effort remote abort
 - Bounded tunnel via mandatory `--timeout-ms`
 - SCP upload and download
-- Health-check latency probe
+- Health-check latency probe with optional `--timeout`
 - Shell completions for bash zsh fish powershell
 - Secrets via stdin flags to avoid argv leaks
 - **Default at-rest encryption** (ChaCha20-Poly1305) with auto XDG `secrets.key`
 - Master-key UX: `secrets status|init|reencrypt`
 - TOFU `known_hosts` and atomic config writes with flock
-- Install crypto pins for clean `cargo install --locked` (GAP-014)
+- Key-only hosts: empty password serializes as JSON `null` (not `"***"`) in `vps list` / `show`
+- Default tracing filter is `error` (agent-first clean stderr); override with `RUST_LOG` or `-v` (debug)
+- Install with russh 0.62.2 for clean `cargo install --locked`
 
 
 ## Quick Start
@@ -96,6 +98,7 @@ ssh-cli exec prod "hostname" --json
 - Prefer `--password-stdin` / `--key` over argv secrets.
 - Add password hosts with `vps add --password` or `--password-stdin`.
 - Add key hosts with `vps add --key ~/.ssh/id_ed25519`.
+- On key-only hosts, empty password fields serialize as JSON `null` in `vps list` / `show` (non-empty secrets mask as `"***"`).
 - Mark active host with `connect <name>`.
 - Run remote shells with `exec <vps> "<cmd>"`.
 - Elevate with `sudo-exec` or `su-exec` when configured.
@@ -123,7 +126,7 @@ ssh-cli exec prod "hostname" --json
 | `ssh-cli su-exec <vps> <cmd>` | One-shot `su -` elevation |
 | `ssh-cli scp upload|download` | File transfer |
 | `ssh-cli tunnel ... --timeout-ms N` | Bounded local port forward |
-| `ssh-cli health-check [<vps>]` | Connectivity probe |
+| `ssh-cli health-check [<vps>] [--timeout N]` | Connectivity probe (optional timeout ms) |
 | `ssh-cli secrets status|init|reencrypt` | Master-key and at-rest encryption (never prints key) |
 | `ssh-cli completions <shell>` | Shell completion scripts |
 
@@ -141,9 +144,10 @@ ssh-cli exec prod "hostname" --json
 | `SSH_CLI_ALLOW_PLAINTEXT_SECRETS` | Opt-out of default encryption (**tests only**) | `1` |
 | `NO_COLOR` | Disable ANSI colors | `1` |
 | `CLICOLOR_FORCE` | Force ANSI colors | `1` |
-| `RUST_LOG` | Tracing filter override | `debug` |
+| `RUST_LOG` | Tracing filter override (default level is `error`) | `debug` |
 
 - Prefer CLI flags over environment for production agent runs.
+- Default tracing filter is `error` so agent stderr stays clean; set `RUST_LOG` only when debugging (or pass `-v` for debug).
 - Never put host passwords in environment variables; use registry + stdin.
 - Master-key env vars are for **encryption of secrets at rest**, not SSH passwords.
 
@@ -152,6 +156,7 @@ ssh-cli exec prod "hostname" --json
 ### Wire agents with one-shot subprocesses only
 - Invoke `ssh-cli` as a subprocess with explicit argv.
 - Prefer `--json` or `--output-format json` for machine parsing.
+- Parse stdout only; default log level is `error` so stderr stays silent for JSON pipelines — set `RUST_LOG` only to debug when needed.
 - Map non-zero exits with sysexits semantics before retry.
 - Store hosts once via `vps add` then call `exec` per task.
 - Pass secrets through `--password-stdin` when argv history is risky.
@@ -175,6 +180,7 @@ ssh-cli exec prod "hostname" --json
 | `143` | SIGTERM |
 
 - Prefer `--json` or auto JSON when stdout is not a TTY (`--output-format` overrides).
+- Default tracing is `error`, so exit handling and JSON stdout stay free of INFO noise; use `RUST_LOG=debug` or `-v` only when diagnosing.
 - Retry only on transient IO/timeout (`74`), never on auth (`77`) or usage (`64`).
 
 
@@ -203,6 +209,7 @@ ssh-cli exec prod "hostname" --json
 - Command rejected as too long: raise `max_command_chars` or shorten the command.
 - Config has encrypted secrets but no key: run `ssh-cli secrets init` or restore `secrets.key` / env master-key.
 - sudo-exec disabled: remove `--disable-sudo` and set `disable_sudo=false` on the host.
+- Unexpected stderr noise in JSON pipelines: default log level is already `error`; set `RUST_LOG` only to `debug` (or `-v`) when diagnosing.
 - macOS Gatekeeper blocks binary: run `xattr -d com.apple.quarantine /path/to/ssh-cli`.
 - Permission denied on config: ensure `chmod 600` on the XDG `config.toml` and `secrets.key`.
 

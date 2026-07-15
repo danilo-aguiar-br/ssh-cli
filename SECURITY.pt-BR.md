@@ -71,3 +71,4 @@
 - Desabilite elevação com `--disable-sudo` quando o workflow não deve escalar.
 - Rode apenas comandos one-shot; nunca espere um daemon SSH de longa duração desta CLI.
 - Instale com `--locked` para evitar drift de re-resolve crypto.
+- Prefira a linha atual **0.3.9+** para o piso de supply-chain (russh 0.62.2).

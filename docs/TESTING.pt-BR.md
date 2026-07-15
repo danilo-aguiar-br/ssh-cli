@@ -3,7 +3,7 @@
 > Rode o perfil certo de testes do ssh-cli sem travar em redes remotas.
 
 - Read this document in [English](TESTING.md).
-- Linha de produto: **0.3.6**.
+- Linha de produto: **0.3.9**.
 
 
 ## Por que testes categorizados
@@ -11,12 +11,16 @@
 - Integration tests protegem contratos da CLI, storage e snapshots.
 - Testes live remotos são opcionais e devem sempre usar timeout rígido e nunca logar credenciais.
 - Gates de install resolve protegem o onboarding no crates.io (GAP-014).
+- Suites de gaps residuais travam contratos de I/O de agente, exit codes, supply chain e mascaramento.
 
 
 ## Categorias de teste
 - Unit tests em módulos `src/**` (inclui cifragem default em `secrets`)
 - CLI e2e em `tests/e2e_cli.rs`
 - Integração de gaps residuais em `tests/gaps_v035_integration.rs` (só secrets fake)
+- Suite residual de I/O de agente em `tests/gaps_v037_integration.rs`
+- Suite residual pós-0.3.7 em `tests/gaps_v038_integration.rs`
+- Suite residual pós-0.3.8 em `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC/DENY/CHG)
 - Storage integration em `tests/storage_integration.rs`
 - Snapshots em `tests/snapshot_tests.rs`
 - SCP e tunnel em `tests/`
@@ -41,6 +45,9 @@ bash scripts/verify_install_resolve.sh
 ```bash
 cargo test --locked --test e2e_cli
 cargo test --locked --test gaps_v035_integration
+cargo test --locked --test gaps_v037_integration
+cargo test --locked --test gaps_v038_integration
+cargo test --locked --test gaps_v039_integration
 cargo test --locked --test storage_integration
 cargo test --locked --test snapshot_tests
 cargo test --locked packing
@@ -66,7 +73,9 @@ bash scripts/e2e_real_ssh.sh --from-grok-config
 - `--config-dir` nas invocações da CLI é preferido para inventários temporários.
 - `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` desliga cifragem default em testes que assertam TOML em claro.
 - Sem esse opt-out, a primeira gravação de segredo cria `secrets.key` e cifra campos.
-- `RUST_LOG` habilita tracing debug em stderr ao diagnosticar falhas.
+- Nível de tracing padrão é error; não espere prosa INFO em stderr por omissão.
+- `RUST_LOG` sobrescreve o filtro padrão ao diagnosticar falhas.
+- `-v` habilita tracing debug sem definir `RUST_LOG`.
 - `NO_COLOR=1` estabiliza saída sensível a snapshot quando necessário.
 - Nunca coloque senhas reais de host em env vars que os testes imprimem.
 
@@ -77,3 +86,4 @@ bash scripts/e2e_real_ssh.sh --from-grok-config
 - Timeouts flaky: garanta que nenhum host remoto real é exigido salvo configuração explícita.
 - Falhas de permissão: confirme dirs temp graváveis e asserções de mode no SO.
 - Surpresa de fixture cifrada: defina `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` ou forneça master-key de teste via env.
+- Stderr inesperadamente quieto: o padrão é tracing error; defina `RUST_LOG` ou `-v` se precisar de linhas debug.

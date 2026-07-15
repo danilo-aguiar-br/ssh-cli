@@ -28,7 +28,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Never bump MSRV without an explicit issue discussion.
 
 ### Dependency pinning
-- Keep crypto RC pins (`primefield`, `primeorder`, `ecdsa`, `pkcs5`, `elliptic-curve`, exact `russh`) until upstream stabilizes.
+- From **0.3.8+** the product line uses **russh 0.62.2** without the older COMPAT RC crypto pins; do not reintroduce dead RC pins without an issue.
 - Never run blind `cargo update` on the crypto graph.
 - Run `scripts/verify_install_resolve.sh` after any dependency change.
 
@@ -63,6 +63,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Read [docs/TESTING.md](docs/TESTING.md) for categories and profiles.
 - Prefer deterministic unit tests for packing and schema migration.
 - Use integration tests under `tests/` for CLI contracts.
+- Include gap regression suites `tests/gaps_v038_integration.rs` and `tests/gaps_v039_integration.rs` when touching residual audit surface.
 - For local real-SSH E2E, use `bash scripts/e2e_real_ssh.sh --from-grok-config` (or env `SSH_CLI_E2E_*`); never log credentials.
 - Unit/integration tests that need plaintext secrets must set `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
 - Never leave flaky remote-dependent tests without timeouts.

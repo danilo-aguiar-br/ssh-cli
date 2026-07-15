@@ -71,3 +71,4 @@
 - Disable elevation with `--disable-sudo` when a workflow must not escalate.
 - Run one-shot commands only; never expect a long-lived SSH daemon from this CLI.
 - Install with `--locked` to avoid accidental crypto re-resolve drift.
+- Prefer current **0.3.9+** for the supply-chain floor (russh 0.62.2).

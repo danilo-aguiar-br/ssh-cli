@@ -1,6 +1,6 @@
 ---
 name: ssh-cli
-description: This skill MUST auto-activate when the user or agent needs remote SSH server operations through the ssh-cli binary. It covers multi-host VPS registry on XDG storage, vps add list show edit remove path doctor export import, connect, exec, sudo-exec with safe sh -c packing, su-exec one-shot, scp upload download, tunnel with mandatory timeout-ms, health-check, secrets status init reencrypt with default ChaCha20-Poly1305 at-rest encryption, password or private key auth, password-stdin and key-passphrase, dual max_command_chars and max_output_chars, TOFU known_hosts with replace-host-key, atomic config mode 0600, JSON contracts, sysexits exit codes, completions and cargo install locked. It teaches action prompts and ready formulas. NEVER emit telemetry. NEVER keep a long-lived SSH session daemon. NEVER leak passwords or master-key into logs.
+description: This skill MUST auto-activate when the user or agent needs remote SSH server operations through the ssh-cli binary. It covers multi-host VPS registry on XDG storage, vps add list show edit remove path doctor export import, connect, exec, sudo-exec with safe sh -c packing, su-exec one-shot, scp upload download, tunnel with mandatory timeout-ms, health-check with optional timeout override in ms, secrets status init reencrypt with default ChaCha20-Poly1305 at-rest encryption, password or key auth, password-stdin and key-passphrase, list/show JSON password null for key-only hosts and masked *** when present, dual max_command_chars and max_output_chars, default error-level logging with clean agent stderr (use -v or RUST_LOG only when debugging), TOFU known_hosts with replace-host-key, atomic config mode 0600, JSON contracts, sysexits, completions and cargo install locked. NEVER emit telemetry. NEVER keep a long-lived SSH session daemon. NEVER leak passwords or master-key into logs.
 ---
 
 # ssh-cli Agent Skill
@@ -56,16 +56,23 @@ ssh-cli --help
 - MUST treat non-TTY stdout as JSON by default when `--output-format` is omitted
 - MUST force JSON with `--json` or `--output-format json` for agent parsing
 - MUST send human logs only to stderr and parse only stdout as data
+- MUST expect default log level `error` so stderr stays clean for agents
+- MUST use `-v` (raises verbosity to `debug`) or `RUST_LOG` only when debugging
 
 ### FORBIDDEN
 - MUST NOT mix stderr logs into the JSON parse stream
 - MUST NOT assume a previous process left an open SSH channel
+- MUST NOT expect INFO progress prose on stderr by default
+- MUST NOT parse stderr for structured JSON results
 
 ### Correct Pattern
 
 ```bash
 ssh-cli exec prod "uname -a" --json
 echo $?
+# debug only when diagnosing
+ssh-cli -v exec prod "true" --json
+RUST_LOG=debug ssh-cli exec prod "true" --json
 ```
 
 
@@ -74,6 +81,8 @@ echo $?
 - MUST register each host with a unique `--name`
 - MUST supply password or `--key` or stdin password on add
 - MUST mask secrets when showing list or show output to humans
+- MUST treat empty or absent password in list/show JSON as JSON `null` (key-only host)
+- MUST treat non-empty password in list/show JSON as masked `***` never raw
 - MUST run `vps doctor --json` when config location is unknown
 - MUST use `vps path` to print the winning config file path
 - MUST use `vps export` without secrets by default
@@ -81,6 +90,8 @@ echo $?
 
 ### FORBIDDEN
 - MUST NOT create empty-credential hosts
+- MUST NOT invent fake passwords for key-only hosts
+- MUST NOT treat masked `***` as a real password value
 - MUST NOT commit raw secret inventories to git
 - MUST NOT assume `.env` files are read at runtime
 - MUST NOT print decrypted secrets into chat logs
@@ -120,9 +131,11 @@ ssh-cli health-check prod --json
 - MUST prefer `--sudo-password-stdin` and `--su-password-stdin` over argv secrets
 - MUST treat exit 77 as authentication failure and change credentials before retry
 - MUST pass `--key-passphrase` or passphrase stdin only when the key is encrypted
+- MUST expect list/show JSON `password` to be `null` for key-only hosts and `***` when a password is stored
 
 ### FORBIDDEN
 - MUST NOT invent fake passwords for key-only hosts
+- MUST NOT treat JSON `null` password as a bug or as a missing field to fabricate
 - MUST NOT print key passphrases or SSH passwords
 - MUST NOT store secrets in shell history when stdin is available
 
@@ -215,11 +228,13 @@ ssh-cli --disable-sudo exec prod "id" --json
 - MUST use `scp upload` or `scp download` for file copy
 - MUST pass `--timeout-ms` on every `tunnel` command
 - MUST use `health-check` to verify connectivity after host changes
+- MUST allow optional `--timeout <ms>` override on `health-check` when a non-default deadline is needed
 - MUST bound tunnels and exit when the deadline ends
 
 ### FORBIDDEN
 - MUST NOT open unbounded tunnels
 - MUST NOT leave tunnel processes intentionally detached forever
+- MUST NOT invent a different timeout flag name for `health-check` (use `--timeout`, not `--timeout-ms`)
 
 ### Correct Pattern
 
@@ -228,6 +243,7 @@ ssh-cli scp upload prod ./app.tgz /tmp/app.tgz
 ssh-cli scp download prod /var/log/app.log ./app.log
 ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000
 ssh-cli health-check prod --json
+ssh-cli health-check prod --timeout 5000 --json
 ```
 
 
@@ -292,11 +308,24 @@ ssh-cli exec missing-host "true" --json; echo $?
 - MUST parse only stdout as JSON when `--json` is set
 - MUST read fields `stdout`, `stderr`, `exit_code`, truncation flags, and `duration_ms` on exec-family results
 - MUST treat list show doctor secrets status payloads as opaque typed objects and only use documented fields
+- MUST treat list/show `password` as JSON `null` when empty or absent (key-only host)
+- MUST treat list/show `password` as masked string `***` when a password is stored
 - MUST report truncation to the user when output was cut by `max_output_chars`
 
 ### FORBIDDEN
 - MUST NOT invent missing JSON keys
+- MUST NOT invent fake passwords when `password` is `null`
 - MUST NOT pretty-print secrets found inside unexpected fields
+- MUST NOT parse stderr for JSON data
+
+### Correct Pattern
+
+```bash
+ssh-cli vps list --json
+ssh-cli vps show prod --json
+# key-only host => "password": null
+# password host  => "password": "***"
+```
 
 
 ## Environment Variables
@@ -307,12 +336,14 @@ ssh-cli exec missing-host "true" --json; echo $?
 - MUST use `SSH_CLI_SECRETS_KEY_FILE` when the master key lives in a file
 - MUST use `SSH_CLI_USE_KEYRING=1` when OS keyring storage is required
 - MUST reserve `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` for tests only
+- MUST use `RUST_LOG` only when debugging; default remains error-level without it
 
 ### Correct Pattern
 
 ```bash
 SSH_CLI_HOME=/tmp/ssh-cli-test ssh-cli vps doctor --json
 SSH_CLI_LANG=en-US ssh-cli --help
+RUST_LOG=debug ssh-cli -v exec prod "true" --json
 ```
 
 
@@ -322,9 +353,9 @@ SSH_CLI_LANG=en-US ssh-cli --help
 2. THEN inspect config with `ssh-cli vps doctor --json` and `ssh-cli vps path`
 3. THEN ensure secrets layer with `ssh-cli secrets status --json`
 4. THEN register or edit host with password-or-key credentials
-5. THEN run `ssh-cli health-check <name> --json`
+5. THEN run `ssh-cli health-check <name> --json` (add `--timeout <ms>` when needed)
 6. THEN run `exec` or `sudo-exec` or `su-exec` with `--json`
-7. THEN parse exit code and JSON fields before answering the user
+7. THEN parse exit code and JSON fields from stdout only before answering the user
 8. FINALLY never leave secrets or master-key in durable logs
 
 ### Correct Pattern
@@ -334,6 +365,7 @@ ssh-cli --version
 ssh-cli vps doctor --json
 ssh-cli secrets status --json
 ssh-cli vps add --name prod --host prod.example.com --user deploy --key ~/.ssh/id_ed25519 --check
+ssh-cli health-check prod --json
 ssh-cli exec prod "uname -a && df -h" --json --description "baseline"
 ```
 
@@ -345,6 +377,8 @@ ssh-cli exec prod "uname -a && df -h" --json --description "baseline"
 - MUST NOT leak secrets into argv when stdin variants exist
 - MUST NOT ignore host-key mismatch
 - MUST NOT open tunnels without `--timeout-ms`
+- MUST NOT expect INFO progress prose on stderr by default
+- MUST NOT invent fake passwords for key-only hosts when JSON shows `null`
 - MUST NOT document historical version changelogs inside this skill
 - MUST NOT invent version-by-version feature stories
 - MUST NOT paste live credentials into examples or logs
@@ -375,6 +409,7 @@ ssh-cli scp upload <NAME> <LOCAL> <REMOTE>
 ssh-cli scp download <NAME> <REMOTE> <LOCAL>
 ssh-cli tunnel <NAME> <LOCAL_PORT> <REMOTE_HOST> <REMOTE_PORT> --timeout-ms <MS>
 ssh-cli health-check <NAME> --json
+ssh-cli health-check <NAME> --timeout <MS> --json
 
 # secrets and safety
 ssh-cli secrets status --json
@@ -382,6 +417,10 @@ ssh-cli secrets init
 ssh-cli secrets reencrypt
 ssh-cli --replace-host-key exec <NAME> "true"
 ssh-cli --config-dir <DIR> vps list --json
+
+# debug (optional; default log level is error)
+ssh-cli -v exec <NAME> "true" --json
+RUST_LOG=debug ssh-cli exec <NAME> "true" --json
 
 # install
 cargo install ssh-cli --locked --force
@@ -393,5 +432,6 @@ ssh-cli --version
 ### REQUIRED
 - MUST re-read this skill before every non-trivial ssh-cli workflow
 - MUST prefer stored hosts, stdin secrets, JSON output, and one-shot execution
+- MUST parse only stdout for JSON and keep default stderr quiet
 - MUST fail closed on auth, host-key, and usage errors
 - MUST keep this skill consolidated as operational formulas only

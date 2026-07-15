@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tunnel/JSON stderr no longer emits INFO progress banners by default (LOG-001)
 - Key-only VPS JSON: empty password serializes as `null` instead of `"***"` (JSON-001)
 - `health-check --timeout <ms>` override aligned with exec (CLI-004)
-- Product-line docs (`llms*.txt`, README, AGENTS, INTEGRATIONS) bumped to **0.3.9** (DOC-003)
+- Product-line docs bumped to **0.3.9** and residual behaviors documented across README, `llms*.txt`, INTEGRATIONS, `docs/*` (HOW_TO_USE, COOKBOOK, MIGRATION, TESTING, CROSS_PLATFORM, AGENTS, schemas), and skills (DOC-003 deep audit)
 - CHANGELOG compare anchors for 0.3.8/0.3.9 (CHG-001)
 - `deny.toml` documents expected multi-version warns without CVE ignore (DENY-002)
 

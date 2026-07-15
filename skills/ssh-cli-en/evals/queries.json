@@ -42,6 +42,18 @@
       "should_trigger": true
     },
     {
+      "query": "health-check with optional timeout override and parse only stdout json",
+      "should_trigger": true
+    },
+    {
+      "query": "vps list json password is null for key-only host and masked for password hosts",
+      "should_trigger": true
+    },
+    {
+      "query": "ssh-cli stderr is noisy with INFO by default how do agents keep logs clean",
+      "should_trigger": true
+    },
+    {
       "query": "write a react component that fetches weather from a public api",
       "should_trigger": false
     },

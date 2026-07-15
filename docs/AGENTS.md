@@ -27,7 +27,7 @@
 ### Keep credentials and host trust local
 - Store hosts under XDG without `.env` sprawl.
 - Prefer private keys and stdin secrets over chat-pasted passwords.
-- **Default at-rest encryption** (ChaCha20-Poly1305 + auto `secrets.key`); manage with `secrets status|init|reencrypt`.
+- Default at-rest encryption (ChaCha20-Poly1305 + auto `secrets.key`); manage with `secrets status|init|reencrypt`.
 - Enforce TOFU known_hosts so silent MITM is harder.
 - Disable elevation when a workflow must stay unprivileged.
 - FORBIDDEN: log master-key, host passwords, or decrypted secrets.
@@ -46,10 +46,13 @@
 ### Imperative contract for authors
 - REQUIRED: invoke `ssh-cli` as a subprocess and wait for exit (one-shot).
 - REQUIRED: parse stdout JSON when `--json` or `--output-format json` is set (auto JSON when stdout is not a TTY).
-- REQUIRED: treat stderr tracing as non-contract logs.
+- REQUIRED: treat stderr tracing as non-contract logs; do not parse stderr as JSON.
+- REQUIRED: expect default tracing level error; set `RUST_LOG` or `-v` only when debugging.
 - REQUIRED: register hosts with `vps add` before repeated remote work.
-- REQUIRED: supply password or key; empty credentials are rejected.
+- REQUIRED: supply password or key; empty credentials are rejected at write time.
+- REQUIRED: treat empty password in list/show JSON as `null` (key-only hosts); non-empty is masked `***`.
 - REQUIRED: pass `--timeout-ms` for every `tunnel` invocation.
+- REQUIRED: may pass `health-check --timeout <ms>` when host default timeout is too long or short.
 - REQUIRED: prefer `--password-stdin` / `--key` over argv secrets.
 - REQUIRED: install with `cargo install ssh-cli --locked` (or path install with pins).
 - FORBIDDEN: assume a long-lived SSH connection across process runs.
@@ -72,7 +75,8 @@
 - Doctor: `ssh-cli vps doctor --json` returns layer, paths, schema, host count, `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out`, telemetry false.
 - Secrets: `ssh-cli secrets status --json` returns encryption mode without key material.
 - Exec family: `ssh-cli exec|sudo-exec|su-exec ... --json` returns stdout, stderr, exit_code, truncation flags, duration_ms.
-- Health: `ssh-cli health-check --json` returns name, status, latency_ms.
+- Health: `ssh-cli health-check [--timeout <ms>] --json` returns name, status, latency_ms.
+- Empty password fields serialize as JSON `null`; non-empty secrets mask as `***`.
 - Validate payloads against schemas under `docs/schemas/`.
 
 

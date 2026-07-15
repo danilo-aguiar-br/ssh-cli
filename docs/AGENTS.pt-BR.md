@@ -27,7 +27,7 @@
 ### Mantenha credenciais e confiança de host locais
 - Guarde hosts sob XDG sem proliferação de `.env`.
 - Prefira chaves privadas e segredos via stdin a senhas coladas no chat.
-- **Cifragem at-rest por padrão** (ChaCha20-Poly1305 + auto `secrets.key`); gerencie com `secrets status|init|reencrypt`.
+- Cifragem at-rest por padrão (ChaCha20-Poly1305 + auto `secrets.key`); gerencie com `secrets status|init|reencrypt`.
 - Force known_hosts TOFU para dificultar MITM silencioso.
 - Desabilite elevação quando o workflow deve permanecer sem privilégio.
 - PROIBIDO: logar master-key, senhas de host ou segredos decifrados.
@@ -46,10 +46,13 @@
 ### Contrato imperativo para autores
 - OBRIGATÓRIO: invocar `ssh-cli` como subprocesso e aguardar o exit (one-shot).
 - OBRIGATÓRIO: parsear JSON de stdout quando `--json` ou `--output-format json` (JSON auto se stdout não é TTY).
-- OBRIGATÓRIO: tratar tracing em stderr como log fora de contrato.
+- OBRIGATÓRIO: tratar tracing em stderr como log fora de contrato; não parsear stderr como JSON.
+- OBRIGATÓRIO: esperar tracing padrão no nível error; definir `RUST_LOG` ou `-v` só ao diagnosticar.
 - OBRIGATÓRIO: cadastrar hosts com `vps add` antes de trabalho remoto repetido.
-- OBRIGATÓRIO: fornecer senha ou chave; credencial vazia é rejeitada.
+- OBRIGATÓRIO: fornecer senha ou chave; credencial vazia é rejeitada na gravação.
+- OBRIGATÓRIO: tratar senha vazia em list/show JSON como `null` (hosts só-chave); não vazia mascara `***`.
 - OBRIGATÓRIO: passar `--timeout-ms` em toda invocação de `tunnel`.
+- OBRIGATÓRIO: pode passar `health-check --timeout <ms>` quando o timeout padrão do host for longo ou curto demais.
 - OBRIGATÓRIO: preferir `--password-stdin` / `--key` a segredos em argv.
 - OBRIGATÓRIO: instalar com `cargo install ssh-cli --locked` (ou path com pins).
 - PROIBIDO: assumir conexão SSH longa entre runs de processo.
@@ -72,7 +75,8 @@
 - Doctor: `ssh-cli vps doctor --json` retorna camada, paths, schema, contagem de hosts, `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out`, telemetry false.
 - Secrets: `ssh-cli secrets status --json` retorna modo de cifragem sem material de chave.
 - Família exec: `ssh-cli exec|sudo-exec|su-exec ... --json` retorna stdout, stderr, exit_code, flags de truncagem, duration_ms.
-- Health: `ssh-cli health-check --json` retorna name, status, latency_ms.
+- Health: `ssh-cli health-check [--timeout <ms>] --json` retorna name, status, latency_ms.
+- Campos de senha vazios serializam como JSON `null`; segredos não vazios mascaram como `***`.
 - Valide payloads contra schemas em `docs/schemas/`.
 
 

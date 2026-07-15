@@ -31,7 +31,7 @@ ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers throu
 - `su-exec` elevates with one-shot `su -`
 - `scp upload|download` transfers files
 - `tunnel` opens bounded local port forward with required `--timeout-ms`
-- `health-check` probes connectivity and latency
+- `health-check [--timeout]` probes connectivity and latency
 - `secrets status|init|reencrypt` manages master-key and at-rest encryption (never prints key)
 - `completions` emits shell completion scripts
 
@@ -41,6 +41,9 @@ ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers throu
 - Default max_command_chars is 1000
 - Default max_output_chars is 100000
 - Schema version for new hosts is 2
+- Default tracing filter is **error**; `RUST_LOG` overrides; `-v` enables debug
+- Empty password fields are JSON `null` on key-only hosts (`vps list` / `show`); non-empty secrets mask as `"***"`
+- `health-check` accepts `--timeout <ms>`
 - Secrets at rest: **encrypted by default** (auto `secrets.key`); opt-out `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` for tests only
 - Telemetry is always false
 - Install: always prefer `--locked`
@@ -50,6 +53,7 @@ ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers throu
 - Never log host passwords, master-key, or decrypted secrets
 - On auth failure try `--key`, `--password-stdin`, `--key-passphrase-stdin`
 - Review TOFU host-key errors before `--replace-host-key`
+- Parse stdout only; default stderr is silent at tracing level error
 
 ## Exit Codes
 - `0` success

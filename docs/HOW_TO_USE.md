@@ -4,7 +4,7 @@
 
 - Read this document in [Portuguese (pt-BR)](HOW_TO_USE.pt-BR.md).
 - Return to [README.md](../README.md) for the full command map.
-- Product line documented here: **0.3.6** (GAP-001–014 closed).
+- Product line documented here: **0.3.9** (GAP-001–014 closed; residual audit LOG/JSON/CLI closed).
 
 
 ## Prerequisites
@@ -12,7 +12,7 @@
 - Ensure network reachability to the target SSH host.
 - Hold either a password or an OpenSSH private key for that host.
 - Prefer a writable XDG config home for multi-host storage.
-- Install with `cargo install ssh-cli --locked` (after 0.3.6 is on crates.io; until then use `--path . --locked` from a checkout).
+- Install with `cargo install ssh-cli --locked` (after 0.3.9 on crates.io; until then use `--path . --locked` from a checkout).
 
 
 ## First Command in 60 Seconds
@@ -60,6 +60,7 @@ ssh-cli exec demo "uname -a" --json
 - Import hosts with `ssh-cli vps import --file hosts.toml`.
 - Re-encrypt a plaintext inventory after upgrade: `ssh-cli secrets reencrypt`.
 - Expect auto JSON when stdout is not a TTY unless `--output-format` is set.
+- Expect empty password on key-only hosts as JSON `null` (not `"***"`); non-empty passwords mask as `***`; human text show uses "(não definida)" for empty.
 
 
 ## Configuration
@@ -69,13 +70,14 @@ ssh-cli exec demo "uname -a" --json
 - Expect sibling files `active`, `known_hosts`, and `secrets.key` beside the config.
 - Override directory only for tests with `--config-dir` or `SSH_CLI_HOME`.
 - Store timeout, max_command_chars, max_output_chars, sudo and su secrets per host.
-- **Default at-rest encryption** (ChaCha20-Poly1305): secrets become `sshcli-enc:v1:…` blobs.
+- Default at-rest encryption (ChaCha20-Poly1305): secrets become `sshcli-enc:v1:…` blobs.
 - Master-key order: `SSH_CLI_SECRETS_KEY` → `SSH_CLI_SECRETS_KEY_FILE` → keyring (`SSH_CLI_USE_KEYRING=1`) → XDG `secrets.key`.
 - Tests-only opt-out: `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
 
 
 ## Subcommands Not Covered Above
-- `health-check` probes connectivity and prints latency (`vps add --check` after register).
+- `health-check [--timeout <ms>]` probes connectivity and prints latency (`vps add --check` after register); override timeout when the host default is too long or short.
+- Default tracing level is error so JSON and tunnel stderr stay clean; use `RUST_LOG` or `-v` (debug) when diagnosing.
 - `tunnel` requires local port, remote host, remote port, and `--timeout-ms`.
 - `completions` writes shell completion scripts to stdout.
 - `su-exec` requires configured `su` password on the host record.

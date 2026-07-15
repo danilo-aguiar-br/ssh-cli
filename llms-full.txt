@@ -51,9 +51,22 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 ## Commands (product surface 0.3.9)
 - `vps add|list|show|edit|remove|path|doctor|export|import`
 - `connect`, `exec`, `sudo-exec`, `su-exec`
-- `scp upload|download`, `tunnel --timeout-ms`, `health-check`
+- `scp upload|download`, `tunnel --timeout-ms`, `health-check [--timeout]`
 - `secrets status|init|reencrypt`
 - `completions`
+
+## Defaults and Limits
+- Default SSH port is 22
+- Default timeout is 60000 ms
+- Default max_command_chars is 1000
+- Default max_output_chars is 100000
+- Schema version for new hosts is 2
+- Default tracing filter is **error**; `RUST_LOG` overrides; `-v` enables debug
+- Empty password fields are JSON `null` on key-only hosts (`vps list` / `show`); non-empty secrets mask as `"***"`
+- `health-check` accepts `--timeout <ms>`
+- Secrets at rest: encrypted by default (auto `secrets.key`); opt-out `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` for tests only
+- Telemetry is always false
+- Install: always prefer `--locked`; product line **0.3.9** uses russh 0.62.2
 
 ## Operational Rules for Agents
 - Birth execute die after every product command
@@ -61,7 +74,7 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - Prefer key auth when available
 - Prefer `--password-stdin` and encrypted at-rest defaults
 - Validate command length before SSH using max_command_chars
-- Parse --json stdout and keep logs on stderr
+- Parse --json stdout only; default stderr is silent at tracing level error
 - Map exit codes before retry
 - Never reintroduce long-lived daemon packaging into this project
 - Never enable telemetry

@@ -31,7 +31,7 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - `su-exec` eleva com `su -` one-shot
 - `scp upload|download` transfere arquivos
 - `tunnel` abre port-forward local limitado com `--timeout-ms` obrigatório
-- `health-check` sonda conectividade e latência
+- `health-check [--timeout]` sonda conectividade e latência
 - `secrets status|init|reencrypt` gerencia master-key e cifragem at-rest (nunca imprime a chave)
 - `completions` emite scripts de completion
 
@@ -41,6 +41,9 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - max_command_chars default é 1000
 - max_output_chars default é 100000
 - Schema version de hosts novos é 2
+- Filtro de tracing default é **error**; `RUST_LOG` sobrescreve; `-v` ativa debug
+- Campos de senha vazios são JSON `null` em hosts só-chave (`vps list` / `show`); segredos não vazios mascaram como `"***"`
+- `health-check` aceita `--timeout <ms>`
 - Segredos at-rest: **cifrados por padrão** (auto `secrets.key`); opt-out `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` só em testes
 - Telemetria é sempre false
 - Install: sempre prefira `--locked`
@@ -50,6 +53,7 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - Nunca logue senhas de host, master-key ou segredos decifrados
 - Em falha de auth tente `--key`, `--password-stdin`, `--key-passphrase-stdin`
 - Revise erros TOFU de host-key antes de `--replace-host-key`
+- Faça parse só do stdout; stderr default fica silencioso no nível de tracing error
 
 ## Exit codes
 - `0` sucesso
