@@ -233,11 +233,13 @@ fn gap_doc_003_product_line_docs_contem_039() {
 
 /// Residual audit behaviors must appear in agent-facing docs (LOG/JSON/CLI).
 /// Schema JSON-001: vps-show.schema.json must allow password null.
+/// Skills must stay consolidated operational formulas (no version stories).
 #[test]
 fn gap_doc_003_residual_behaviors_documentados() {
     let agents = std::fs::read_to_string("docs/AGENTS.md").expect("AGENTS");
     let readme = std::fs::read_to_string("README.md").expect("README");
-    let skill = std::fs::read_to_string("skills/ssh-cli-en/SKILL.md").expect("skill en");
+    let skill_en = std::fs::read_to_string("skills/ssh-cli-en/SKILL.md").expect("skill en");
+    let skill_pt = std::fs::read_to_string("skills/ssh-cli-pt/SKILL.md").expect("skill pt");
     for (label, body) in [("AGENTS", agents.as_str()), ("README", readme.as_str())] {
         assert!(
             body.to_ascii_lowercase().contains("error")
@@ -253,14 +255,52 @@ fn gap_doc_003_residual_behaviors_documentados() {
             "{label} deve documentar health-check --timeout"
         );
     }
-    assert!(
-        skill.contains("null")
-            && skill.contains("--timeout")
-            && skill.contains("error")
-            && !skill.contains("0.3.9 did")
-            && !skill.contains("in version 0.3.9"),
-        "skill en deve consolidar null/timeout/error sem changelog por versão"
-    );
+    for (label, skill) in [("en", skill_en.as_str()), ("pt", skill_pt.as_str())] {
+        assert!(
+            skill.contains("null")
+                && skill.contains("--timeout")
+                && skill.contains("error")
+                && skill.contains("truncated_stdout")
+                && skill.contains("remote_exit_code")
+                && skill.contains("--quiet")
+                && skill.contains("key-passphrase-stdin")
+                && skill.contains("--port")
+                && !skill.contains("0.3.9 did")
+                && !skill.contains("in version 0.3.9")
+                && !skill.contains("versão 0.3.9")
+                && !skill.contains("na versão 0.3.9"),
+            "skill {label} deve consolidar null/timeout/error/envelope/quiet sem changelog por versão"
+        );
+        // Frontmatter description constraints (GraphRAG skill rules).
+        let fm = skill
+            .strip_prefix("---\n")
+            .and_then(|s| s.split_once("\n---"))
+            .map(|(a, _)| a)
+            .expect("skill frontmatter");
+        let desc_line = fm
+            .lines()
+            .find(|l| l.starts_with("description:"))
+            .expect("description field");
+        let desc = desc_line.trim_start_matches("description:").trim();
+        assert!(
+            desc.chars().count() < 1024,
+            "skill {label} description deve ter < 1024 chars (got {})",
+            desc.chars().count()
+        );
+        assert_eq!(
+            desc.matches(':').count(),
+            0,
+            "skill {label} description NÃO DEVE conter ':' no conteúdo"
+        );
+        assert!(
+            desc.starts_with("This skill MUST") || desc.starts_with("Esta skill DEVE"),
+            "skill {label} description DEVE ser terceira pessoa com auto-ativação"
+        );
+        assert!(
+            desc.contains("auto-activate") || desc.contains("auto-ativar"),
+            "skill {label} description DEVE declarar auto-ativação"
+        );
+    }
 
     // JSON-001 schema contract: password type includes null (not string-only).
     let schema = std::fs::read_to_string("docs/schemas/vps-show.schema.json")

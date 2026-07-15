@@ -54,6 +54,18 @@
       "should_trigger": true
     },
     {
+      "query": "use quiet mode and key-passphrase-stdin so argv never holds secrets",
+      "should_trigger": true
+    },
+    {
+      "query": "parse stderr error envelope exit_code message remote_exit_code after failed exec",
+      "should_trigger": true
+    },
+    {
+      "query": "vps add nonstandard ssh port 2222 with --check then connect active host",
+      "should_trigger": true
+    },
+    {
       "query": "write a react component that fetches weather from a public api",
       "should_trigger": false
     },

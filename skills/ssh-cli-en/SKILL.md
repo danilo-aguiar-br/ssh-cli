@@ -1,6 +1,6 @@
 ---
 name: ssh-cli
-description: This skill MUST auto-activate when the user or agent needs remote SSH server operations through the ssh-cli binary. It covers multi-host VPS registry on XDG storage, vps add list show edit remove path doctor export import, connect, exec, sudo-exec with safe sh -c packing, su-exec one-shot, scp upload download, tunnel with mandatory timeout-ms, health-check with optional timeout override in ms, secrets status init reencrypt with default ChaCha20-Poly1305 at-rest encryption, password or key auth, password-stdin and key-passphrase, list/show JSON password null for key-only hosts and masked *** when present, dual max_command_chars and max_output_chars, default error-level logging with clean agent stderr (use -v or RUST_LOG only when debugging), TOFU known_hosts with replace-host-key, atomic config mode 0600, JSON contracts, sysexits, completions and cargo install locked. NEVER emit telemetry. NEVER keep a long-lived SSH session daemon. NEVER leak passwords or master-key into logs.
+description: This skill MUST auto-activate when the user or agent needs remote SSH ops via the ssh-cli one-shot binary. Inputs are host name, host IP, user, key path or password-stdin, remote command, paths, tunnel ports, timeout ms. Outputs are sysexits exits, stdout success JSON (stdout stderr exit_code truncated_stdout truncated_stderr duration_ms), stderr error JSON (exit_code message remote_exit_code), masked registry JSON (password null key-only, *** when stored). Covers vps add list show edit remove path doctor export import, connect, exec, sudo-exec sh -c packing, su-exec, scp upload download, tunnel mandatory timeout-ms, health-check optional timeout, secrets status init reencrypt ChaCha20-Poly1305, --quiet, default error logs (-v or RUST_LOG only for debug), TOFU replace-host-key, mode 0600, completions bash zsh fish elvish powershell, cargo install locked. NEVER emit telemetry. NEVER keep a long-lived SSH daemon. NEVER leak secrets into logs.
 ---
 
 # ssh-cli Agent Skill
@@ -9,10 +9,10 @@ description: This skill MUST auto-activate when the user or agent needs remote S
 ### REQUIRED
 - MUST treat this skill as SUPREME LAW for every `ssh-cli` invocation
 - MUST run `ssh-cli` as a one-shot subprocess birth-execute-die
-- MUST wait for process exit before parsing stdout
-- MUST prefer stored hosts from `vps add` over ad-hoc chat secrets
-- MUST pass `--json` when the caller needs structured output
-- MUST teach and reuse the ready formulas in this skill
+- MUST wait for process exit before parsing stdout or stderr
+- MUST use stored hosts from `vps add` instead of ad-hoc chat secrets
+- MUST pass `--json` when the caller needs structured success output
+- MUST copy the ready formulas in this skill and only substitute placeholders
 
 ### FORBIDDEN
 - MUST NOT keep a long-lived SSH session across process runs
@@ -20,6 +20,7 @@ description: This skill MUST auto-activate when the user or agent needs remote S
 - MUST NOT emit or enable telemetry
 - MUST NOT log live passwords, passphrases, or master-key material
 - MUST NOT invent CLI flags that are not listed in this skill
+- MUST NOT write version-by-version changelog stories inside this skill
 
 
 ## When to Invoke
@@ -55,21 +56,24 @@ ssh-cli --help
 - MUST invoke one complete CLI process per product action
 - MUST treat non-TTY stdout as JSON by default when `--output-format` is omitted
 - MUST force JSON with `--json` or `--output-format json` for agent parsing
-- MUST send human logs only to stderr and parse only stdout as data
+- MUST send human logs only to stderr and parse only stdout as success data
 - MUST expect default log level `error` so stderr stays clean for agents
 - MUST use `-v` (raises verbosity to `debug`) or `RUST_LOG` only when debugging
+- MUST use `-q` / `--quiet` to suppress non-JSON human prose when required
+- MUST parse failure envelopes from stderr JSON when the process exit is non-zero and JSON mode is active
 
 ### FORBIDDEN
-- MUST NOT mix stderr logs into the JSON parse stream
+- MUST NOT mix stderr logs into the success JSON parse stream
 - MUST NOT assume a previous process left an open SSH channel
 - MUST NOT expect INFO progress prose on stderr by default
-- MUST NOT parse stderr for structured JSON results
+- MUST NOT parse stderr as success JSON for exec-family results
 
 ### Correct Pattern
 
 ```bash
 ssh-cli exec prod "uname -a" --json
 echo $?
+ssh-cli -q exec prod "true" --json
 # debug only when diagnosing
 ssh-cli -v exec prod "true" --json
 RUST_LOG=debug ssh-cli exec prod "true" --json
@@ -80,9 +84,12 @@ RUST_LOG=debug ssh-cli exec prod "true" --json
 ### REQUIRED
 - MUST register each host with a unique `--name`
 - MUST supply password or `--key` or stdin password on add
+- MUST pass `--port` when the SSH port is not 22
+- MUST pass `--check` on add when an immediate connectivity probe is required
 - MUST mask secrets when showing list or show output to humans
 - MUST treat empty or absent password in list/show JSON as JSON `null` (key-only host)
 - MUST treat non-empty password in list/show JSON as masked `***` never raw
+- MUST treat `sudo_password`, `su_password`, and `key_passphrase` the same way (`null` when absent, `***` when stored)
 - MUST run `vps doctor --json` when config location is unknown
 - MUST use `vps path` to print the winning config file path
 - MUST use `vps export` without secrets by default
@@ -99,7 +106,7 @@ RUST_LOG=debug ssh-cli exec prod "true" --json
 ### Correct Pattern
 
 ```bash
-ssh-cli vps add --name prod --host prod.example.com --user deploy --key ~/.ssh/id_ed25519
+ssh-cli vps add --name prod --host prod.example.com --user deploy --key ~/.ssh/id_ed25519 --port 22 --check
 ssh-cli vps list --json
 ssh-cli vps show prod --json
 ssh-cli vps edit prod --timeout 90000 --max-command-chars 2000 --max-output-chars 100000
@@ -115,11 +122,13 @@ ssh-cli vps remove prod
 ### REQUIRED
 - MUST use `connect` only to write the sibling `active` marker
 - MUST still pass explicit VPS name on exec-family commands when certainty is required
+- MUST allow `health-check` without a name only after `connect` set the active host
 
 ### Correct Pattern
 
 ```bash
 ssh-cli connect prod
+ssh-cli health-check --json
 ssh-cli health-check prod --json
 ```
 
@@ -127,10 +136,10 @@ ssh-cli health-check prod --json
 ## Authentication
 ### REQUIRED
 - MUST use `--key` for key-only cloud hosts
-- MUST prefer `--password-stdin` when argv history is shared
-- MUST prefer `--sudo-password-stdin` and `--su-password-stdin` over argv secrets
+- MUST use `--password-stdin` when argv history is shared
+- MUST use `--sudo-password-stdin` and `--su-password-stdin` instead of argv secrets
+- MUST use `--key-passphrase-stdin` when the private key is encrypted and argv must stay clean
 - MUST treat exit 77 as authentication failure and change credentials before retry
-- MUST pass `--key-passphrase` or passphrase stdin only when the key is encrypted
 - MUST expect list/show JSON `password` to be `null` for key-only hosts and `***` when a password is stored
 
 ### FORBIDDEN
@@ -144,6 +153,7 @@ ssh-cli health-check prod --json
 ```bash
 ssh-cli vps add --name edge --host edge.example.com --user ubuntu --key ~/.ssh/id_ed25519
 printf '%s' "$SSH_PASSWORD" | ssh-cli vps add --name app --host app.example.com --user deploy --password-stdin
+printf '%s' "$KEY_PASS" | ssh-cli exec edge "id" --json --key ~/.ssh/id_ed25519_enc --key-passphrase-stdin
 ssh-cli exec edge "id" --json
 printf '%s' "$SSH_PASSWORD" | ssh-cli exec app "id" --json --password-stdin
 ```
@@ -183,19 +193,21 @@ ssh-cli secrets reencrypt
 ## Remote Execution
 ### REQUIRED
 - MUST validate command length against `max_command_chars` before sending huge agent commands
-- MUST parse `stdout`, `stderr`, `exit_code`, truncation flags, and `duration_ms` from JSON
+- MUST parse `stdout`, `stderr`, `exit_code`, `truncated_stdout`, `truncated_stderr`, and `duration_ms` from success JSON
 - MUST append `--description` when remote shell history benefits from an audit comment
 - MUST raise host `max_command_chars` via `vps edit` when the agent needs longer commands
 - MUST honor default max_command_chars 1000 and max_output_chars 100000 unless overridden
+- MUST pass exec-family `--timeout <ms>` when the host default deadline is too short
 
 ### FORBIDDEN
-- MUST NOT ignore truncation flags when summarizing output to the user
+- MUST NOT ignore `truncated_stdout` or `truncated_stderr` when summarizing output to the user
 - MUST NOT retry exit 64 65 66 77 without changing inputs
 
 ### Correct Pattern
 
 ```bash
 ssh-cli exec prod "hostname && uptime" --json --description "inventory"
+ssh-cli exec prod "true" --json --timeout 120000
 ssh-cli vps edit prod --max-command-chars 4000 --max-output-chars 200000
 ssh-cli exec prod "long-agent-command-here" --json
 ```
@@ -228,13 +240,13 @@ ssh-cli --disable-sudo exec prod "id" --json
 - MUST use `scp upload` or `scp download` for file copy
 - MUST pass `--timeout-ms` on every `tunnel` command
 - MUST use `health-check` to verify connectivity after host changes
-- MUST allow optional `--timeout <ms>` override on `health-check` when a non-default deadline is needed
+- MUST pass optional `--timeout <ms>` on `health-check` when a non-default deadline is needed
 - MUST bound tunnels and exit when the deadline ends
 
 ### FORBIDDEN
 - MUST NOT open unbounded tunnels
 - MUST NOT leave tunnel processes intentionally detached forever
-- MUST NOT invent a different timeout flag name for `health-check` (use `--timeout`, not `--timeout-ms`)
+- MUST NOT invent a different timeout flag name for `health-check` (MUST use `--timeout`, MUST NOT use `--timeout-ms` on health-check)
 
 ### Correct Pattern
 
@@ -244,6 +256,7 @@ ssh-cli scp download prod /var/log/app.log ./app.log
 ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000
 ssh-cli health-check prod --json
 ssh-cli health-check prod --timeout 5000 --json
+ssh-cli health-check --json
 ```
 
 
@@ -273,6 +286,7 @@ ssh-cli --config-dir /tmp/ssh-cli-sandbox vps list --json
 ### REQUIRED
 - MUST generate shell completions from the binary when onboarding humans
 - MUST keep agent automation on explicit flags and JSON, not completion scripts
+- MUST support shells bash, zsh, fish, elvish, and powershell
 
 ### Correct Pattern
 
@@ -280,6 +294,8 @@ ssh-cli --config-dir /tmp/ssh-cli-sandbox vps list --json
 ssh-cli completions bash
 ssh-cli completions zsh
 ssh-cli completions fish
+ssh-cli completions elvish
+ssh-cli completions powershell
 ```
 
 
@@ -288,7 +304,8 @@ ssh-cli completions fish
 - MUST map exits as 0 success, 1 general, 64 usage, 65 data, 66 not found, 73 cant create, 74 IO or SSH, 77 auth, 130 SIGINT, 143 SIGTERM
 - MUST retry at most twice on 74 with backoff
 - MUST fail fast on 64 65 66 77 without blind retry
-- MUST surface remote `exit_code` from JSON separately from the CLI process exit
+- MUST surface remote `exit_code` from success JSON separately from the CLI process exit
+- MUST surface `remote_exit_code` from the stderr error envelope when present
 
 ### FORBIDDEN
 - MUST NOT swallow non-zero exits
@@ -305,18 +322,20 @@ ssh-cli exec missing-host "true" --json; echo $?
 
 ## JSON Parsing Contract
 ### REQUIRED
-- MUST parse only stdout as JSON when `--json` is set
-- MUST read fields `stdout`, `stderr`, `exit_code`, truncation flags, and `duration_ms` on exec-family results
+- MUST parse only stdout as success JSON when `--json` is set and exit is 0 or remote command result is returned on stdout
+- MUST read fields `stdout`, `stderr`, `exit_code`, `truncated_stdout`, `truncated_stderr`, and `duration_ms` on exec-family results
+- MUST parse stderr error envelope fields `exit_code`, `message`, and optional `remote_exit_code` on hard failures in JSON mode
 - MUST treat list show doctor secrets status payloads as opaque typed objects and only use documented fields
 - MUST treat list/show `password` as JSON `null` when empty or absent (key-only host)
 - MUST treat list/show `password` as masked string `***` when a password is stored
-- MUST report truncation to the user when output was cut by `max_output_chars`
+- MUST treat list/show `sudo_password`, `su_password`, and `key_passphrase` as `null` or `***` the same way
+- MUST report truncation to the user when `truncated_stdout` or `truncated_stderr` is true
 
 ### FORBIDDEN
 - MUST NOT invent missing JSON keys
 - MUST NOT invent fake passwords when `password` is `null`
 - MUST NOT pretty-print secrets found inside unexpected fields
-- MUST NOT parse stderr for JSON data
+- MUST NOT parse stderr for success JSON data
 
 ### Correct Pattern
 
@@ -325,6 +344,8 @@ ssh-cli vps list --json
 ssh-cli vps show prod --json
 # key-only host => "password": null
 # password host  => "password": "***"
+ssh-cli exec prod "uname -a" --json
+# success stdout => stdout/stderr/exit_code/truncated_*/duration_ms
 ```
 
 
@@ -355,7 +376,7 @@ RUST_LOG=debug ssh-cli -v exec prod "true" --json
 4. THEN register or edit host with password-or-key credentials
 5. THEN run `ssh-cli health-check <name> --json` (add `--timeout <ms>` when needed)
 6. THEN run `exec` or `sudo-exec` or `su-exec` with `--json`
-7. THEN parse exit code and JSON fields from stdout only before answering the user
+7. THEN parse process exit, success stdout JSON fields, or stderr error envelope before answering the user
 8. FINALLY never leave secrets or master-key in durable logs
 
 ### Correct Pattern
@@ -390,8 +411,9 @@ ssh-cli exec prod "uname -a && df -h" --json --description "baseline"
 
 ```bash
 # registry
-ssh-cli vps add --name <NAME> --host <HOST> --user <USER> --key <KEY_PATH>
+ssh-cli vps add --name <NAME> --host <HOST> --user <USER> --key <KEY_PATH> --port <PORT> --check
 printf '%s' "$PASS" | ssh-cli vps add --name <NAME> --host <HOST> --user <USER> --password-stdin
+printf '%s' "$SUDO" | ssh-cli vps edit <NAME> --sudo-password-stdin
 ssh-cli vps list --json
 ssh-cli vps show <NAME> --json
 ssh-cli vps edit <NAME> --timeout <MS> --max-command-chars <N> --max-output-chars <N>
@@ -403,13 +425,17 @@ ssh-cli connect <NAME>
 
 # remote ops
 ssh-cli exec <NAME> "<CMD>" --json
+ssh-cli exec <NAME> "<CMD>" --json --timeout <MS> --description "<AUDIT>"
+ssh-cli -q exec <NAME> "<CMD>" --json
 ssh-cli sudo-exec <NAME> "<CMD>" --json
+printf '%s' "$SUDO" | ssh-cli sudo-exec <NAME> "<CMD>" --json --sudo-password-stdin
 ssh-cli su-exec <NAME> "<CMD>" --json
 ssh-cli scp upload <NAME> <LOCAL> <REMOTE>
 ssh-cli scp download <NAME> <REMOTE> <LOCAL>
 ssh-cli tunnel <NAME> <LOCAL_PORT> <REMOTE_HOST> <REMOTE_PORT> --timeout-ms <MS>
 ssh-cli health-check <NAME> --json
 ssh-cli health-check <NAME> --timeout <MS> --json
+ssh-cli health-check --json
 
 # secrets and safety
 ssh-cli secrets status --json
@@ -417,10 +443,18 @@ ssh-cli secrets init
 ssh-cli secrets reencrypt
 ssh-cli --replace-host-key exec <NAME> "true"
 ssh-cli --config-dir <DIR> vps list --json
+printf '%s' "$KEY_PASS" | ssh-cli exec <NAME> "id" --json --key <KEY_PATH> --key-passphrase-stdin
 
 # debug (optional; default log level is error)
 ssh-cli -v exec <NAME> "true" --json
 RUST_LOG=debug ssh-cli exec <NAME> "true" --json
+
+# completions
+ssh-cli completions bash
+ssh-cli completions zsh
+ssh-cli completions fish
+ssh-cli completions elvish
+ssh-cli completions powershell
 
 # install
 cargo install ssh-cli --locked --force
@@ -431,7 +465,8 @@ ssh-cli --version
 ## Final Reminder
 ### REQUIRED
 - MUST re-read this skill before every non-trivial ssh-cli workflow
-- MUST prefer stored hosts, stdin secrets, JSON output, and one-shot execution
-- MUST parse only stdout for JSON and keep default stderr quiet
+- MUST use stored hosts, stdin secrets, JSON output, and one-shot execution
+- MUST parse only stdout for success JSON and keep default stderr quiet
+- MUST parse stderr error envelopes on hard failures
 - MUST fail closed on auth, host-key, and usage errors
 - MUST keep this skill consolidated as operational formulas only

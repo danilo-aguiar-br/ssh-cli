@@ -65,6 +65,7 @@ Todos **Resolvidos** — ver seções anteriores e commit `94941e4` (0.3.8).
 | Testes | `gap_doc_003_version_contem_039`, `gap_doc_003_product_line_docs_contem_039`, `gap_doc_003_residual_behaviors_documentados` |
 | Nota | Auditoria GraphRAG 2026-07-15 (raiz + product line) fechou **0.3.6** como linha atual |
 | Nota docs/ | Auditoria pasta `docs/` 2026-07-15: schema `password` `string\|null` (JSON-001); headers pt-BR em português; `RELEASE_CHECKLIST` bilíngue; paridade MIGRATION campos; gate schema no teste DOC-003 |
+| Nota skills/ | Auditoria pasta `skills/` 2026-07-15: EN/PT reescritas consolidadas (sem changelog por versão); description <1024 e sem `:` no conteúdo; cobertura LOG/JSON/CLI + envelope stderr + `--quiet` + `key-passphrase-stdin` + `--port` + completions elvish/powershell; evals 26 queries; gates em `gap_doc_003_residual_behaviors_documentados` |
 
 ## GAP-SSH-DENY-002
 
