@@ -11,7 +11,7 @@
 | Suite de regressão | `gaps_v038` + `gaps_v039` + `gaps_v040` + **`gaps_v041`** + e2e E01–E14 |
 | Supply-chain | **russh 0.62.2**; `yanked=deny`; `ignore=[]` |
 | Telemetria | **Ausente** |
-| Publish | Local ready; GitHub + crates.io **após OK** explícito do mantenedor |
+| Publish | **Publicado** — GitHub `v0.4.1` + crates.io `ssh-cli 0.4.1` |
 
 ## Inventário consolidado
 
@@ -29,7 +29,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC + AUD-SCP 010–023 + 
 | GAP-SSH-CLI-006 | `health-check` sem password-stdin / key override | **Resolvido (0.4.1)** | `gap_cli_006_*`; `aplicar_overrides` key |
 | GAP-SSH-IO-009 | JSON SCP sem `event` | **Resolvido (0.4.1)** | `event: scp-transfer`; schema; `gap_io_009_*` |
 | GAP-SSH-PROC-001 | `cargo fmt --check` sujo | **Resolvido (0.4.1)** | fmt gate |
-| GAP-SSH-REL-006 | Tag 0.4.0 sem EXP/TUN/CLI/IO patch | **Resolvido (0.4.1 local)**; remote c/ OK publish | commit+tag `v0.4.1` |
+| GAP-SSH-REL-006 | Tag 0.4.0 sem EXP/TUN/CLI/IO patch | **Resolvido (0.4.1)** GitHub + crates.io | commit+tag `v0.4.1`; release + `cargo publish` |
 
 ### Melhorias M1–M6 (dentro de 0.4.1)
 
@@ -54,7 +54,7 @@ Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC + AUD-SCP 010–023 + 
 | PA-M1 / M2 | replace_host_key + json erros health | **Feito** |
 | PA-TEST-041 | gaps_v041 | **Feito** |
 | PA-DOC-041 | product line + CHANGELOG + honesty AUD-POST em checklists/root docs (DOC-041 follow-up: export vazio sem `sshcli-enc:`, tunnel exit 0 pós-bind, auth flags tunnel/health, `event` scp-transfer, gaps_v041) | **Feito** |
-| PA-REL-06 | release 0.4.1 | **Feito local** (push/publish com OK) |
+| PA-REL-06 | release 0.4.1 | **Feito** (push main+tag, GitHub Release, crates.io) |
 
 ## Política
 
