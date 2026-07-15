@@ -77,6 +77,10 @@ pub fn imprimir_detalhes_texto(r: &VpsRegistro) {
     println!("Usuário:        {}", r.usuario);
     println!("Senha:          {}", mascarar(r.senha.expose_secret()));
     println!(
+        "Key path:       {}",
+        r.key_path.as_deref().unwrap_or("(não definida)")
+    );
+    println!(
         "Senha sudo:     {}",
         r.senha_sudo
             .as_ref()
@@ -89,7 +93,9 @@ pub fn imprimir_detalhes_texto(r: &VpsRegistro) {
             .map_or_else(|| "(não definida)".into(), |s| mascarar(s.expose_secret()))
     );
     println!("Timeout (ms):   {}", r.timeout_ms);
-    println!("Max chars:      {}", r.max_chars);
+    println!("Max cmd chars:  {}", r.max_command_chars);
+    println!("Max out chars:  {}", r.max_output_chars);
+    println!("Disable sudo:   {}", r.disable_sudo);
     println!("Schema version: {}", r.schema_version);
     println!("Adicionado em:  {}", r.adicionado_em);
 }
@@ -110,10 +116,14 @@ fn registro_para_json_mascarado(r: &VpsRegistro) -> serde_json::Value {
         "port": r.porta,
         "user": r.usuario,
         "password": mascarar(r.senha.expose_secret()),
+        "key_path": r.key_path,
+        "key_passphrase": r.key_passphrase.as_ref().map(|s| mascarar(s.expose_secret())),
         "sudo_password": r.senha_sudo.as_ref().map(|s| mascarar(s.expose_secret())),
         "su_password": r.senha_su.as_ref().map(|s| mascarar(s.expose_secret())),
         "timeout_ms": r.timeout_ms,
-        "max_chars": r.max_chars,
+        "max_command_chars": r.max_command_chars,
+        "max_output_chars": r.max_output_chars,
+        "disable_sudo": r.disable_sudo,
         "schema_version": r.schema_version,
         "added_at": r.adicionado_em,
     })
@@ -209,10 +219,14 @@ mod testes {
             22,
             "root".into(),
             SecretString::from("senha-super-secreta".to_string()),
+            None,
+            None,
             Some(5000),
+            Some(1000),
             Some(1000),
             Some(SecretString::from("sudo-password-longa-aqui".to_string())),
             None,
+            false,
         )
     }
 
@@ -228,8 +242,9 @@ mod testes {
         assert!(json["sudo_password"].as_str().unwrap().contains("..."));
         assert!(json["su_password"].is_null());
         assert_eq!(json["timeout_ms"], 5000);
-        assert_eq!(json["max_chars"], 1000);
-        assert_eq!(json["schema_version"], 1);
+        assert_eq!(json["max_command_chars"], 1000);
+        assert_eq!(json["max_output_chars"], 1000);
+        assert_eq!(json["schema_version"], 2);
     }
 
     #[test]

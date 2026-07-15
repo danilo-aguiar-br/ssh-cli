@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/health-check.schema.json",
+  "title": "health-check JSON",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "name",
+    "status",
+    "latency_ms"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "const": "ok"
+    },
+    "latency_ms": {
+      "type": "integer"
+    }
+  }
+}

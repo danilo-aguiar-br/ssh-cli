@@ -3,292 +3,225 @@
 [![crates.io](https://img.shields.io/crates/v/ssh-cli.svg)](https://crates.io/crates/ssh-cli)
 [![docs.rs](https://docs.rs/ssh-cli/badge.svg)](https://docs.rs/ssh-cli)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85.0-blue)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
-[![license](https://img.shields.io/crates/l/ssh-cli.svg)](LICENSE)
+[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
----
+> Give any LLM remote SSH power in one memory-safe one-shot binary.
 
-## English
+- Read this document in [Portuguese (pt-BR)](README.pt-BR.md).
+- Install with `cargo install ssh-cli --locked` for a lockfile-aligned graph.
+- Upgrade with `cargo install ssh-cli --locked --force`.
+- Verify with `ssh-cli --version`.
+- Read full history in [CHANGELOG.md](CHANGELOG.md).
+- Integrate agents via [docs/AGENTS.md](docs/AGENTS.md) and [INTEGRATIONS.md](INTEGRATIONS.md).
+- Follow first use in [docs/HOW_TO_USE.md](docs/HOW_TO_USE.md).
+- Copy recipes from [docs/COOKBOOK.md](docs/COOKBOOK.md).
+- Check platforms in [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md).
+- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.3.6**).
+- Run tests via [docs/TESTING.md](docs/TESTING.md).
+- Consume JSON contracts under [docs/schemas/README.md](docs/schemas/README.md).
+- Teach LLMs with [skills/ssh-cli-en/SKILL.md](skills/ssh-cli-en/SKILL.md).
 
-> Give any LLM the power to operate remote servers via SSH — in a single, memory-safe binary.
 
-### What is it?
-- Single static binary — zero runtime dependencies, no Node.js, no Python.
-- Full Rust SSH stack — `russh` + `aws-lc-rs`, no C bindings, memory-safe end to end.
-- Cold start under 100 ms on any supported platform.
-- Credentials zeroized on drop via `secrecy::SecretString` — never linger in RAM.
-- Parallel stdout/stderr capture on every remote command execution.
-- 2 locales built in — `en-US` and `pt-BR`, auto-detected from system locale.
+## What is it?
+### One-shot multi-host SSH CLI for agents
+- Ship a single Rust binary with zero Node runtime and zero daemon.
+- Operate N VPS hosts from XDG storage without `.env` files.
+- Authenticate with password or private key per host.
+- Execute `exec`, `sudo-exec`, and `su-exec` as pure one-shot processes.
+- Capture stdout and stderr with structured JSON for orchestration.
+- Auto-detect locale between `en-US` and `pt-BR`.
+- Disable telemetry completely in every build.
 
-### Why ssh-cli?
-- Eliminates Node.js-based SSH wrappers and their runtime overhead.
-- Ships as one file — copy and run, zero install step or package manager required.
-- ZERO `.env` files — all credentials managed exclusively via explicit CLI subcommands.
-- Sysexits.h exit codes enable reliable scripting and LLM error classification.
 
-### Quick Start
+## Why ssh-cli?
+### Replace long-lived SSH processes with a die-after-run binary
+- Avoid resident Node processes that hold sockets open between tasks.
+- Cut RAM and CPU waste from long-lived SSH sessions.
+- Register multi-host credentials once under XDG with atomic writes.
+- Align command packing and dual maxChars semantics with the one-shot agent contract.
+- Trust host keys via TOFU known_hosts instead of always-trust.
+- Route errors with sysexits codes that agents classify reliably.
+
+
+## Superpowers
+### Capabilities that make agents productive
+- Multi-host CRUD with `vps add|list|show|edit|remove|path|doctor|export|import`
+- One-shot remote execution with `exec`, `sudo-exec`, `su-exec`
+- Safe `sudo` packing via `sh -c` and shell escape
+- Private key auth with optional passphrase
+- Dual limits `max_command_chars` and `max_output_chars`
+- Timeout with best-effort remote abort
+- Bounded tunnel via mandatory `--timeout-ms`
+- SCP upload and download
+- Health-check latency probe
+- Shell completions for bash zsh fish powershell
+- Secrets via stdin flags to avoid argv leaks
+- **Default at-rest encryption** (ChaCha20-Poly1305) with auto XDG `secrets.key`
+- Master-key UX: `secrets status|init|reencrypt`
+- TOFU `known_hosts` and atomic config writes with flock
+- Install crypto pins for clean `cargo install --locked` (GAP-014)
+
+
+## Quick Start
+### Install and run the first remote command
 
 ```bash
-# Install
-cargo install ssh-cli
-
-# Register a VPS
-ssh-cli vps add \
+cargo install ssh-cli --locked
+ssh-cli secrets init   # optional explicit master-key; auto-created on first secret write
+printf %s s3cret | ssh-cli vps add \
   --name prod \
   --host prod.example.com \
   --port 22 \
   --user admin \
-  --password 's3cret'
-
-# Select the active VPS
+  --password-stdin
 ssh-cli connect prod
-
-# Execute a remote command
-ssh-cli exec prod "hostname"
+ssh-cli exec prod "hostname" --json
 ```
 
-### Command Reference
+
+## Installation
+### Choose the install path that matches your environment
+- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (after **0.3.6** is published; until then install from git/path for full features).
+- Rebuild from a checkout: `cargo install --path . --locked`
+- Do **not** use install without `--locked` unless you verified the crypto pins resolve cleanly.
+- Force upgrade after a release: `cargo install ssh-cli --locked --force`
+- Build musl with allocator feature when targeting Alpine: `--features musl-allocator`
+- Require Rust MSRV 1.85.0 or newer
+
+
+## Usage
+### Register hosts then execute one-shot commands
+- **Default at-rest encryption** (ChaCha20-Poly1305): auto `secrets.key` on first secret write; override via `SSH_CLI_SECRETS_KEY` / `_FILE` / keyring; manage with `ssh-cli secrets status|init|reencrypt`. Opt-out: `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` (tests only).
+- Prefer `--password-stdin` / `--key` over argv secrets.
+- Add password hosts with `vps add --password` or `--password-stdin`.
+- Add key hosts with `vps add --key ~/.ssh/id_ed25519`.
+- Mark active host with `connect <name>`.
+- Run remote shells with `exec <vps> "<cmd>"`.
+- Elevate with `sudo-exec` or `su-exec` when configured.
+- Diagnose XDG paths with `vps doctor --json`.
+- Export redacted inventory with `vps export`.
+
+
+## Commands
+### Product surface for humans and agents
 
 | Command | Purpose |
 |---|---|
-| `ssh-cli vps add --name X --host Y …` | Add a VPS record (deduplicated by name) |
-| `ssh-cli vps list [--json]` | List registered VPSs (passwords masked) |
-| `ssh-cli vps show <name> [--json]` | Show one VPS (passwords masked) |
-| `ssh-cli vps edit <name> --host Z` | Edit any field of an existing VPS |
-| `ssh-cli vps remove <name>` | Remove a VPS from the registry |
-| `ssh-cli vps path` | Print the path of `config.toml` |
-| `ssh-cli connect <name>` | Mark a VPS as active for subsequent commands |
-| `ssh-cli exec <vps> <cmd> [--json]` | Execute a command on a VPS via SSH |
-| `ssh-cli sudo-exec <vps> <cmd> [--json]` | Execute a command with `sudo` on a VPS |
-| `ssh-cli scp upload <vps> <local> <remote>` | Upload a file via SCP |
-| `ssh-cli scp download <vps> <remote> <local>` | Download a file via SCP |
-| `ssh-cli tunnel <vps> <local-port> <remote-host> <remote-port>` | Open SSH local port forward |
-| `ssh-cli health-check [<vps>]` | Verify SSH connectivity (uses active VPS if omitted) |
-| `ssh-cli completions <shell>` | Print shell completions to stdout |
+| `ssh-cli vps add` | Register a host (password or key) |
+| `ssh-cli vps list [--json]` | List hosts with secrets masked |
+| `ssh-cli vps show <name> [--json]` | Show one host masked |
+| `ssh-cli vps edit <name>` | Patch host fields |
+| `ssh-cli vps remove <name>` | Delete host |
+| `ssh-cli vps path` | Print `config.toml` path |
+| `ssh-cli vps doctor [--json]` | Show XDG layer schema and paths |
+| `ssh-cli vps export` | Export hosts (secrets redacted by default) |
+| `ssh-cli vps import --file` | Import hosts from TOML |
+| `ssh-cli connect <name>` | Write sibling `active` file |
+| `ssh-cli exec <vps> <cmd>` | One-shot remote command |
+| `ssh-cli sudo-exec <vps> <cmd>` | One-shot sudo with safe packing |
+| `ssh-cli su-exec <vps> <cmd>` | One-shot `su -` elevation |
+| `ssh-cli scp upload|download` | File transfer |
+| `ssh-cli tunnel ... --timeout-ms N` | Bounded local port forward |
+| `ssh-cli health-check [<vps>]` | Connectivity probe |
+| `ssh-cli secrets status|init|reencrypt` | Master-key and at-rest encryption (never prints key) |
+| `ssh-cli completions <shell>` | Shell completion scripts |
 
-### Runtime Override Flags
 
-Override stored credentials per-invocation without modifying the VPS registry.
-These flags take precedence over values saved with `vps add` or `vps edit`.
-
-| Command | Flag | Purpose |
-|---|---|---|
-| `exec` | `--password <PWD>` | Override the SSH password for this invocation |
-| `exec` | `--timeout <MS>` | Override the command timeout in milliseconds |
-| `sudo-exec` | `--password <PWD>` | Override the SSH password |
-| `sudo-exec` | `--sudo-password <PWD>` | Override the sudo password (alias: `--sudoPassword`) |
-| `sudo-exec` | `--timeout <MS>` | Override the command timeout in milliseconds |
-| `scp upload` | `--password <PWD>` | Override the SSH password |
-| `scp download` | `--password <PWD>` | Override the SSH password |
-| `tunnel` | `--password <PWD>` | Override the SSH password |
-| `health-check` | `--password <PWD>` | Override the SSH password |
-
-#### LLM-Friendly camelCase Aliases
-
-All multi-word flags accept camelCase aliases for natural LLM usage:
-
-| Canonical flag | camelCase alias |
-|---|---|
-| `--sudo-password` | `--sudoPassword` |
-| `--config-dir` | `--configDir` |
-| `--output-format` | `--outputFormat` |
-| `--no-color` | `--noColor` |
-
-Example — override password at runtime without storing it:
-```bash
-ssh-cli exec prod "uptime" --password 'runtime-secret'
-ssh-cli sudo-exec prod "systemctl restart nginx" --sudoPassword 'sudo-secret'
-```
-
-### Global Flags
-
-| Flag | Short | Purpose |
-|---|---|---|
-| `--lang <LOCALE>` | | Force language (`en-US`, `pt-BR`) |
-| `--verbose` | `-v` | Increase log verbosity to `debug` |
-| `--quiet` | `-q` | Suppress non-JSON output (`error` only) |
-| `--config-dir <DIR>` | | Override the configuration directory |
-| `--no-color` | | Disable ANSI colors in output |
-| `--output-format <FORMAT>` | | Output format: `text` (default) or `json` |
-
-### Environment Variables
+## Environment Variables
+### Overrides allowed for tests and locales
 
 | Variable | Description | Example |
 |---|---|---|
-| `SSH_CLI_HOME` | Override the base configuration directory | `/tmp/ssh-cli-test` |
-| `SSH_CLI_LANG` | Override the detected locale | `pt-BR` |
-| `NO_COLOR` | Disable ANSI colors (any non-empty value) | `1` |
-| `CLICOLOR_FORCE` | Force ANSI colors even when not a TTY | `1` |
+| `SSH_CLI_HOME` | Override base config directory | `/tmp/ssh-cli-test` |
+| `SSH_CLI_LANG` | Override locale | `pt-BR` |
+| `SSH_CLI_SECRETS_KEY` | Master key as 64 hex chars (encrypt at rest) | *(never log)* |
+| `SSH_CLI_SECRETS_KEY_FILE` | Path to file with 64 hex master key | `~/.config/ssh-cli/secrets.key` |
+| `SSH_CLI_USE_KEYRING` | Load/store master key in OS keyring | `1` |
+| `SSH_CLI_ALLOW_PLAINTEXT_SECRETS` | Opt-out of default encryption (**tests only**) | `1` |
+| `NO_COLOR` | Disable ANSI colors | `1` |
+| `CLICOLOR_FORCE` | Force ANSI colors | `1` |
+| `RUST_LOG` | Tracing filter override | `debug` |
 
-### Exit Codes
+- Prefer CLI flags over environment for production agent runs.
+- Never put host passwords in environment variables; use registry + stdin.
+- Master-key env vars are for **encryption of secrets at rest**, not SSH passwords.
 
-| Code | Constant | Meaning |
-|---|---|---|
-| `0` | `EX_OK` | Success |
-| `1` | `EX_GENERAL` | Generic runtime error |
-| `64` | `EX_USAGE` | Incorrect CLI usage or invalid argument |
-| `65` | `EX_DATAERR` | Invalid input data (JSON/TOML parse error) |
-| `66` | `EX_NOINPUT` | VPS or file not found |
-| `73` | `EX_CANTCREAT` | Cannot create output (config write failed) |
-| `74` | `EX_IOERR` | I/O or SSH connection error |
-| `77` | `EX_NOPERM` | SSH authentication rejected |
-| `130` | `EX_SIGINT` | Terminated by SIGINT (Ctrl+C) |
-| `143` | `EX_SIGTERM` | Terminated by SIGTERM |
 
-### Shell Completions
-- Bash: `ssh-cli completions bash > ~/.local/share/bash-completion/completions/ssh-cli`
-- Zsh: `ssh-cli completions zsh > ~/.zfunc/_ssh-cli`
-- Fish: `ssh-cli completions fish > ~/.config/fish/completions/ssh-cli.fish`
-- PowerShell: `ssh-cli completions powershell >> $PROFILE`
+## Integration Patterns
+### Wire agents with one-shot subprocesses only
+- Invoke `ssh-cli` as a subprocess with explicit argv.
+- Prefer `--json` or `--output-format json` for machine parsing.
+- Map non-zero exits with sysexits semantics before retry.
+- Store hosts once via `vps add` then call `exec` per task.
+- Pass secrets through `--password-stdin` when argv history is risky.
+- Read [INTEGRATIONS.md](INTEGRATIONS.md) for agent-specific notes.
 
-### Troubleshooting
-- macOS Gatekeeper blocks the binary: run `xattr -d com.apple.quarantine /path/to/ssh-cli`
-- Alpine Linux or musl target: build with `--features musl-allocator`
-- Permission denied on `config.toml`: run `chmod 600 ~/.config/ssh-cli/config.toml`
 
-### License
+## Exit Codes
+### Sysexits-style codes agents must map before retry
 
-MIT — see [LICENSE](LICENSE).
-
----
-
-## Português (Brasil)
-
-> Dê a qualquer LLM o poder de operar servidores remotos via SSH — em um único binário, seguro por design.
-
-### O que é?
-- Binário único estático — zero dependência de runtime, sem Node.js, sem Python.
-- Stack SSH completa em Rust — `russh` + `aws-lc-rs`, sem bindings C, memory-safe ponta a ponta.
-- Cold start abaixo de 100 ms em qualquer plataforma suportada.
-- Credenciais zeradas da memória via `secrecy::SecretString` — nunca ficam na RAM.
-- Captura paralela de stdout/stderr em toda execução remota.
-- 2 locales prontos — `en-US` e `pt-BR`, detectados automaticamente pelo locale do sistema.
-
-### Por que ssh-cli?
-- Elimina wrappers SSH baseados em Node.js e seu overhead de runtime.
-- Um único arquivo — copie e execute, sem passo de instalação ou gerenciador de pacotes.
-- ZERO arquivos `.env` — todas as credenciais gerenciadas exclusivamente via subcomandos CLI.
-- Exit codes do sysexits.h permitem scripting confiável e classificação de erros por LLMs.
-
-### Início rápido
-
-```bash
-# Instalar
-cargo install ssh-cli
-
-# Registrar uma VPS
-ssh-cli vps add \
-  --name producao \
-  --host producao.exemplo.com \
-  --port 22 \
-  --user admin \
-  --password 's3gred0'
-
-# Selecionar a VPS ativa
-ssh-cli connect producao
-
-# Executar comando remoto
-ssh-cli exec producao "hostname"
-```
-
-### Referência de comandos
-
-| Comando | Propósito |
+| Code | Meaning |
 |---|---|
-| `ssh-cli vps add --name X --host Y …` | Adiciona uma VPS (deduplicação por nome) |
-| `ssh-cli vps list [--json]` | Lista VPSs registradas (senhas mascaradas) |
-| `ssh-cli vps show <nome> [--json]` | Exibe uma VPS (senhas mascaradas) |
-| `ssh-cli vps edit <nome> --host Z` | Edita campos de uma VPS existente |
-| `ssh-cli vps remove <nome>` | Remove uma VPS do registro |
-| `ssh-cli vps path` | Mostra o caminho do `config.toml` |
-| `ssh-cli connect <nome>` | Define a VPS ativa para os próximos comandos |
-| `ssh-cli exec <vps> <cmd> [--json]` | Executa comando em uma VPS via SSH |
-| `ssh-cli sudo-exec <vps> <cmd> [--json]` | Executa comando com `sudo` em uma VPS |
-| `ssh-cli scp upload <vps> <local> <remoto>` | Envia arquivo via SCP |
-| `ssh-cli scp download <vps> <remoto> <local>` | Baixa arquivo via SCP |
-| `ssh-cli tunnel <vps> <porta-local> <host-remoto> <porta-remota>` | Cria port-forward local via SSH |
-| `ssh-cli health-check [<vps>]` | Verifica conectividade SSH (usa VPS ativa se omitida) |
-| `ssh-cli completions <shell>` | Imprime completions de shell no stdout |
+| `0` | Success |
+| `1` | General runtime error |
+| `64` | Usage / invalid arguments |
+| `65` | Data error (JSON/TOML/schema) |
+| `66` | VPS or input file not found |
+| `73` | Cannot create config/output |
+| `74` | IO or SSH connection/timeout |
+| `77` | Authentication rejected or host-key / sudo policy |
+| `130` | SIGINT |
+| `143` | SIGTERM |
 
-### Flags de override em runtime
+- Prefer `--json` or auto JSON when stdout is not a TTY (`--output-format` overrides).
+- Retry only on transient IO/timeout (`74`), never on auth (`77`) or usage (`64`).
 
-Substitui credenciais armazenadas por invocação sem modificar o registro de VPSs.
-Estas flags prevalecem sobre os valores salvos com `vps add` ou `vps edit`.
 
-| Comando | Flag | Propósito |
-|---|---|---|
-| `exec` | `--password <SENHA>` | Substitui a senha SSH para esta invocação |
-| `exec` | `--timeout <MS>` | Substitui o timeout do comando em milissegundos |
-| `sudo-exec` | `--password <SENHA>` | Substitui a senha SSH |
-| `sudo-exec` | `--sudo-password <SENHA>` | Substitui a senha do sudo (alias: `--sudoPassword`) |
-| `sudo-exec` | `--timeout <MS>` | Substitui o timeout do comando em milissegundos |
-| `scp upload` | `--password <SENHA>` | Substitui a senha SSH |
-| `scp download` | `--password <SENHA>` | Substitui a senha SSH |
-| `tunnel` | `--password <SENHA>` | Substitui a senha SSH |
-| `health-check` | `--password <SENHA>` | Substitui a senha SSH |
+## Performance
+### Cold start and memory goals
+- Target cold start under 100 ms on modern Linux hosts.
+- Keep process memory far below a resident long-lived Node SSH process.
+- Die after each command so RAM returns to the OS immediately.
+- Avoid long-lived tunnels without `--timeout-ms`.
 
-#### Aliases camelCase para LLMs
 
-Todas as flags com múltiplas palavras aceitam aliases camelCase para uso natural por LLMs:
+## Memory Requirements
+### Plan capacity for multi-host registries
+- Config TOML size grows with host count and path lengths.
+- Output buffers respect `max_output_chars` per stream.
+- Known_hosts file grows slowly with unique host:port pairs.
+- No embedding model and no Node heap are required.
 
-| Flag canônica | Alias camelCase |
-|---|---|
-| `--sudo-password` | `--sudoPassword` |
-| `--config-dir` | `--configDir` |
-| `--output-format` | `--outputFormat` |
-| `--no-color` | `--noColor` |
 
-Exemplo — substituir senha em runtime sem armazená-la:
-```bash
-ssh-cli exec producao "uptime" --password 'segredo-runtime'
-ssh-cli sudo-exec producao "systemctl restart nginx" --sudoPassword 'segredo-sudo'
-```
+## Troubleshooting FAQ
+### Fix common install and runtime failures
+- Install fails on crypto RC drift: rerun with `--locked` or use release **0.3.6+** pins (`scripts/verify_install_resolve.sh`).
+- Auth fails on key-only hosts: set `--key` on `vps add` or pass `--key` / `--password-stdin` to `exec`.
+- Auth fails with passphrase keys: use `--key-passphrase-stdin`.
+- Host key changed: confirm legitimacy then rerun with `--replace-host-key`.
+- Command rejected as too long: raise `max_command_chars` or shorten the command.
+- Config has encrypted secrets but no key: run `ssh-cli secrets init` or restore `secrets.key` / env master-key.
+- sudo-exec disabled: remove `--disable-sudo` and set `disable_sudo=false` on the host.
+- macOS Gatekeeper blocks binary: run `xattr -d com.apple.quarantine /path/to/ssh-cli`.
+- Permission denied on config: ensure `chmod 600` on the XDG `config.toml` and `secrets.key`.
 
-### Flags globais
 
-| Flag | Abreviação | Propósito |
-|---|---|---|
-| `--lang <LOCALE>` | | Força o idioma (`en-US`, `pt-BR`) |
-| `--verbose` | `-v` | Aumenta verbosidade dos logs para `debug` |
-| `--quiet` | `-q` | Suprime output não-JSON (somente `error`) |
-| `--config-dir <DIR>` | | Substitui o diretório de configuração |
-| `--no-color` | | Desativa cores ANSI no output |
-| `--output-format <FORMATO>` | | Formato de saída: `text` (padrão) ou `json` |
+## Contributing
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+- Follow the bilingual documentation framework for every public doc change.
 
-### Variáveis de ambiente
 
-| Variável | Descrição | Exemplo |
-|---|---|---|
-| `SSH_CLI_HOME` | Substitui o diretório base de configuração | `/tmp/ssh-cli-teste` |
-| `SSH_CLI_LANG` | Substitui o locale detectado | `pt-BR` |
-| `NO_COLOR` | Desativa cores ANSI (qualquer valor não-vazio) | `1` |
-| `CLICOLOR_FORCE` | Força cores ANSI mesmo sem TTY | `1` |
+## Security
+- Read [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+- Prefer stdin secret flags and key files over argv passwords.
 
-### Exit codes
 
-| Código | Constante | Significado |
-|---|---|---|
-| `0` | `EX_OK` | Sucesso |
-| `1` | `EX_GENERAL` | Erro genérico de runtime |
-| `64` | `EX_USAGE` | Uso incorreto da CLI ou argumento inválido |
-| `65` | `EX_DATAERR` | Dados de entrada inválidos (JSON/TOML) |
-| `66` | `EX_NOINPUT` | VPS ou arquivo não encontrado |
-| `73` | `EX_CANTCREAT` | Falha ao criar saída (config não gravou) |
-| `74` | `EX_IOERR` | Erro de I/O ou conexão SSH |
-| `77` | `EX_NOPERM` | Autenticação SSH rejeitada |
-| `130` | `EX_SIGINT` | Terminado por SIGINT (Ctrl+C) |
-| `143` | `EX_SIGTERM` | Terminado por SIGTERM |
+## Changelog
+- Read version history in [CHANGELOG.md](CHANGELOG.md).
+- Do not paste release notes into this README.
 
-### Completions de shell
-- Bash: `ssh-cli completions bash > ~/.local/share/bash-completion/completions/ssh-cli`
-- Zsh: `ssh-cli completions zsh > ~/.zfunc/_ssh-cli`
-- Fish: `ssh-cli completions fish > ~/.config/fish/completions/ssh-cli.fish`
-- PowerShell: `ssh-cli completions powershell >> $PROFILE`
 
-### Solução de problemas
-- macOS Gatekeeper bloqueia o binário: execute `xattr -d com.apple.quarantine /caminho/para/ssh-cli`
-- Alpine Linux ou target musl: compile com `--features musl-allocator`
-- Permissão negada no `config.toml`: execute `chmod 600 ~/.config/ssh-cli/config.toml`
-
-### Licença
-
-MIT — veja [LICENSE](LICENSE).
+## License
+- Dual-licensed under MIT or Apache-2.0.
+- See [LICENSE](LICENSE), [LICENSE-MIT](LICENSE-MIT), and [LICENSE-APACHE](LICENSE-APACHE).

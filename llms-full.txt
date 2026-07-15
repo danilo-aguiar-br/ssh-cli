@@ -1,0 +1,68 @@
+# ssh-cli full LLM index
+
+> Complete discovery map for one-shot multi-host SSH automation
+
+ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start the binary, run one operation, and the process exits. Multi-host credentials live under XDG via directories::ProjectDirs. Authentication accepts password or OpenSSH private key. sudo uses secure `sh -c` packing. su-exec provides real elevation. known_hosts implements TOFU. config writes are atomic with flock. Secrets in config.toml are **encrypted by default** (ChaCha20-Poly1305; auto `secrets.key`). Install is gated with crypto pins for clean `cargo install --locked`. Product line **0.3.6** closes GAP-001–014.
+
+- Portuguese discovery file: [llms.pt-BR.txt](llms.pt-BR.txt)
+- Short index: [llms.txt](llms.txt)
+
+## Primary Documentation
+- [README.md](README.md)
+- [README.pt-BR.md](README.pt-BR.md)
+- [CHANGELOG.md](CHANGELOG.md)
+- [CHANGELOG.pt-BR.md](CHANGELOG.pt-BR.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [CONTRIBUTING.pt-BR.md](CONTRIBUTING.pt-BR.md)
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- [CODE_OF_CONDUCT.pt-BR.md](CODE_OF_CONDUCT.pt-BR.md)
+- [SECURITY.md](SECURITY.md)
+- [SECURITY.pt-BR.md](SECURITY.pt-BR.md)
+- [INTEGRATIONS.md](INTEGRATIONS.md)
+- [INTEGRATIONS.pt-BR.md](INTEGRATIONS.pt-BR.md)
+- [docs/HOW_TO_USE.md](docs/HOW_TO_USE.md)
+- [docs/HOW_TO_USE.pt-BR.md](docs/HOW_TO_USE.pt-BR.md)
+- [docs/AGENTS.md](docs/AGENTS.md)
+- [docs/AGENTS.pt-BR.md](docs/AGENTS.pt-BR.md)
+- [docs/COOKBOOK.md](docs/COOKBOOK.md)
+- [docs/COOKBOOK.pt-BR.md](docs/COOKBOOK.pt-BR.md)
+- [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md)
+- [docs/CROSS_PLATFORM.pt-BR.md](docs/CROSS_PLATFORM.pt-BR.md)
+- [docs/MIGRATION.md](docs/MIGRATION.md)
+- [docs/MIGRATION.pt-BR.md](docs/MIGRATION.pt-BR.md)
+- [docs/TESTING.md](docs/TESTING.md)
+- [docs/TESTING.pt-BR.md](docs/TESTING.pt-BR.md)
+- [docs/schemas/README.md](docs/schemas/README.md)
+- [skills/ssh-cli-en/SKILL.md](skills/ssh-cli-en/SKILL.md)
+- [skills/ssh-cli-pt/SKILL.md](skills/ssh-cli-pt/SKILL.md)
+- [scripts/e2e_real_ssh.sh](scripts/e2e_real_ssh.sh) (real SSH E2E; never logs secrets)
+- [scripts/verify_install_resolve.sh](scripts/verify_install_resolve.sh) (GAP-014 install gate)
+
+## JSON Schemas
+- [vps-list.schema.json](docs/schemas/vps-list.schema.json)
+- [vps-show.schema.json](docs/schemas/vps-show.schema.json)
+- [vps-doctor.schema.json](docs/schemas/vps-doctor.schema.json)
+- [exec.schema.json](docs/schemas/exec.schema.json)
+- [sudo-exec.schema.json](docs/schemas/sudo-exec.schema.json)
+- [su-exec.schema.json](docs/schemas/su-exec.schema.json)
+- [health-check.schema.json](docs/schemas/health-check.schema.json)
+- [error-envelope.schema.json](docs/schemas/error-envelope.schema.json)
+
+## Commands (product surface 0.3.6)
+- `vps add|list|show|edit|remove|path|doctor|export|import`
+- `connect`, `exec`, `sudo-exec`, `su-exec`
+- `scp upload|download`, `tunnel --timeout-ms`, `health-check`
+- `secrets status|init|reencrypt`
+- `completions`
+
+## Operational Rules for Agents
+- Birth execute die after every product command
+- Prefer stored hosts over ad-hoc passwords in chat
+- Prefer key auth when available
+- Prefer `--password-stdin` and encrypted at-rest defaults
+- Validate command length before SSH using max_command_chars
+- Parse --json stdout and keep logs on stderr
+- Map exit codes before retry
+- Never reintroduce long-lived daemon packaging into this project
+- Never enable telemetry
+- Never print master-key or live SSH passwords

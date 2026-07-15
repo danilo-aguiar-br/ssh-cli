@@ -37,8 +37,42 @@ pub enum ErroSshCli {
     ConexaoFalhou(String),
 
     /// Autenticação SSH rejeitada pelo servidor.
-    #[error("autenticação SSH falhou")]
+    #[error(
+        "autenticação SSH falhou; tente --password-stdin, --key PATH, --key-passphrase-stdin ou verifique o usuário"
+    )]
     AutenticacaoFalhou,
+
+    /// Host key divergiu do known_hosts (possível MITM).
+    #[error(
+        "host key mudou para {host}:{porta}: esperado {esperado}, obtido {obtido} (use --replace-host-key se a troca for legítima)"
+    )]
+    HostKeyMudou {
+        /// Host.
+        host: String,
+        /// Porta.
+        porta: u16,
+        /// Fingerprint esperado.
+        esperado: String,
+        /// Fingerprint obtido.
+        obtido: String,
+    },
+
+    /// Comando excede `max_command_chars`.
+    #[error("comando excede max_command_chars ({max}): {len} caracteres")]
+    ComandoMuitoLongo {
+        /// Limite configurado.
+        max: usize,
+        /// Tamanho do comando.
+        len: usize,
+    },
+
+    /// Elevação desabilitada (`disable_sudo`).
+    #[error("sudo/su desabilitado para este host (disable_sudo)")]
+    SudoDesabilitado,
+
+    /// Senha su ausente para `su-exec`.
+    #[error("senha_su não configurada; use vps edit --su-password ou --su-password-stdin")]
+    SenhaSuAusente,
 
     /// Falha ao abrir ou operar um canal SSH.
     #[error("canal SSH falhou: {0}")]
@@ -132,6 +166,10 @@ impl ErroSshCli {
             Self::AutenticacaoSsh(_) => exit_codes::EX_IOERR,
             Self::ConexaoFalhou(_) => exit_codes::EX_IOERR,
             Self::AutenticacaoFalhou => exit_codes::EX_NOPERM,
+            Self::HostKeyMudou { .. } => exit_codes::EX_NOPERM,
+            Self::ComandoMuitoLongo { .. } => exit_codes::EX_USAGE,
+            Self::SudoDesabilitado => exit_codes::EX_NOPERM,
+            Self::SenhaSuAusente => exit_codes::EX_USAGE,
             Self::CanalFalhou(_) => exit_codes::EX_IOERR,
             Self::TimeoutSsh(_) => exit_codes::EX_IOERR,
             Self::ComandoFalhou { exit_code, .. } => *exit_code,

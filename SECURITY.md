@@ -1,0 +1,73 @@
+# Security Policy
+
+- Read this document in [Portuguese (pt-BR)](SECURITY.pt-BR.md).
+
+
+## Supported Versions
+- The table below lists which ssh-cli versions currently receive security patches.
+- Users on unsupported lines must upgrade to the current release line.
+
+| Version | Status | Security Patches |
+| --- | --- | --- |
+| 0.3.x | Supported | Yes, current line |
+| 0.2.x | Limited | Critical fixes only when feasible |
+| 0.1.x | Unsupported | No patches |
+| < 0.1 | Unsupported | No patches |
+
+
+## Reporting a Vulnerability
+- Report security issues through GitHub Security Advisories in the public `ssh-cli` repository as the preferred private channel.
+- Use email at daniloaguiarbr@proton.me only as fallback when GitHub private reporting is unavailable.
+- Never open a public GitHub issue, pull request, or discussion for security-related reports.
+- Include a minimal reproduction, affected versions, and expected versus actual behavior.
+- Include environment details such as OS, architecture, and rustc version.
+- Include a CVSS 3.1 severity estimate when possible to accelerate triage.
+- Redact live credentials from every attachment and log excerpt.
+
+
+## Response SLA
+- Triage of every advisory starts within 72 business hours of submission.
+- Initial acknowledgment is sent within that same 72-hour window.
+- You receive a case identifier and an assigned maintainer contact.
+- Progress updates are shared at least every 7 days until resolution or public disclosure.
+
+
+## Fix SLA by CVSS Severity
+- Critical severity (CVSS 9.0 to 10.0) receives a patch within 7 calendar days of validated triage.
+- High severity (CVSS 7.0 to 8.9) receives a patch within 14 calendar days of validated triage.
+- Medium severity (CVSS 4.0 to 6.9) receives a patch within 30 calendar days of validated triage.
+- Low severity (CVSS 0.1 to 3.9) receives a patch within 90 calendar days of validated triage.
+- Released fixes include a CHANGELOG entry and a GitHub Security Advisory when the affected line is still supported.
+
+
+## Disclosure Policy
+- Coordinated disclosure is the default for validated vulnerabilities.
+- Public disclosure is delayed until a fixed release is available or the Fix SLA window expires with documented reason.
+- Researchers may publish after mutual agreement or after the coordinated window ends.
+
+
+## Security Update Policy
+- Security fixes land on the current minor line first.
+- Backports to older minor lines happen only when impact and effort justify the work.
+- Users must upgrade with `cargo install ssh-cli --locked --force` after a security release.
+
+
+## Hall of Fame
+- Security researchers who request public credit are listed here after coordinated disclosure completes.
+- The list starts empty for the current ownership line under `danilo-aguiar-br`.
+
+
+## Best Practices for Users
+- Prefer private key authentication over password authentication when the host allows it.
+- Prefer `--password-stdin`, `--sudo-password-stdin`, and `--su-password-stdin` over argv secrets.
+- **Default at-rest encryption** (ChaCha20-Poly1305): on first secret write, auto-creates `secrets.key` (0o600) next to `config.toml` unless you opt out.
+- Key resolution order: `SSH_CLI_SECRETS_KEY` → `SSH_CLI_SECRETS_KEY_FILE` → keyring (`SSH_CLI_USE_KEYRING=1`) → XDG `secrets.key`.
+- CLI: `ssh-cli secrets status|init|reencrypt` (never prints the master key).
+- Opt-out for tests only: `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
+- **Never** log the master key, passwords, or decrypted secrets.
+- Keep `config.toml` mode `0600` and restrict backup locations.
+- Review TOFU host-key change errors before using `--replace-host-key`.
+- Never commit host registries that include live secrets.
+- Disable elevation with `--disable-sudo` when a workflow must not escalate.
+- Run one-shot commands only; never expect a long-lived SSH daemon from this CLI.
+- Install with `--locked` to avoid accidental crypto re-resolve drift.

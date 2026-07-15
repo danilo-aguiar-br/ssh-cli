@@ -14,16 +14,18 @@ logs/
 *.pfx
 .env
 .env.*
+.e2e.local
+e2e-artifacts/
 known_hosts
 
 # Privado de desenvolvimento
 .serena/
 .claude/
-CLAUDE.md
+/CLAUDE.md
 docs_prd/
 docs_rules/
 projeto_ssh-cli.md
-gaps.md
+/gaps.md
 .cursor/
 
 # GraphRAG / filas de enriquecimento (artefatos locais)
@@ -53,6 +55,6 @@ lcov.info
 ralph-loop.local.md
 
 # Privado de desenvolvimento
-AGENTS.md
+/AGENTS.md
 deny.toml
 Cross.toml

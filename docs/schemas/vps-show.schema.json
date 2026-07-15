@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-show.schema.json",
+  "title": "vps show JSON",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "name",
+    "host",
+    "port",
+    "user",
+    "timeout_ms",
+    "max_command_chars",
+    "max_output_chars",
+    "disable_sudo",
+    "schema_version"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "host": {
+      "type": "string"
+    },
+    "port": {
+      "type": "integer"
+    },
+    "user": {
+      "type": "string"
+    },
+    "password": {
+      "type": "string",
+      "description": "Masked secret"
+    },
+    "key_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "key_passphrase": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Masked when present"
+    },
+    "sudo_password": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Masked when present"
+    },
+    "su_password": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Masked when present"
+    },
+    "timeout_ms": {
+      "type": "integer"
+    },
+    "max_command_chars": {
+      "type": "integer"
+    },
+    "max_output_chars": {
+      "type": "integer"
+    },
+    "disable_sudo": {
+      "type": "boolean"
+    },
+    "schema_version": {
+      "type": "integer"
+    },
+    "added_at": {
+      "type": "string"
+    }
+  }
+}

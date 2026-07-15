@@ -1,16 +1,15 @@
-//! Motor SSH via `russh` 0.60.x (iteração 2).
+//! Motor SSH via `russh` 0.60.x.
 //!
-//! Nesta iteração implementamos:
-//! - `cliente`: conexão SSH assíncrona com autenticação por senha e execução
-//!   de comandos com captura paralela de stdout/stderr via `channel.wait()`.
-//! - `tunel`: abertura de canal `direct-tcpip` para port forwarding local.
-//!
-//! Iterações futuras adicionarão:
-//! - `pool`: pool de conexões com `Arc<RwLock<>>`
-//! - `sftp`: operações SFTP com streaming
-//! - `keepalive`: keepalive periódico e reconexão automática com backoff
-//! - `known_hosts`: persistência e validação de fingerprints
+//! - `cliente`: conexão one-shot, auth senha/chave, exec com timeout e abort
+//! - `known_hosts`: TOFU de fingerprints em XDG
+//! - `packing`: empacotamento seguro sudo/su (automação one-shot)
 
 pub mod cliente;
+pub mod known_hosts;
+pub mod packing;
 
 pub use cliente::{truncar_utf8, ClienteSsh, ConfiguracaoConexao, SaidaExecucao};
+pub use packing::{
+    anexar_description, empacotar_abort_pkill, empacotar_su, empacotar_sudo,
+    escapar_shell_single_quotes, padrao_abort_remoto,
+};

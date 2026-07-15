@@ -1,0 +1,494 @@
+//! Cifragem at-rest de segredos no `config.toml` (GAP-009 / R-SECRETS-DEFAULT).
+//!
+//! Ordem de resolução da chave mestra (32 bytes):
+//! 1. `SSH_CLI_SECRETS_KEY` — 64 hex chars
+//! 2. `SSH_CLI_SECRETS_KEY_FILE` — arquivo com 64 hex chars
+//! 3. OS keyring (`service=ssh-cli`, `user=secrets-master-key`) se `SSH_CLI_USE_KEYRING=1`
+//! 4. Arquivo XDG `secrets.key` (ao lado do `config.toml`), criado automaticamente na 1ª gravação
+//!
+//! Opt-out (testes/debug): `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` — não auto-cria chave;
+//! serialização permanece em texto se nenhuma fonte 1–3 estiver definida.
+//!
+//! Com chave: serialização grava `sshcli-enc:v1:<base64(nonce||ciphertext)>`.
+//!
+//! **Nunca** logar ou retornar a chave ou o plaintext em erros públicos.
+
+use crate::erros::{ErroSshCli, ResultadoSshCli};
+use chacha20poly1305::aead::{Aead, KeyInit};
+use chacha20poly1305::{ChaCha20Poly1305, Nonce};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use zeroize::Zeroize;
+
+/// Prefixo de blobs cifrados no TOML.
+pub const PREFIXO_ENC: &str = "sshcli-enc:v1:";
+
+/// Nome do arquivo de chave mestra no diretório de config.
+pub const NOME_ARQUIVO_CHAVE: &str = "secrets.key";
+
+/// Override de diretório de config (ex.: `--config-dir`), para alinhar `secrets.key`.
+static DIR_CONFIG_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Define o diretório de config para resolver `secrets.key` (one-shot; chamado no `executar`).
+pub fn definir_diretorio_config(dir: Option<PathBuf>) {
+    if let Ok(mut g) = DIR_CONFIG_OVERRIDE.lock() {
+        *g = dir;
+    }
+}
+
+/// Fonte da chave mestra (sem expor material).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FonteChave {
+    /// Ausente — at-rest em texto (só com opt-out ou antes da 1ª gravação).
+    Nenhuma,
+    /// Variável `SSH_CLI_SECRETS_KEY`.
+    Env,
+    /// Arquivo `SSH_CLI_SECRETS_KEY_FILE`.
+    Arquivo,
+    /// OS keyring.
+    Keyring,
+    /// Arquivo XDG / config-dir `secrets.key`.
+    XdgArquivo,
+}
+
+impl FonteChave {
+    /// Nome estável para JSON/doctor.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Nenhuma => "none",
+            Self::Env => "env",
+            Self::Arquivo => "file",
+            Self::Keyring => "keyring",
+            Self::XdgArquivo => "xdg_file",
+        }
+    }
+}
+
+/// Relatório de modo de segredos (sem material sensível).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusSegredos {
+    /// Fonte da chave mestra.
+    pub fonte: FonteChave,
+    /// Se true, serialização cifra secrets.
+    pub cifragem_ativa: bool,
+    /// Path do `secrets.key` (pode não existir ainda).
+    pub key_file_path: PathBuf,
+    /// Se true, opt-out de plaintext está ativo.
+    pub plaintext_opt_out: bool,
+}
+
+/// True se `SSH_CLI_ALLOW_PLAINTEXT_SECRETS` pede plaintext.
+#[must_use]
+pub fn plaintext_permitido() -> bool {
+    std::env::var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+/// Diretório de config usado para `secrets.key` (override > SSH_CLI_HOME > XDG).
+pub fn diretorio_config_segredos() -> ResultadoSshCli<PathBuf> {
+    if let Ok(g) = DIR_CONFIG_OVERRIDE.lock() {
+        if let Some(ref d) = *g {
+            return Ok(d.clone());
+        }
+    }
+    if let Ok(home) = std::env::var("SSH_CLI_HOME") {
+        if home.contains("..") {
+            return Err(ErroSshCli::ArgumentoInvalido(
+                "SSH_CLI_HOME não pode conter '..'".to_string(),
+            ));
+        }
+        return Ok(PathBuf::from(home));
+    }
+    let dirs = directories::ProjectDirs::from("", "", "ssh-cli").ok_or_else(|| {
+        ErroSshCli::Generico("não foi possível resolver diretório de config".to_string())
+    })?;
+    Ok(dirs.config_dir().to_path_buf())
+}
+
+/// Path canônico do arquivo de chave mestra local.
+pub fn caminho_secrets_key() -> ResultadoSshCli<PathBuf> {
+    Ok(diretorio_config_segredos()?.join(NOME_ARQUIVO_CHAVE))
+}
+
+/// Resolve chave mestra e origem (não auto-cria).
+pub fn carregar_chave_mestra() -> ResultadoSshCli<(Option<[u8; 32]>, FonteChave)> {
+    if let Ok(hex) = std::env::var("SSH_CLI_SECRETS_KEY") {
+        let chave = parse_hex_chave(hex.trim()).map_err(|e| {
+            ErroSshCli::ArgumentoInvalido(format!("SSH_CLI_SECRETS_KEY inválida: {e}"))
+        })?;
+        return Ok((Some(chave), FonteChave::Env));
+    }
+
+    if let Ok(path) = std::env::var("SSH_CLI_SECRETS_KEY_FILE") {
+        let texto = std::fs::read_to_string(&path).map_err(|e| {
+            ErroSshCli::ArgumentoInvalido(format!("falha lendo SSH_CLI_SECRETS_KEY_FILE: {e}"))
+        })?;
+        let chave = parse_hex_chave(texto.trim()).map_err(|e| {
+            ErroSshCli::ArgumentoInvalido(format!("SSH_CLI_SECRETS_KEY_FILE inválida: {e}"))
+        })?;
+        return Ok((Some(chave), FonteChave::Arquivo));
+    }
+
+    if std::env::var("SSH_CLI_USE_KEYRING")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        match ler_keyring() {
+            Ok(Some(chave)) => return Ok((Some(chave), FonteChave::Keyring)),
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(erro = %e, "keyring indisponível; tentando secrets.key");
+            }
+        }
+    }
+
+    let path = caminho_secrets_key()?;
+    if path.is_file() {
+        let texto = std::fs::read_to_string(&path)
+            .map_err(|e| ErroSshCli::Generico(format!("falha lendo {}: {e}", path.display())))?;
+        let chave = parse_hex_chave(texto.trim())
+            .map_err(|e| ErroSshCli::ArgumentoInvalido(format!("secrets.key inválida: {e}")))?;
+        return Ok((Some(chave), FonteChave::XdgArquivo));
+    }
+
+    Ok((None, FonteChave::Nenhuma))
+}
+
+/// Garante chave para **escrita**: carrega existente ou auto-cria `secrets.key`
+/// (salvo opt-out plaintext).
+pub fn garantir_chave_para_escrita() -> ResultadoSshCli<(Option<[u8; 32]>, FonteChave)> {
+    let (existente, fonte) = carregar_chave_mestra()?;
+    if existente.is_some() {
+        return Ok((existente, fonte));
+    }
+    if plaintext_permitido() {
+        return Ok((None, FonteChave::Nenhuma));
+    }
+    let path = caminho_secrets_key()?;
+    let hex = gerar_hex_chave()?;
+    gravar_chave_arquivo(&path, &hex, false)?;
+    let chave = parse_hex_chave(&hex)
+        .map_err(|e| ErroSshCli::Generico(format!("chave gerada inválida: {e}")))?;
+    Ok((Some(chave), FonteChave::XdgArquivo))
+}
+
+/// Status atual (sem carregar material em logs).
+pub fn status_segredos() -> ResultadoSshCli<StatusSegredos> {
+    let key_file_path = caminho_secrets_key()?;
+    let (chave, fonte) = carregar_chave_mestra()?;
+    let cifragem_ativa = chave.is_some();
+    if let Some(mut k) = chave {
+        k.zeroize();
+    }
+    Ok(StatusSegredos {
+        fonte,
+        cifragem_ativa,
+        key_file_path,
+        plaintext_opt_out: plaintext_permitido(),
+    })
+}
+
+/// True se a string já é blob cifrado.
+#[must_use]
+pub fn eh_blob_cifrado(valor: &str) -> bool {
+    valor.starts_with(PREFIXO_ENC)
+}
+
+/// Serializa um segredo para TOML: cifra se houver (ou auto-criar) chave; senão plaintext.
+pub fn serializar_segredo(plaintext: &str) -> ResultadoSshCli<String> {
+    let (chave, _) = garantir_chave_para_escrita()?;
+    match chave {
+        None => Ok(plaintext.to_string()),
+        Some(mut key) => {
+            let out = cifrar(&key, plaintext)?;
+            key.zeroize();
+            Ok(out)
+        }
+    }
+}
+
+/// Desserializa de TOML: decifra blobs `sshcli-enc:v1:`; senão devolve como está.
+pub fn deserializar_segredo(armazenado: &str) -> ResultadoSshCli<String> {
+    if !eh_blob_cifrado(armazenado) {
+        return Ok(armazenado.to_string());
+    }
+    let (chave, _) = carregar_chave_mestra()?;
+    let mut key = chave.ok_or_else(|| {
+        ErroSshCli::ArgumentoInvalido(
+            "config contém secrets cifrados; defina SSH_CLI_SECRETS_KEY, SSH_CLI_SECRETS_KEY_FILE, SSH_CLI_USE_KEYRING=1 ou secrets.key (ssh-cli secrets init)"
+                .to_string(),
+        )
+    })?;
+    let plain = decifrar(&key, armazenado)?;
+    key.zeroize();
+    Ok(plain)
+}
+
+/// Gera 32 bytes aleatórios como hex 64.
+pub fn gerar_hex_chave() -> ResultadoSshCli<String> {
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes)
+        .map_err(|e| ErroSshCli::Generico(format!("RNG falhou: {e}")))?;
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    bytes.zeroize();
+    Ok(hex)
+}
+
+/// Grava chave hex em arquivo com 0o600 (quando suportado).
+pub fn gravar_chave_arquivo(path: &Path, hex64: &str, force: bool) -> ResultadoSshCli<()> {
+    let _ = parse_hex_chave(hex64)
+        .map_err(|e| ErroSshCli::ArgumentoInvalido(format!("chave inválida: {e}")))?;
+    if path.exists() && !force {
+        return Err(ErroSshCli::ArgumentoInvalido(format!(
+            "{} já existe; use --force para sobrescrever",
+            path.display()
+        )));
+    }
+    if let Some(pai) = path.parent() {
+        std::fs::create_dir_all(pai)?;
+    }
+    let pai = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(pai)
+        .map_err(|e| ErroSshCli::Generico(format!("tempfile secrets.key: {e}")))?;
+    use std::io::Write;
+    tmp.write_all(hex64.trim().as_bytes())
+        .map_err(|e| ErroSshCli::Generico(format!("write secrets.key: {e}")))?;
+    tmp.write_all(b"\n")
+        .map_err(|e| ErroSshCli::Generico(format!("write secrets.key: {e}")))?;
+    tmp.as_file()
+        .sync_all()
+        .map_err(|e| ErroSshCli::Generico(format!("fsync secrets.key: {e}")))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        tmp.as_file()
+            .set_permissions(perms)
+            .map_err(|e| ErroSshCli::Generico(format!("chmod secrets.key: {e}")))?;
+    }
+    tmp.persist(path)
+        .map_err(|e| ErroSshCli::Generico(format!("persist secrets.key: {e}")))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+/// Inicializa master-key em arquivo XDG ou keyring. **Nunca** imprime a chave.
+pub fn init_master_key(use_keyring: bool, force: bool) -> ResultadoSshCli<StatusSegredos> {
+    let hex = gerar_hex_chave()?;
+    if use_keyring {
+        if !force {
+            match ler_keyring() {
+                Ok(Some(_)) => {
+                    return Err(ErroSshCli::ArgumentoInvalido(
+                        "keyring já contém master-key; use --force".to_string(),
+                    ));
+                }
+                Ok(None) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        gravar_chave_no_keyring(&hex)?;
+        drop(hex);
+        return status_segredos();
+    }
+    let path = caminho_secrets_key()?;
+    gravar_chave_arquivo(&path, &hex, force)?;
+    drop(hex);
+    status_segredos()
+}
+
+/// Grava chave mestra (hex) no OS keyring. Não imprime a chave.
+pub fn gravar_chave_no_keyring(hex64: &str) -> ResultadoSshCli<()> {
+    let _ = parse_hex_chave(hex64)
+        .map_err(|e| ErroSshCli::ArgumentoInvalido(format!("chave inválida: {e}")))?;
+    let entry = keyring::Entry::new("ssh-cli", "secrets-master-key")
+        .map_err(|e| ErroSshCli::Generico(format!("keyring Entry::new falhou: {e}")))?;
+    entry
+        .set_password(hex64.trim())
+        .map_err(|e| ErroSshCli::Generico(format!("keyring set falhou: {e}")))?;
+    Ok(())
+}
+
+fn parse_hex_chave(hex: &str) -> Result<[u8; 32], String> {
+    let h = hex.trim();
+    if h.len() != 64 {
+        return Err("espere 64 caracteres hex (32 bytes)".to_string());
+    }
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        let byte =
+            u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).map_err(|_| "hex inválido".to_string())?;
+        out[i] = byte;
+    }
+    Ok(out)
+}
+
+fn cifrar(key: &[u8; 32], plaintext: &str) -> ResultadoSshCli<String> {
+    let cipher = ChaCha20Poly1305::new_from_slice(key)
+        .map_err(|_| ErroSshCli::Generico("chave AEAD inválida".to_string()))?;
+    let mut nonce_bytes = [0u8; 12];
+    getrandom::getrandom(&mut nonce_bytes)
+        .map_err(|e| ErroSshCli::Generico(format!("RNG falhou: {e}")))?;
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(nonce, plaintext.as_bytes())
+        .map_err(|_| ErroSshCli::Generico("falha ao cifrar segredo".to_string()))?;
+    let mut packed = Vec::with_capacity(12 + ciphertext.len());
+    packed.extend_from_slice(&nonce_bytes);
+    packed.extend_from_slice(&ciphertext);
+    Ok(format!(
+        "{PREFIXO_ENC}{}",
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &packed)
+    ))
+}
+
+fn decifrar(key: &[u8; 32], blob: &str) -> ResultadoSshCli<String> {
+    let b64 = blob
+        .strip_prefix(PREFIXO_ENC)
+        .ok_or_else(|| ErroSshCli::Generico("blob cifrado malformado".to_string()))?;
+    let packed = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
+        .map_err(|_| ErroSshCli::Generico("blob cifrado base64 inválido".to_string()))?;
+    if packed.len() < 12 + 16 {
+        return Err(ErroSshCli::Generico(
+            "blob cifrado demasiado curto".to_string(),
+        ));
+    }
+    let (nonce_bytes, ct) = packed.split_at(12);
+    let cipher = ChaCha20Poly1305::new_from_slice(key)
+        .map_err(|_| ErroSshCli::Generico("chave AEAD inválida".to_string()))?;
+    let nonce = Nonce::from_slice(nonce_bytes);
+    let plain = cipher.decrypt(nonce, ct).map_err(|_| {
+        ErroSshCli::Generico("falha ao decifrar segredo (chave errada?)".to_string())
+    })?;
+    String::from_utf8(plain)
+        .map_err(|_| ErroSshCli::Generico("segredo decifrado não é UTF-8".to_string()))
+}
+
+fn ler_keyring() -> ResultadoSshCli<Option<[u8; 32]>> {
+    let entry = keyring::Entry::new("ssh-cli", "secrets-master-key")
+        .map_err(|e| ErroSshCli::Generico(format!("keyring Entry::new falhou: {e}")))?;
+    match entry.get_password() {
+        Ok(hex) => {
+            let chave = parse_hex_chave(&hex).map_err(|e| {
+                ErroSshCli::ArgumentoInvalido(format!("keyring master-key inválida: {e}"))
+            })?;
+            Ok(Some(chave))
+        }
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(ErroSshCli::Generico(format!("keyring get falhou: {e}"))),
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+    use serial_test::serial;
+    use tempfile::TempDir;
+
+    fn limpar_env_chave() {
+        std::env::remove_var("SSH_CLI_SECRETS_KEY");
+        std::env::remove_var("SSH_CLI_SECRETS_KEY_FILE");
+        std::env::remove_var("SSH_CLI_USE_KEYRING");
+        std::env::remove_var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS");
+        std::env::remove_var("SSH_CLI_HOME");
+        definir_diretorio_config(None);
+    }
+
+    /// Isola testes do XDG real (nunca poluir config do usuário).
+    fn sandbox() -> TempDir {
+        limpar_env_chave();
+        let tmp = TempDir::new().unwrap();
+        definir_diretorio_config(Some(tmp.path().to_path_buf()));
+        tmp
+    }
+
+    #[test]
+    #[serial]
+    fn roundtrip_com_chave_env() {
+        let _tmp = sandbox();
+        let hex = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+        std::env::set_var("SSH_CLI_SECRETS_KEY", hex);
+        let plain = "fake-test-password-not-real";
+        let enc = serializar_segredo(plain).unwrap();
+        assert!(eh_blob_cifrado(&enc));
+        assert!(!enc.contains(plain));
+        let back = deserializar_segredo(&enc).unwrap();
+        assert_eq!(back, plain);
+        limpar_env_chave();
+    }
+
+    #[test]
+    #[serial]
+    fn opt_out_mantem_plaintext() {
+        let _tmp = sandbox();
+        std::env::set_var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS", "1");
+        let plain = "fake-plaintext-only-for-unit-test";
+        let out = serializar_segredo(plain).unwrap();
+        assert_eq!(out, plain);
+        assert!(!eh_blob_cifrado(&out));
+        limpar_env_chave();
+    }
+
+    #[test]
+    #[serial]
+    fn default_auto_cria_secrets_key() {
+        let tmp = sandbox();
+        let plain = "fake-auto-enc-password";
+        let enc = serializar_segredo(plain).unwrap();
+        assert!(eh_blob_cifrado(&enc));
+        assert!(!enc.contains(plain));
+        assert!(tmp.path().join(NOME_ARQUIVO_CHAVE).is_file());
+        let back = deserializar_segredo(&enc).unwrap();
+        assert_eq!(back, plain);
+        limpar_env_chave();
+    }
+
+    #[test]
+    #[serial]
+    fn blob_sem_chave_falha() {
+        let tmp = sandbox();
+        let hex = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+        std::env::set_var("SSH_CLI_SECRETS_KEY", hex);
+        let enc = serializar_segredo("fake-secret").unwrap();
+        // Remove env e qualquer secrets.key do sandbox
+        limpar_env_chave();
+        definir_diretorio_config(Some(tmp.path().to_path_buf()));
+        let _ = std::fs::remove_file(tmp.path().join(NOME_ARQUIVO_CHAVE));
+        std::env::set_var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS", "1");
+        let err = deserializar_segredo(&enc).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("cifrados") || msg.contains("SSH_CLI") || msg.contains("secrets"),
+            "msg={msg}"
+        );
+        limpar_env_chave();
+    }
+
+    #[test]
+    fn parse_hex_tamanho() {
+        assert!(parse_hex_chave("aa").is_err());
+        assert!(parse_hex_chave(
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+        )
+        .is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn init_cria_arquivo() {
+        limpar_env_chave();
+        let tmp = TempDir::new().unwrap();
+        definir_diretorio_config(Some(tmp.path().to_path_buf()));
+        let st = init_master_key(false, false).unwrap();
+        assert!(st.cifragem_ativa);
+        assert_eq!(st.fonte, FonteChave::XdgArquivo);
+        assert!(st.key_file_path.is_file());
+        limpar_env_chave();
+    }
+}

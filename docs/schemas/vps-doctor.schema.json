@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-doctor.schema.json",
+  "title": "vps doctor JSON",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "layer",
+    "config_path",
+    "exists",
+    "permissions",
+    "schema_version",
+    "hosts",
+    "known_hosts",
+    "active_file",
+    "telemetry"
+  ],
+  "properties": {
+    "layer": {
+      "type": "string"
+    },
+    "config_path": {
+      "type": "string"
+    },
+    "exists": {
+      "type": "boolean"
+    },
+    "permissions": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer"
+    },
+    "hosts": {
+      "type": "integer"
+    },
+    "known_hosts": {
+      "type": "string"
+    },
+    "active_file": {
+      "type": "string"
+    },
+    "secrets_at_rest": {
+      "type": "string",
+      "description": "encrypted or plaintext"
+    },
+    "secrets_key_source": {
+      "type": "string",
+      "description": "none | env | file | keyring | xdg_file"
+    },
+    "secrets_key_file": {
+      "type": "string",
+      "description": "Path to secrets.key (may not exist yet)"
+    },
+    "secrets_plaintext_opt_out": {
+      "type": "boolean",
+      "description": "True when SSH_CLI_ALLOW_PLAINTEXT_SECRETS opts out of default encryption"
+    },
+    "telemetry": {
+      "type": "boolean",
+      "const": false
+    }
+  }
+}

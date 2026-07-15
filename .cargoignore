@@ -2,9 +2,9 @@
 .claude/
 docs_prd/
 docs_rules/
-AGENTS.md
-CLAUDE.md
-gaps.md
+/AGENTS.md
+/CLAUDE.md
+/gaps.md
 ralph-loop.local.md
 .env
 .env.*

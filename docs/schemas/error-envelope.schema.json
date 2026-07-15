@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/error-envelope.schema.json",
+  "title": "Error semantics for agents",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "exit_code": {
+      "type": "integer",
+      "description": "Process exit code following sysexits-inspired mapping"
+    },
+    "message": {
+      "type": "string",
+      "description": "Human error text on stderr when not using structured success JSON"
+    }
+  },
+  "required": [
+    "exit_code"
+  ]
+}

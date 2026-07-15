@@ -1,0 +1,85 @@
+{
+  "skill_name": "ssh-cli",
+  "queries": [
+    {
+      "query": "add my production vps to the multi-host registry and run uname over ssh with json",
+      "should_trigger": true
+    },
+    {
+      "query": "exec a remote command on edge.example.com with private key auth and parse stdout",
+      "should_trigger": true
+    },
+    {
+      "query": "need sudo-exec with safe packing to install packages on the staging host",
+      "should_trigger": true
+    },
+    {
+      "query": "open a short-lived ssh tunnel with timeout-ms to forward local 18080 to remote 8080",
+      "should_trigger": true
+    },
+    {
+      "query": "upload a tarball with scp and then health-check the host",
+      "should_trigger": true
+    },
+    {
+      "query": "secrets status failed after rotating master-key, how do i reencrypt config.toml",
+      "should_trigger": true
+    },
+    {
+      "query": "host key mismatch TOFU what flag replaces known_hosts after human approval",
+      "should_trigger": true
+    },
+    {
+      "query": "vps doctor shows wrong path, i need XDG config path and export redacted hosts",
+      "should_trigger": true
+    },
+    {
+      "query": "su-exec one-shot to become root because sudo is disabled on this box",
+      "should_trigger": true
+    },
+    {
+      "query": "password-stdin for vps add, dual max_command_chars max_output_chars for agent commands",
+      "should_trigger": true
+    },
+    {
+      "query": "write a react component that fetches weather from a public api",
+      "should_trigger": false
+    },
+    {
+      "query": "refactor this rust crate to use async postgres with sqlx",
+      "should_trigger": false
+    },
+    {
+      "query": "how do i center a div with css grid",
+      "should_trigger": false
+    },
+    {
+      "query": "generate a powerpoint pitch deck for our fundraising round",
+      "should_trigger": false
+    },
+    {
+      "query": "summarize this pdf invoice into a table",
+      "should_trigger": false
+    },
+    {
+      "query": "tune postgres vacuum settings for a 200gb table",
+      "should_trigger": false
+    },
+    {
+      "query": "create a github actions matrix for linux macos windows rust builds",
+      "should_trigger": false
+    },
+    {
+      "query": "translate this marketing landing page into spanish",
+      "should_trigger": false
+    },
+    {
+      "query": "plot sales csv columns with a line chart in a spreadsheet",
+      "should_trigger": false
+    },
+    {
+      "query": "debug why my local next.js hot reload is broken",
+      "should_trigger": false
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+# Política de Segurança
+
+- Read this document in [English](SECURITY.md).
+
+
+## Versões suportadas
+- A tabela abaixo lista quais versões do ssh-cli recebem patches de segurança.
+- Usuários em linhas não suportadas devem atualizar para a linha atual.
+
+| Versão | Status | Correções de segurança |
+| --- | --- | --- |
+| 0.3.x | Suportada | Sim, linha atual |
+| 0.2.x | Limitada | Só correções críticas quando viável |
+| 0.1.x | Sem suporte | Sem patches |
+| < 0.1 | Sem suporte | Sem patches |
+
+
+## Reportar uma vulnerabilidade
+- Reporte issues de segurança via GitHub Security Advisories no repositório público `ssh-cli` como canal privado preferencial.
+- Use e-mail daniloaguiarbr@proton.me apenas como fallback quando o reporte privado do GitHub estiver indisponível.
+- Nunca abra issue, pull request ou discussion pública para reportes de segurança.
+- Inclua reprodução mínima, versões afetadas e esperado versus atual.
+- Inclua detalhes de ambiente como OS, arquitetura e versão do rustc.
+- Inclua estimativa CVSS 3.1 quando possível para acelerar a triagem.
+- Omita ou mascare credenciais vivas de todo anexo e trecho de log.
+
+
+## SLA de resposta
+- A triagem de cada advisory começa em até 72 horas úteis após o envio.
+- O reconhecimento inicial é enviado na mesma janela de 72 horas.
+- Você recebe um identificador de caso e um maintainer responsável.
+- Atualizações de progresso são compartilhadas no mínimo a cada 7 dias até resolução ou divulgação pública.
+
+
+## SLA de correção por severidade CVSS
+- Severidade crítica (CVSS 9.0 a 10.0) recebe patch em até 7 dias corridos após triagem validada.
+- Severidade alta (CVSS 7.0 a 8.9) recebe patch em até 14 dias corridos após triagem validada.
+- Severidade média (CVSS 4.0 a 6.9) recebe patch em até 30 dias corridos após triagem validada.
+- Severidade baixa (CVSS 0.1 a 3.9) recebe patch em até 90 dias corridos após triagem validada.
+- Correções publicadas incluem entrada no CHANGELOG e GitHub Security Advisory quando a linha ainda for suportada.
+
+
+## Política de divulgação
+- Divulgação coordenada é o padrão para vulnerabilidades validadas.
+- A divulgação pública é adiada até haver release corrigida ou até expirar a janela de Fix SLA com motivo documentado.
+- Pesquisadores podem publicar após acordo mútuo ou após o fim da janela coordenada.
+
+
+## Política de atualização de segurança
+- Correções de segurança chegam primeiro na linha minor atual.
+- Backports para linhas minor antigas só ocorrem quando impacto e esforço justificam o trabalho.
+- Usuários devem atualizar com `cargo install ssh-cli --locked --force` após um release de segurança.
+
+
+## Hall da fama
+- Pesquisadores de segurança que pedirem crédito público são listados aqui após a divulgação coordenada.
+- A lista começa vazia na linha de ownership atual sob `danilo-aguiar-br`.
+
+
+## Boas práticas para usuários
+- Prefira autenticação por chave privada a senha quando o host permitir.
+- Prefira `--password-stdin`, `--sudo-password-stdin` e `--su-password-stdin` a segredos em argv.
+- **Cifragem at-rest por padrão** (ChaCha20-Poly1305): na primeira gravação de segredo, cria `secrets.key` (0o600) ao lado do `config.toml`, salvo opt-out.
+- Ordem da chave: `SSH_CLI_SECRETS_KEY` → `SSH_CLI_SECRETS_KEY_FILE` → keyring (`SSH_CLI_USE_KEYRING=1`) → XDG `secrets.key`.
+- CLI: `ssh-cli secrets status|init|reencrypt` (nunca imprime a master-key).
+- Opt-out só para testes: `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
+- **Nunca** logue master-key, senhas ou segredos decifrados.
+- Mantenha `config.toml` com mode `0600` e restrinja locais de backup.
+- Revise erros de mudança de host key TOFU antes de usar `--replace-host-key`.
+- Nunca faça commit de inventários de host com segredos vivos.
+- Desabilite elevação com `--disable-sudo` quando o workflow não deve escalar.
+- Rode apenas comandos one-shot; nunca espere um daemon SSH de longa duração desta CLI.
+- Instale com `--locked` para evitar drift de re-resolve crypto.

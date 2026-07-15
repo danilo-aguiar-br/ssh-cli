@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/exec.schema.json",
+  "title": "exec JSON",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "stdout",
+    "stderr",
+    "truncated_stdout",
+    "truncated_stderr",
+    "duration_ms"
+  ],
+  "properties": {
+    "stdout": {
+      "type": "string"
+    },
+    "stderr": {
+      "type": "string"
+    },
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "truncated_stdout": {
+      "type": "boolean"
+    },
+    "truncated_stderr": {
+      "type": "boolean"
+    },
+    "duration_ms": {
+      "type": "integer"
+    }
+  }
+}

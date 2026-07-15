@@ -1,0 +1,64 @@
+# ssh-cli
+
+> One-shot multi-host SSH CLI for AI agents with XDG storage and no Node daemon
+
+ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers through stdin/stdout. It replaces persistent long-lived Node SSH daemons processes with birth-execute-die invocations, multi-host XDG registries, password or key auth, safe sudo packing, su-exec, bounded tunnels, TOFU known_hosts, dual command/output char limits, and **default at-rest secret encryption** (ChaCha20-Poly1305 + `secrets.key`). Telemetry is forbidden. Prefer `cargo install ssh-cli --locked`. Current product line: **0.3.6** (includes GAP-001–014).
+
+- Read this document in [Portuguese (pt-BR)](llms.pt-BR.txt).
+- Expanded index: [llms-full.txt](llms-full.txt)
+
+## Primary Documentation
+### Canonical English sources for LLM ingestion
+- [README](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/README.md): install, commands, env, FAQ
+- [HOW_TO_USE](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/HOW_TO_USE.md): first command in 60 seconds
+- [COOKBOOK](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/COOKBOOK.md): executable recipes for hosts and remote ops
+- [AGENTS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/AGENTS.md): agent economics plus JSON contract
+- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.md): upgrade path from 0.3.3 to **0.3.6**
+- [INTEGRATIONS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/INTEGRATIONS.md): agent and IDE catalog
+- [CHANGELOG](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.md): release history
+- [CONTRIBUTING](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CONTRIBUTING.md): contribution workflow
+- [SECURITY](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/SECURITY.md): vulnerability disclosure and secrets at rest
+- [CODE_OF_CONDUCT](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CODE_OF_CONDUCT.md): community standards
+- [schemas index](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/schemas/README.md): machine-readable JSON contracts
+- [skill en](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/skills/ssh-cli-en/SKILL.md): imperative agent skill package
+
+## Core Commands
+### Subcommands grouped by lifecycle
+- `vps add|list|show|edit|remove|path|doctor|export|import` manages multi-host XDG registry
+- `connect` writes sibling active host marker
+- `exec` runs one-shot remote command
+- `sudo-exec` elevates with safe `sh -c` packing
+- `su-exec` elevates with one-shot `su -`
+- `scp upload|download` transfers files
+- `tunnel` opens bounded local port forward with required `--timeout-ms`
+- `health-check` probes connectivity and latency
+- `secrets status|init|reencrypt` manages master-key and at-rest encryption (never prints key)
+- `completions` emits shell completion scripts
+
+## Defaults and Limits
+- Default SSH port is 22
+- Default timeout is 60000 ms
+- Default max_command_chars is 1000
+- Default max_output_chars is 100000
+- Schema version for new hosts is 2
+- Secrets at rest: **encrypted by default** (auto `secrets.key`); opt-out `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` for tests only
+- Telemetry is always false
+- Install: always prefer `--locked`
+
+## Security rules for agents
+- Prefer `--password-stdin` / `--key` over argv passwords
+- Never log host passwords, master-key, or decrypted secrets
+- On auth failure try `--key`, `--password-stdin`, `--key-passphrase-stdin`
+- Review TOFU host-key errors before `--replace-host-key`
+
+## Exit Codes
+- `0` success
+- `1` general runtime error
+- `64` usage error
+- `65` data error
+- `66` VPS or file not found
+- `73` cannot create config output
+- `74` IO or SSH connection error
+- `77` authentication rejected
+- `130` SIGINT
+- `143` SIGTERM

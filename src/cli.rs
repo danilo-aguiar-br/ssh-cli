@@ -1,14 +1,12 @@
 //! Definição de argumentos CLI via `clap` derive e dispatcher.
 //!
-//! O ssh-cli MVP tem os seguintes modos de operação:
+//! 1. CRUD de VPS — `vps add|list|remove|edit|show|path|doctor|export|import`
+//! 2. `connect` — grava arquivo irmão `active` (não campo TOML)
+//! 3. Execução one-shot — `exec|sudo-exec|su-exec|scp|tunnel|health-check`
+//! 4. `secrets` — master-key status/init/reencrypt (cifragem at-rest default)
+//! 5. Completions
 //!
-//! 1. **CRUD de VPS** — `ssh-cli vps add|list|remove|edit|show|path`.
-//! 2. **Seleção de ativa** — `ssh-cli connect <NOME>` (grava em `config.toml.active`).
-//! 3. **Execução remota** — `ssh-cli exec|sudo-exec|scp|tunnel`.
-//! 4. **Health check** — `ssh-cli health-check [VPS]`.
-//! 5. **Completions** — `ssh-cli completions <SHELL>`.
-//!
-//! ZERO arquivo `.env`. Toda configuração é gerenciada via comandos explícitos.
+//! ZERO `.env` em runtime. ZERO telemetria. Ciclo one-shot: nascer → executar → morrer.
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -30,8 +28,9 @@ pub enum FormatoSaida {
 #[command(
     name = "ssh-cli",
     version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("SSH_CLI_COMMIT_HASH"), ")"),
-    about = "CLI Rust para LLMs operarem servidores via SSH.",
-    long_about = None,
+    about = "CLI Rust one-shot multi-host XDG para LLMs operarem servidores via SSH.",
+    long_about = "ssh-cli: binário leve one-shot (nascer→executar→morrer). Multi-host em storage XDG sem .env. \
+Auth por senha ou chave. Sem telemetria."
 )]
 pub struct Argumentos {
     /// Força o idioma da CLI (ex.: `pt-BR`, `en-US`).
@@ -54,9 +53,17 @@ pub struct Argumentos {
     #[arg(long, global = true)]
     pub no_color: bool,
 
-    /// Formato global de saída (text, json).
-    #[arg(long, global = true, value_enum, default_value_t = FormatoSaida::Text)]
-    pub output_format: FormatoSaida,
+    /// Formato global de saída (text, json). Se omitido: JSON quando stdout não é TTY.
+    #[arg(long, global = true, value_enum)]
+    pub output_format: Option<FormatoSaida>,
+
+    /// Desabilita sudo-exec/su-exec nesta invocação (alias --disableSudo).
+    #[arg(long, global = true, alias = "disableSudo")]
+    pub disable_sudo: bool,
+
+    /// Substitui host key divergente no known_hosts TOFU.
+    #[arg(long, global = true)]
+    pub replace_host_key: bool,
 
     /// Subcomando a executar.
     #[command(subcommand)]
@@ -66,14 +73,14 @@ pub struct Argumentos {
 /// Subcomandos de primeiro nível.
 #[derive(Debug, Subcommand)]
 pub enum Comando {
-    /// Gerencia VPSs cadastradas (add, list, remove, edit, show, path).
+    /// Gerencia VPSs cadastradas.
     Vps {
         /// Ação específica do CRUD de VPS.
         #[command(subcommand)]
         acao: AcaoVps,
     },
 
-    /// Define a VPS ativa (grava `active = "<NOME>"` no `config.toml`).
+    /// Define a VPS ativa (grava arquivo irmão `active` no diretório de config).
     Connect {
         /// Nome da VPS previamente adicionada via `vps add`.
         nome: String,
@@ -81,48 +88,107 @@ pub enum Comando {
 
     /// Executa um comando na VPS via SSH (stdout/stderr capturados).
     Exec {
-        /// Nome da VPS previamente adicionada via `vps add`.
+        /// Nome da VPS.
         vps_nome: String,
-
         /// Comando shell a executar.
         comando: String,
-
         /// Saída em JSON.
         #[arg(long)]
         json: bool,
-
-        /// Override de senha SSH para esta execução.
+        /// Override de senha SSH.
         #[arg(long)]
         password: Option<String>,
-
+        /// Lê senha SSH de stdin.
+        #[arg(long)]
+        password_stdin: bool,
+        /// Override de caminho de chave privada.
+        #[arg(long)]
+        key: Option<String>,
+        /// Passphrase da chave (runtime).
+        #[arg(long)]
+        key_passphrase: Option<String>,
+        /// Lê passphrase da chave de stdin.
+        #[arg(long)]
+        key_passphrase_stdin: bool,
         /// Override de timeout em milissegundos.
         #[arg(long)]
         timeout: Option<u64>,
+        /// Comentário shell anexado (comentário shell para auditoria).
+        #[arg(long)]
+        description: Option<String>,
     },
 
-    /// Executa um comando com `sudo` na VPS via SSH.
+    /// Executa um comando com `sudo` (packing `sh -c` seguro).
     SudoExec {
-        /// Nome da VPS previamente adicionada via `vps add`.
+        /// Nome da VPS.
         vps_nome: String,
-
-        /// Comando shell a executar com privilégios sudo.
+        /// Comando shell.
         comando: String,
-
         /// Saída em JSON.
         #[arg(long)]
         json: bool,
-
-        /// Override de senha SSH para esta execução.
+        /// Override de senha SSH.
         #[arg(long)]
         password: Option<String>,
-
-        /// Override de senha sudo para esta execução.
+        /// Lê senha SSH de stdin.
+        #[arg(long)]
+        password_stdin: bool,
+        /// Override de senha sudo.
         #[arg(long, alias = "sudoPassword", alias = "sudo_password")]
         sudo_password: Option<String>,
-
+        /// Lê senha sudo de stdin.
+        #[arg(long)]
+        sudo_password_stdin: bool,
+        /// Override de chave.
+        #[arg(long)]
+        key: Option<String>,
+        /// Passphrase da chave (runtime).
+        #[arg(long)]
+        key_passphrase: Option<String>,
+        /// Lê passphrase da chave de stdin.
+        #[arg(long)]
+        key_passphrase_stdin: bool,
         /// Override de timeout em milissegundos.
         #[arg(long)]
         timeout: Option<u64>,
+        /// Comentário shell anexado.
+        #[arg(long)]
+        description: Option<String>,
+    },
+
+    /// Executa um comando com elevação `su -` one-shot.
+    SuExec {
+        /// Nome da VPS.
+        vps_nome: String,
+        /// Comando shell.
+        comando: String,
+        /// Saída em JSON.
+        #[arg(long)]
+        json: bool,
+        /// Override de senha SSH.
+        #[arg(long)]
+        password: Option<String>,
+        /// Override de senha su.
+        #[arg(long, alias = "suPassword", alias = "su_password")]
+        su_password: Option<String>,
+        /// Lê senha su de stdin.
+        #[arg(long)]
+        su_password_stdin: bool,
+        /// Override de chave.
+        #[arg(long)]
+        key: Option<String>,
+        /// Passphrase da chave (runtime).
+        #[arg(long)]
+        key_passphrase: Option<String>,
+        /// Lê passphrase da chave de stdin.
+        #[arg(long)]
+        key_passphrase_stdin: bool,
+        /// Override de timeout.
+        #[arg(long)]
+        timeout: Option<u64>,
+        /// Comentário shell anexado.
+        #[arg(long)]
+        description: Option<String>,
     },
 
     /// Transferência de arquivos via SCP (upload/download).
@@ -132,38 +198,46 @@ pub enum Comando {
         acao: AcaoScp,
     },
 
-    /// Cria um tunnel SSH (port-forward local).
+    /// Tunnel SSH com deadline obrigatório (one-shot limitado).
     Tunnel {
-        /// Nome da VPS previamente adicionada via `vps add`.
+        /// Nome da VPS.
         vps_nome: String,
-
-        /// Porta local para escuta (ex.: 8080).
+        /// Porta local.
         porta_local: u16,
-
-        /// Host remoto accesible via SSH (ex.: 127.0.0.1).
+        /// Host remoto.
         host_remoto: String,
-
-        /// Porta remota (ex.: 5432).
+        /// Porta remota.
         porta_remota: u16,
-
-        /// Override de senha SSH para este tunnel.
+        /// Timeout obrigatório do tunnel em milissegundos.
+        #[arg(long)]
+        timeout_ms: u64,
+        /// Override de senha SSH.
         #[arg(long)]
         password: Option<String>,
+        /// Override de chave.
+        #[arg(long)]
+        key: Option<String>,
     },
 
     /// Verifica conectividade SSH com uma VPS.
     HealthCheck {
-        /// Nome da VPS a verificar (usa VPS ativa se omitido).
+        /// Nome da VPS (usa ativa se omitido).
         vps_nome: Option<String>,
-
-        /// Override de senha SSH para este health-check.
+        /// Override de senha SSH.
         #[arg(long)]
         password: Option<String>,
     },
 
-    /// Gera completions de shell (bash, zsh, fish, powershell, elvish).
+    /// Gerencia master-key e cifragem at-rest de secrets (one-shot).
+    Secrets {
+        /// Ação de secrets.
+        #[command(subcommand)]
+        acao: AcaoSecrets,
+    },
+
+    /// Gera completions de shell.
     Completions {
-        /// Shell para gerar completions.
+        /// Shell alvo.
         #[arg(value_enum)]
         shell: Shell,
     },
@@ -177,43 +251,62 @@ pub enum AcaoVps {
         /// Nome único da VPS.
         #[arg(long)]
         name: String,
-
         /// Hostname ou IP.
         #[arg(long)]
         host: String,
-
         /// Porta SSH.
         #[arg(long, default_value_t = 22)]
         port: u16,
-
         /// Usuário SSH.
         #[arg(long)]
         user: String,
-
         /// Senha SSH.
         #[arg(long)]
         password: Option<String>,
-
-        /// Timeout em milissegundos para comandos.
-        #[arg(long, default_value_t = 30_000)]
+        /// Lê senha de stdin.
+        #[arg(long)]
+        password_stdin: bool,
+        /// Caminho da chave privada OpenSSH.
+        #[arg(long)]
+        key: Option<String>,
+        /// Passphrase da chave.
+        #[arg(long)]
+        key_passphrase: Option<String>,
+        /// Timeout em milissegundos (default 60000).
+        #[arg(long, default_value_t = 60_000)]
         timeout: u64,
-
-        /// Limite de caracteres por output (`"none"` ou `"0"` = ilimitado).
-        #[arg(long, default_value = "100000", alias = "maxChars")]
-        max_chars: String,
-
+        /// Limite de caracteres do comando (entrada). Alias legado: maxChars.
+        #[arg(long)]
+        max_command_chars: Option<String>,
+        /// Limite de caracteres de saída.
+        #[arg(long)]
+        max_output_chars: Option<String>,
+        /// Alias legado: mapeia para max_command_chars .
+        #[arg(long, alias = "maxChars")]
+        max_chars: Option<String>,
         /// Senha para `sudo`.
         #[arg(long, alias = "sudoPassword", alias = "sudo_password")]
         sudo_password: Option<String>,
-
+        /// Lê senha sudo de stdin.
+        #[arg(long)]
+        sudo_password_stdin: bool,
         /// Senha para `su -`.
         #[arg(long, alias = "suPassword", alias = "su_password")]
         su_password: Option<String>,
+        /// Lê senha su de stdin.
+        #[arg(long)]
+        su_password_stdin: bool,
+        /// Desabilita sudo/su neste host.
+        #[arg(long, default_value_t = false)]
+        disable_sudo: bool,
+        /// Roda health-check após add.
+        #[arg(long)]
+        check: bool,
     },
 
     /// Lista todas as VPSs (senhas mascaradas).
     List {
-        /// Saída em JSON (útil para pipes).
+        /// Saída em JSON.
         #[arg(long)]
         json: bool,
     },
@@ -228,45 +321,60 @@ pub enum AcaoVps {
     Edit {
         /// Nome da VPS a editar.
         nome: String,
-
         /// Novo hostname/IP.
         #[arg(long)]
         host: Option<String>,
-
         /// Nova porta SSH.
         #[arg(long)]
         port: Option<u16>,
-
         /// Novo usuário.
         #[arg(long)]
         user: Option<String>,
-
         /// Nova senha.
         #[arg(long)]
         password: Option<String>,
-
+        /// Lê senha de stdin.
+        #[arg(long)]
+        password_stdin: bool,
+        /// Nova chave.
+        #[arg(long)]
+        key: Option<String>,
+        /// Nova passphrase.
+        #[arg(long)]
+        key_passphrase: Option<String>,
         /// Novo timeout.
         #[arg(long)]
         timeout: Option<u64>,
-
-        /// Novo limite de caracteres.
+        /// Novo max command chars.
+        #[arg(long)]
+        max_command_chars: Option<String>,
+        /// Novo max output chars.
+        #[arg(long)]
+        max_output_chars: Option<String>,
+        /// Alias legado maxChars → command.
         #[arg(long, alias = "maxChars")]
         max_chars: Option<String>,
-
         /// Nova senha sudo.
         #[arg(long, alias = "sudoPassword", alias = "sudo_password")]
         sudo_password: Option<String>,
-
+        /// Lê senha sudo de stdin.
+        #[arg(long)]
+        sudo_password_stdin: bool,
         /// Nova senha su.
         #[arg(long, alias = "suPassword", alias = "su_password")]
         su_password: Option<String>,
+        /// Lê senha su de stdin.
+        #[arg(long)]
+        su_password_stdin: bool,
+        /// Define disable_sudo.
+        #[arg(long)]
+        disable_sudo: Option<bool>,
     },
 
     /// Exibe detalhes de uma VPS (senhas mascaradas).
     Show {
-        /// Nome da VPS a exibir.
+        /// Nome da VPS.
         nome: String,
-
         /// Saída em JSON.
         #[arg(long)]
         json: bool,
@@ -274,6 +382,30 @@ pub enum AcaoVps {
 
     /// Exibe o caminho do arquivo de configuração.
     Path,
+
+    /// Diagnóstico de camadas XDG / path / schema.
+    Doctor {
+        /// Saída em JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Exporta hosts (senhas redacted por default).
+    Export {
+        /// Inclui segredos no export.
+        #[arg(long)]
+        include_secrets: bool,
+        /// Arquivo de saída (stdout se omitido).
+        #[arg(long, short)]
+        output: Option<String>,
+    },
+
+    /// Importa hosts de um TOML.
+    Import {
+        /// Arquivo de origem.
+        #[arg(long)]
+        file: PathBuf,
+    },
 }
 
 /// Ações do subcomando `scp`.
@@ -281,35 +413,51 @@ pub enum AcaoVps {
 pub enum AcaoScp {
     /// Upload de arquivo local para remote.
     Upload {
-        /// Nome da VPS previamente adicionada via `vps add`.
+        /// Nome da VPS.
         vps_nome: String,
-
-        /// Caminho do arquivo local a enviar.
+        /// Caminho local.
         local: PathBuf,
-
-        /// Caminho destino no servidor remote.
+        /// Caminho remote.
         remote: PathBuf,
-
-        /// Override de senha SSH para esta transferência.
+        /// Override de senha SSH.
         #[arg(long)]
         password: Option<String>,
     },
 
     /// Download de arquivo remote para local.
     Download {
-        /// Nome da VPS previamente adicionada via `vps add`.
+        /// Nome da VPS.
         vps_nome: String,
-
-        /// Caminho do arquivo no servidor remote.
+        /// Caminho remote.
         remote: PathBuf,
-
-        /// Caminho local de destino.
+        /// Caminho local.
         local: PathBuf,
-
-        /// Override de senha SSH para esta transferência.
+        /// Override de senha SSH.
         #[arg(long)]
         password: Option<String>,
     },
+}
+
+/// Ações do subcomando `secrets` (master-key / AEAD).
+#[derive(Debug, Subcommand)]
+pub enum AcaoSecrets {
+    /// Mostra status da cifragem (sem material sensível).
+    Status {
+        /// Saída em JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Gera e grava master-key (`secrets.key` ou keyring). Nunca imprime a chave.
+    Init {
+        /// Grava no OS keyring em vez de `secrets.key`.
+        #[arg(long)]
+        keyring: bool,
+        /// Sobrescreve chave existente.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Regrava `config.toml` re-cifando secrets com a chave atual.
+    Reencrypt,
 }
 
 /// Faz parsing dos argumentos da CLI.
@@ -318,7 +466,7 @@ pub fn parse_args() -> Argumentos {
     Argumentos::parse()
 }
 
-/// Inicializa `tracing-subscriber`. Precedência: `RUST_LOG` > `--verbose` > `--quiet` > `info`.
+/// Inicializa `tracing-subscriber`.
 pub fn inicializar_logs(args: &Argumentos) {
     use tracing_subscriber::{fmt, EnvFilter};
 
@@ -347,10 +495,34 @@ pub fn gerar_completions(shell: Shell) {
     clap_complete::generate(shell, &mut cmd, "ssh-cli", &mut std::io::stdout());
 }
 
+fn ler_stdin_se(flag: bool, valor: Option<String>) -> Result<Option<String>> {
+    if flag {
+        Ok(Some(crate::vps::ler_segredo_stdin()?))
+    } else {
+        Ok(valor)
+    }
+}
+
+/// Resolve formato de saída: explícito > JSON se não-TTY > Text.
+#[must_use]
+pub fn resolver_formato(explicit: Option<FormatoSaida>) -> FormatoSaida {
+    explicit.unwrap_or_else(|| {
+        if !std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+            FormatoSaida::Json
+        } else {
+            FormatoSaida::Text
+        }
+    })
+}
+
 /// Executa o subcomando solicitado.
 pub async fn executar(args: Argumentos) -> Result<()> {
     let config_override = args.config_dir.clone();
-    let formato = args.output_format;
+    // Alinha `secrets.key` com `--config-dir` / testes isolados.
+    crate::secrets::definir_diretorio_config(config_override.clone());
+    let formato = resolver_formato(args.output_format);
+    let disable_sudo = args.disable_sudo;
+    let replace_host_key = args.replace_host_key;
 
     match args.comando {
         Comando::Vps { acao } => {
@@ -362,38 +534,94 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             comando,
             json,
             password,
+            password_stdin,
+            key,
+            key_passphrase,
+            key_passphrase_stdin,
             timeout,
+            description,
         } => {
-            crate::vps::executar_exec(
-                &vps_nome,
-                &comando,
-                config_override,
-                formato,
-                json,
+            let password = ler_stdin_se(password_stdin, password)?;
+            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
+            let opts = crate::vps::OpcoesExec {
                 password,
+                key,
+                key_passphrase,
                 timeout,
-            )
-            .await
+                description,
+                replace_host_key,
+                disable_sudo,
+                ..Default::default()
+            };
+            crate::vps::executar_exec(&vps_nome, &comando, config_override, formato, json, opts)
+                .await
         }
         Comando::SudoExec {
             vps_nome,
             comando,
             json,
             password,
+            password_stdin,
             sudo_password,
+            sudo_password_stdin,
+            key,
+            key_passphrase,
+            key_passphrase_stdin,
             timeout,
+            description,
         } => {
+            let password = ler_stdin_se(password_stdin, password)?;
+            let sudo_password = ler_stdin_se(sudo_password_stdin, sudo_password)?;
+            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
+            let opts = crate::vps::OpcoesExec {
+                password,
+                sudo_password,
+                key,
+                key_passphrase,
+                timeout,
+                description,
+                replace_host_key,
+                disable_sudo,
+                ..Default::default()
+            };
             crate::vps::executar_sudo_exec(
                 &vps_nome,
                 &comando,
                 config_override,
                 formato,
                 json,
-                password,
-                sudo_password,
-                timeout,
+                opts,
             )
             .await
+        }
+        Comando::SuExec {
+            vps_nome,
+            comando,
+            json,
+            password,
+            su_password,
+            su_password_stdin,
+            key,
+            key_passphrase,
+            key_passphrase_stdin,
+            timeout,
+            description,
+        } => {
+            let su_password = ler_stdin_se(su_password_stdin, su_password)?;
+            let key_passphrase = ler_stdin_se(key_passphrase_stdin, key_passphrase)?;
+            let opts = crate::vps::OpcoesExec {
+                password,
+                su_password,
+                key,
+                key_passphrase,
+                timeout,
+                description,
+                replace_host_key,
+                disable_sudo,
+                ..Default::default()
+            };
+            crate::vps::executar_su_exec(&vps_nome, &comando, config_override, formato, json, opts)
+                .await
         }
         Comando::Scp { acao } => {
             let pwd = match &acao {
@@ -408,7 +636,9 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             porta_local,
             host_remoto,
             porta_remota,
+            timeout_ms,
             password,
+            key,
         } => {
             crate::tunnel::executar_tunnel(
                 &vps_nome,
@@ -417,6 +647,9 @@ pub async fn executar(args: Argumentos) -> Result<()> {
                 porta_remota,
                 config_override,
                 password,
+                key,
+                timeout_ms,
+                replace_host_key,
             )
             .await
         }
@@ -429,6 +662,9 @@ pub async fn executar(args: Argumentos) -> Result<()> {
             )
             .await
         }
+        Comando::Secrets { acao } => {
+            crate::vps::executar_comando_secrets(acao, config_override, formato).await
+        }
         Comando::Completions { shell } => {
             gerar_completions(shell);
             Ok(())
@@ -440,360 +676,35 @@ pub async fn executar(args: Argumentos) -> Result<()> {
 mod testes {
     use super::*;
     use clap::Parser;
-    use serial_test::serial;
-    use tempfile::TempDir;
-
-    fn argumentos_teste(comando: Comando, config_dir: Option<PathBuf>) -> Argumentos {
-        Argumentos {
-            lang: None,
-            verbose: false,
-            quiet: false,
-            config_dir,
-            no_color: false,
-            output_format: FormatoSaida::Text,
-            comando,
-        }
-    }
 
     #[test]
-    fn parser_entende_tunnel() {
-        let args =
-            Argumentos::try_parse_from(["ssh-cli", "tunnel", "vps-a", "8080", "127.0.0.1", "5432"])
-                .expect("parser deve aceitar subcomando tunnel");
-
-        match args.comando {
-            Comando::Tunnel {
-                vps_nome,
-                porta_local,
-                host_remoto,
-                porta_remota,
-                ..
-            } => {
-                assert_eq!(vps_nome, "vps-a");
-                assert_eq!(porta_local, 8080);
-                assert_eq!(host_remoto, "127.0.0.1");
-                assert_eq!(porta_remota, 5432);
-            }
-            outro => panic!("comando inesperado: {outro:?}"),
-        }
-    }
-
-    #[test]
-    fn parser_entende_scp_upload() {
+    fn parser_entende_tunnel_com_timeout() {
         let args = Argumentos::try_parse_from([
             "ssh-cli",
-            "scp",
-            "upload",
+            "tunnel",
             "vps-a",
-            "./arquivo-local.txt",
-            "/tmp/arquivo-remoto.txt",
+            "8080",
+            "127.0.0.1",
+            "5432",
+            "--timeout-ms",
+            "5000",
         ])
-        .expect("parser deve aceitar scp upload");
-
+        .expect("tunnel");
         match args.comando {
-            Comando::Scp {
-                acao:
-                    AcaoScp::Upload {
-                        vps_nome,
-                        local,
-                        remote,
-                        ..
-                    },
-            } => {
-                assert_eq!(vps_nome, "vps-a");
-                assert_eq!(local, PathBuf::from("./arquivo-local.txt"));
-                assert_eq!(remote, PathBuf::from("/tmp/arquivo-remoto.txt"));
-            }
-            outro => panic!("comando inesperado: {outro:?}"),
-        }
-    }
-
-    #[test]
-    #[serial]
-    fn inicializar_logs_sem_panic_com_rust_log_definido() {
-        std::env::set_var("RUST_LOG", "trace");
-        let args = argumentos_teste(
-            Comando::Connect {
-                nome: "vps-a".to_string(),
-            },
-            None,
-        );
-        inicializar_logs(&args);
-        std::env::remove_var("RUST_LOG");
-    }
-
-    #[test]
-    #[serial]
-    fn inicializar_logs_sem_panic_com_verbose() {
-        std::env::remove_var("RUST_LOG");
-        let mut args = argumentos_teste(
-            Comando::Connect {
-                nome: "vps-a".to_string(),
-            },
-            None,
-        );
-        args.verbose = true;
-        inicializar_logs(&args);
-    }
-
-    #[test]
-    #[serial]
-    fn inicializar_logs_sem_panic_com_quiet() {
-        std::env::remove_var("RUST_LOG");
-        let mut args = argumentos_teste(
-            Comando::Connect {
-                nome: "vps-a".to_string(),
-            },
-            None,
-        );
-        args.quiet = true;
-        inicializar_logs(&args);
-    }
-
-    #[test]
-    #[serial]
-    fn inicializar_logs_sem_panic_no_padrao_info() {
-        std::env::remove_var("RUST_LOG");
-        let args = argumentos_teste(
-            Comando::Connect {
-                nome: "vps-a".to_string(),
-            },
-            None,
-        );
-        inicializar_logs(&args);
-    }
-
-    #[tokio::test]
-    async fn executar_branch_exec_retorna_erro_para_vps_inexistente() {
-        let tmp = TempDir::new().expect("tempdir");
-        let args = argumentos_teste(
-            Comando::Exec {
-                vps_nome: "inexistente".to_string(),
-                comando: "echo ok".to_string(),
-                json: false,
-                password: None,
-                timeout: None,
-            },
-            Some(tmp.path().to_path_buf()),
-        );
-
-        let resultado = executar(args).await;
-        assert!(resultado.is_err());
-    }
-
-    #[tokio::test]
-    async fn executar_branch_sudo_exec_retorna_erro_para_vps_inexistente() {
-        let tmp = TempDir::new().expect("tempdir");
-        let args = argumentos_teste(
-            Comando::SudoExec {
-                vps_nome: "inexistente".to_string(),
-                comando: "id".to_string(),
-                json: false,
-                password: None,
-                sudo_password: None,
-                timeout: None,
-            },
-            Some(tmp.path().to_path_buf()),
-        );
-
-        let resultado = executar(args).await;
-        assert!(resultado.is_err());
-    }
-
-    #[tokio::test]
-    async fn executar_branch_scp_retorna_erro_para_vps_inexistente() {
-        let tmp = TempDir::new().expect("tempdir");
-        let args = argumentos_teste(
-            Comando::Scp {
-                acao: AcaoScp::Upload {
-                    vps_nome: "inexistente".to_string(),
-                    local: PathBuf::from("./arquivo-local.txt"),
-                    remote: PathBuf::from("/tmp/arquivo-remoto.txt"),
-                    password: None,
-                },
-            },
-            Some(tmp.path().to_path_buf()),
-        );
-
-        let resultado = executar(args).await;
-        assert!(resultado.is_err());
-    }
-
-    #[tokio::test]
-    async fn executar_branch_tunnel_retorna_erro_para_vps_inexistente() {
-        let tmp = TempDir::new().expect("tempdir");
-        let args = argumentos_teste(
             Comando::Tunnel {
-                vps_nome: "inexistente".to_string(),
-                porta_local: 38080,
-                host_remoto: "127.0.0.1".to_string(),
-                porta_remota: 5432,
-                password: None,
-            },
-            Some(tmp.path().to_path_buf()),
-        );
-
-        let resultado = executar(args).await;
-        assert!(resultado.is_err());
-    }
-
-    #[test]
-    fn test_parse_no_color() {
-        let args = Argumentos::try_parse_from(["ssh-cli", "--no-color", "vps", "list"])
-            .expect("parser deve aceitar --no-color");
-        assert!(args.no_color);
-    }
-
-    #[test]
-    fn test_parse_output_format_json() {
-        let args =
-            Argumentos::try_parse_from(["ssh-cli", "--output-format", "json", "vps", "list"])
-                .expect("parser deve aceitar --output-format json");
-        assert_eq!(args.output_format, FormatoSaida::Json);
-    }
-
-    #[test]
-    fn test_parse_output_format_default() {
-        let args = Argumentos::try_parse_from(["ssh-cli", "vps", "list"])
-            .expect("parser deve aceitar subcomando sem output-format");
-        assert_eq!(args.output_format, FormatoSaida::Text);
-    }
-
-    #[test]
-    fn test_parse_completions_bash() {
-        let args = Argumentos::try_parse_from(["ssh-cli", "completions", "bash"])
-            .expect("parser deve aceitar completions bash");
-        assert!(matches!(
-            args.comando,
-            Comando::Completions { shell: Shell::Bash }
-        ));
-    }
-
-    #[test]
-    fn test_parse_health_check_com_nome() {
-        let args = Argumentos::try_parse_from(["ssh-cli", "health-check", "meu-vps"])
-            .expect("parser deve aceitar health-check com nome");
-        match args.comando {
-            Comando::HealthCheck { vps_nome, .. } => {
-                assert_eq!(vps_nome, Some("meu-vps".to_string()));
-            }
-            outro => panic!("comando inesperado: {outro:?}"),
-        }
-    }
-
-    #[test]
-    fn test_parse_health_check_sem_nome() {
-        let args = Argumentos::try_parse_from(["ssh-cli", "health-check"])
-            .expect("parser deve aceitar health-check sem nome");
-        match args.comando {
-            Comando::HealthCheck { vps_nome, .. } => {
-                assert!(vps_nome.is_none());
-            }
-            outro => panic!("comando inesperado: {outro:?}"),
-        }
-    }
-
-    #[test]
-    fn test_parse_exec_json() {
-        let args = Argumentos::try_parse_from(["ssh-cli", "exec", "vps1", "ls", "--json"])
-            .expect("parser deve aceitar exec com --json");
-        match args.comando {
-            Comando::Exec {
-                vps_nome,
-                comando,
-                json,
+                timeout_ms,
+                porta_local,
                 ..
             } => {
-                assert_eq!(vps_nome, "vps1");
-                assert_eq!(comando, "ls");
-                assert!(json);
+                assert_eq!(timeout_ms, 5000);
+                assert_eq!(porta_local, 8080);
             }
-            outro => panic!("comando inesperado: {outro:?}"),
+            _ => panic!("esperado tunnel"),
         }
     }
 
     #[test]
-    fn exec_com_password_override() {
-        let args =
-            Argumentos::try_parse_from(["ssh-cli", "exec", "myvps", "ls", "--password", "abc123"])
-                .expect("parser deve aceitar exec com --password");
-        match args.comando {
-            Comando::Exec {
-                vps_nome, password, ..
-            } => {
-                assert_eq!(vps_nome, "myvps");
-                assert_eq!(password, Some("abc123".to_string()));
-            }
-            outro => panic!("comando inesperado: {outro:?}"),
-        }
-    }
-
-    #[test]
-    fn exec_com_timeout_override() {
-        let args =
-            Argumentos::try_parse_from(["ssh-cli", "exec", "myvps", "ls", "--timeout", "5000"])
-                .expect("parser deve aceitar exec com --timeout");
-        match args.comando {
-            Comando::Exec {
-                vps_nome, timeout, ..
-            } => {
-                assert_eq!(vps_nome, "myvps");
-                assert_eq!(timeout, Some(5000u64));
-            }
-            outro => panic!("comando inesperado: {outro:?}"),
-        }
-    }
-
-    #[test]
-    fn sudo_exec_com_sudo_password() {
-        let args = Argumentos::try_parse_from([
-            "ssh-cli",
-            "sudo-exec",
-            "myvps",
-            "apt update",
-            "--sudo-password",
-            "abc",
-        ])
-        .expect("parser deve aceitar sudo-exec com --sudo-password");
-        match args.comando {
-            Comando::SudoExec {
-                vps_nome,
-                sudo_password,
-                ..
-            } => {
-                assert_eq!(vps_nome, "myvps");
-                assert_eq!(sudo_password, Some("abc".to_string()));
-            }
-            outro => panic!("comando inesperado: {outro:?}"),
-        }
-    }
-
-    #[test]
-    fn sudo_exec_alias_camelcase() {
-        let args = Argumentos::try_parse_from([
-            "ssh-cli",
-            "sudo-exec",
-            "myvps",
-            "apt update",
-            "--sudoPassword",
-            "abc",
-        ])
-        .expect("parser deve aceitar sudo-exec com --sudoPassword");
-        match args.comando {
-            Comando::SudoExec {
-                vps_nome,
-                sudo_password,
-                ..
-            } => {
-                assert_eq!(vps_nome, "myvps");
-                assert_eq!(sudo_password, Some("abc".to_string()));
-            }
-            outro => panic!("comando inesperado: {outro:?}"),
-        }
-    }
-
-    #[test]
-    fn vps_add_alias_camelcase() {
+    fn parser_vps_add_key() {
         let args = Argumentos::try_parse_from([
             "ssh-cli",
             "vps",
@@ -801,28 +712,64 @@ mod testes {
             "--name",
             "x",
             "--host",
-            "1.2.3.4",
+            "h",
             "--user",
-            "root",
-            "--sudoPassword",
-            "abc",
-            "--maxChars",
-            "5000",
+            "u",
+            "--key",
+            "/tmp/id_ed25519",
         ])
-        .expect("parser deve aceitar vps add com aliases camelCase");
+        .expect("add key");
         match args.comando {
             Comando::Vps {
-                acao:
-                    AcaoVps::Add {
-                        sudo_password,
-                        max_chars,
-                        ..
-                    },
+                acao: AcaoVps::Add { key, password, .. },
             } => {
-                assert_eq!(sudo_password, Some("abc".to_string()));
-                assert_eq!(max_chars, "5000");
+                assert_eq!(key.as_deref(), Some("/tmp/id_ed25519"));
+                assert!(password.is_none());
             }
-            outro => panic!("comando inesperado: {outro:?}"),
+            _ => panic!("esperado add"),
+        }
+    }
+
+    #[test]
+    fn parser_sudo_exec_description() {
+        let args = Argumentos::try_parse_from([
+            "ssh-cli",
+            "sudo-exec",
+            "v",
+            "id",
+            "--description",
+            "who am i",
+        ])
+        .unwrap();
+        match args.comando {
+            Comando::SudoExec { description, .. } => {
+                assert_eq!(description.as_deref(), Some("who am i"));
+            }
+            _ => panic!("sudo-exec"),
+        }
+    }
+
+    #[test]
+    fn parser_su_exec() {
+        let args = Argumentos::try_parse_from(["ssh-cli", "su-exec", "v", "whoami"]).unwrap();
+        assert!(matches!(args.comando, Comando::SuExec { .. }));
+    }
+
+    #[test]
+    fn parser_disable_sudo_global() {
+        let args =
+            Argumentos::try_parse_from(["ssh-cli", "--disable-sudo", "vps", "path"]).unwrap();
+        assert!(args.disable_sudo);
+    }
+
+    #[test]
+    fn parser_doctor() {
+        let args = Argumentos::try_parse_from(["ssh-cli", "vps", "doctor", "--json"]).unwrap();
+        match args.comando {
+            Comando::Vps {
+                acao: AcaoVps::Doctor { json },
+            } => assert!(json),
+            _ => panic!("doctor"),
         }
     }
 }

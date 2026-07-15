@@ -1,20 +1,24 @@
 ---
 source: tests/snapshot_tests.rs
+assertion_line: 32
 expression: stdout
 ---
-CLI Rust para LLMs operarem servidores via SSH.
+ssh-cli: binário leve one-shot (nascer→executar→morrer). Multi-host em storage XDG sem .env.
+Substitui o MCP Node persistente. Auth por senha ou chave. Sem telemetria.
 
 Usage: ssh-cli [OPTIONS] <COMMAND>
 
 Commands:
-  vps           Gerencia VPSs cadastradas (add, list, remove, edit, show, path)
-  connect       Define a VPS ativa (grava `active = "<NOME>"` no `config.toml`)
+  vps           Gerencia VPSs cadastradas
+  connect       Define a VPS ativa (grava arquivo irmão `active` no diretório de config)
   exec          Executa um comando na VPS via SSH (stdout/stderr capturados)
-  sudo-exec     Executa um comando com `sudo` na VPS via SSH
+  sudo-exec     Executa um comando com `sudo` (packing `sh -c` seguro)
+  su-exec       Executa um comando com elevação `su -` one-shot
   scp           Transferência de arquivos via SCP (upload/download)
-  tunnel        Cria um tunnel SSH (port-forward local)
+  tunnel        Tunnel SSH com deadline obrigatório (one-shot limitado)
   health-check  Verifica conectividade SSH com uma VPS
-  completions   Gera completions de shell (bash, zsh, fish, powershell, elvish)
+  secrets       Gerencia master-key e cifragem at-rest de secrets (one-shot)
+  completions   Gera completions de shell
   help          Print this message or the help of the given subcommand(s)
 
 Options:
@@ -34,13 +38,17 @@ Options:
           Desativa cores no output
 
       --output-format <OUTPUT_FORMAT>
-          Formato global de saída (text, json)
+          Formato global de saída (text, json). Se omitido: JSON quando stdout não é TTY
 
           Possible values:
           - text: Texto legível por humanos (padrão)
           - json: JSON estruturado
-          
-          [default: text]
+
+      --disable-sudo
+          Desabilita sudo-exec/su-exec nesta invocação (paridade MCP --disableSudo)
+
+      --replace-host-key
+          Substitui host key divergente no known_hosts TOFU
 
   -h, --help
           Print help (see a summary with '-h')

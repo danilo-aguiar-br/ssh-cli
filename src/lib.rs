@@ -9,7 +9,8 @@
 //! |-----------------|---------------------------------------------------------------|
 //! | `cli`           | Definição de argumentos via `clap` derive e dispatcher        |
 //! | `vps`           | CRUD e persistência de registros de VPS (XDG + TOML + 0o600)  |
-//! | `ssh`           | Cliente SSH (stub nesta iteração; real via `russh` em v2+)    |
+//! | `secrets`       | Master-key e cifragem at-rest default (ChaCha20-Poly1305)      |
+//! | `ssh`           | Cliente SSH one-shot real via `russh` (auth senha/chave, TOFU) |
 //! | `i18n`          | Internacionalização com enum `Mensagem` bilíngue              |
 //! | `locale`        | Detecção e resolução de locale do sistema operacional         |
 //! | `platform`      | Ajustes de plataforma (UTF-8 Windows, detecção TTY)           |
@@ -37,6 +38,7 @@ pub mod output;
 pub mod paths;
 pub mod platform;
 pub mod scp;
+pub mod secrets;
 pub mod signals;
 pub mod ssh;
 pub mod terminal;

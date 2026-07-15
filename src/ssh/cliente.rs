@@ -1,27 +1,18 @@
 //! Cliente SSH real via `russh` 0.60.x.
 //!
-//! Implementa conexão TCP + handshake SSH + autenticação por senha + execução
-//! de comandos com captura paralela de stdout/stderr.
-//!
-//! Na iteração 2 a verificação de chave de servidor (`check_server_key`) é
-//! permissiva (trust-on-first-use sem persistência). Iterações futuras devem:
-//! - persistir fingerprints em `known_hosts`
-//! - suportar autenticação por chave pública
-//! - suportar `sudo` e `su -` via PTY + stdin
-//!
-//! Quando a feature `ssh-real` está DESATIVADA (ex.: `--no-default-features`),
-//! o módulo exporta apenas a `ConfiguracaoConexao` e stubs mínimos — o código
-//! de alto nível da CLI deve compilar sem russh.
+//! Conexão one-shot: TCP + handshake + auth (senha e/ou chave) + exec com
+//! timeout, truncagem de saída e abort remoto best-effort.
+//! Host keys: TOFU em `known_hosts` XDG (ver [`super::known_hosts`]).
 
 use crate::erros::{ErroSshCli, ResultadoSshCli};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
+use std::path::PathBuf;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 /// Configuração de uma conexão SSH.
 ///
 /// Construída a partir de um [`crate::vps::modelo::VpsRegistro`] no momento
-/// da chamada, carregando apenas os campos necessários. A senha continua
-/// protegida por [`SecretString`] (zeroize on drop).
+/// da chamada. Auth: chave privada (preferida) e/ou senha.
 #[derive(Clone)]
 pub struct ConfiguracaoConexao {
     /// Hostname ou IP do servidor SSH.
@@ -30,10 +21,18 @@ pub struct ConfiguracaoConexao {
     pub porta: u16,
     /// Nome de usuário SSH.
     pub usuario: String,
-    /// Senha SSH (`SecretString` para zeroize automático).
+    /// Senha SSH (`SecretString` para zeroize automático); pode ser vazia se key-only.
     pub senha: SecretString,
-    /// Timeout total para conexão + handshake + autenticação, em milissegundos.
+    /// Caminho da chave privada OpenSSH (opcional).
+    pub key_path: Option<String>,
+    /// Passphrase da chave (opcional).
+    pub key_passphrase: Option<SecretString>,
+    /// Timeout total para conexão + handshake + autenticação + exec, em ms.
     pub timeout_ms: u64,
+    /// Caminho do arquivo known_hosts (TOFU). `None` = always-trust (só testes).
+    pub known_hosts_path: Option<PathBuf>,
+    /// Se true, permite substituir fingerprint divergente.
+    pub replace_host_key: bool,
 }
 
 impl std::fmt::Debug for ConfiguracaoConexao {
@@ -43,15 +42,20 @@ impl std::fmt::Debug for ConfiguracaoConexao {
             .field("porta", &self.porta)
             .field("usuario", &self.usuario)
             .field("senha", &"<redacted>")
+            .field("key_path", &self.key_path)
+            .field(
+                "key_passphrase",
+                &self.key_passphrase.as_ref().map(|_| "<redacted>"),
+            )
             .field("timeout_ms", &self.timeout_ms)
+            .field("known_hosts_path", &self.known_hosts_path)
+            .field("replace_host_key", &self.replace_host_key)
             .finish()
     }
 }
 
 impl ConfiguracaoConexao {
     /// Valida os campos básicos da configuração.
-    ///
-    /// Retorna [`ErroSshCli::ArgumentoInvalido`] se host estiver vazio ou porta for 0.
     pub fn validar(&self) -> ResultadoSshCli<()> {
         if self.host.trim().is_empty() {
             return Err(ErroSshCli::ArgumentoInvalido(
@@ -66,6 +70,13 @@ impl ConfiguracaoConexao {
         if self.usuario.trim().is_empty() {
             return Err(ErroSshCli::ArgumentoInvalido(
                 "usuário vazio em ConfiguracaoConexao".to_string(),
+            ));
+        }
+        let tem_senha = !self.senha.expose_secret().is_empty();
+        let tem_key = self.key_path.as_ref().is_some_and(|p| !p.trim().is_empty());
+        if !tem_senha && !tem_key {
+            return Err(ErroSshCli::ArgumentoInvalido(
+                "auth exige senha ou key_path".to_string(),
             ));
         }
         Ok(())
@@ -212,21 +223,73 @@ mod real {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    /// Handler permissivo do russh: aceita TODA chave de servidor.
-    ///
-    /// **Aviso de segurança**: iteração 2 usa trust-on-first-use sem persistência.
-    /// Iteração 3+ deve validar contra `known_hosts` para evitar MITM.
-    pub struct ManipuladorCliente;
+    /// Handler russh com TOFU em known_hosts (ou always-trust se path ausente).
+    pub struct ManipuladorCliente {
+        host: String,
+        porta: u16,
+        known_hosts_path: Option<std::path::PathBuf>,
+        replace_host_key: bool,
+        /// Erro de host key capturado (russh Error não carrega nosso tipo).
+        host_key_rejeitada: bool,
+        detalhe_host_key: Option<String>,
+    }
+
+    impl ManipuladorCliente {
+        fn novo(cfg: &ConfiguracaoConexao) -> Self {
+            Self {
+                host: cfg.host.clone(),
+                porta: cfg.porta,
+                known_hosts_path: cfg.known_hosts_path.clone(),
+                replace_host_key: cfg.replace_host_key,
+                host_key_rejeitada: false,
+                detalhe_host_key: None,
+            }
+        }
+    }
 
     impl russh::client::Handler for ManipuladorCliente {
         type Error = russh::Error;
 
         async fn check_server_key(
             &mut self,
-            _chave_servidor: &russh::keys::ssh_key::PublicKey,
+            chave_servidor: &russh::keys::ssh_key::PublicKey,
         ) -> Result<bool, Self::Error> {
-            tracing::warn!("check_server_key aceita TODA chave (iteração 2: sem known_hosts)");
-            Ok(true)
+            let fingerprint = format!(
+                "{}",
+                chave_servidor.fingerprint(russh::keys::HashAlg::Sha256)
+            );
+
+            let Some(path) = self.known_hosts_path.clone() else {
+                tracing::warn!("known_hosts ausente: aceitando host key (modo teste)");
+                return Ok(true);
+            };
+
+            let mut kh = match crate::ssh::known_hosts::KnownHosts::carregar(path) {
+                Ok(k) => k,
+                Err(e) => {
+                    tracing::error!(erro = %e, "falha ao carregar known_hosts");
+                    self.host_key_rejeitada = true;
+                    self.detalhe_host_key = Some(e.to_string());
+                    return Ok(false);
+                }
+            };
+
+            match crate::ssh::known_hosts::verificar_tofu(
+                &mut kh,
+                &self.host,
+                self.porta,
+                &fingerprint,
+                self.replace_host_key,
+            ) {
+                Ok(true) => Ok(true),
+                Ok(false) => Ok(false),
+                Err(e) => {
+                    self.host_key_rejeitada = true;
+                    self.detalhe_host_key = Some(e.to_string());
+                    tracing::error!(erro = %e, "host key rejeitada");
+                    Ok(false)
+                }
+            }
         }
     }
 
@@ -341,7 +404,8 @@ mod real {
         /// - [`ErroSshCli::ArgumentoInvalido`] se a configuração for inválida.
         /// - [`ErroSshCli::TimeoutSsh`] se exceder o timeout total.
         /// - [`ErroSshCli::ConexaoFalhou`] em falhas TCP/handshake.
-        /// - [`ErroSshCli::AutenticacaoFalhou`] se o servidor rejeitar a senha.
+        /// - [`ErroSshCli::AutenticacaoFalhou`] se o servidor rejeitar senha/chave
+        ///   (tente `--key`, `--password-stdin` ou `--key-passphrase-stdin`).
         pub async fn conectar(cfg: ConfiguracaoConexao) -> ResultadoSshCli<Self> {
             cfg.validar()?;
 
@@ -350,6 +414,9 @@ mod real {
             let porta = cfg.porta;
             let usuario = cfg.usuario.clone();
             let senha_segura = cfg.senha.clone();
+            let key_path = cfg.key_path.clone();
+            let key_passphrase = cfg.key_passphrase.clone();
+            let handler = ManipuladorCliente::novo(&cfg);
 
             let config_cliente = Arc::new(russh::client::Config {
                 inactivity_timeout: Some(timeout),
@@ -361,30 +428,65 @@ mod real {
                 porta,
                 usuario = %usuario,
                 timeout_ms = cfg.timeout_ms,
+                tem_chave = key_path.is_some(),
                 "iniciando conexão SSH"
             );
 
-            // Envelopa conexão + handshake + autenticação em um único timeout global.
             let resultado_conexao = tokio::time::timeout(timeout, async move {
                 let mut sessao = russh::client::connect(
                     config_cliente,
                     (host.as_str(), porta),
-                    ManipuladorCliente,
+                    handler,
                 )
                 .await
                 .map_err(|e| ErroSshCli::ConexaoFalhou(format!("falha TCP/handshake: {e}")))?;
 
-                let auth = sessao
-                    .authenticate_password(usuario.clone(), senha_segura.expose_secret())
-                    .await
-                    .map_err(|e| ErroSshCli::ConexaoFalhou(format!("falha auth transport: {e}")))?;
+                // Preferência: chave privada primeiro; fallback senha se ambas presentes.
+                let mut autenticado = false;
 
-                if !auth.success() {
-                    tracing::warn!(
-                        host = %host,
-                        usuario = %usuario,
-                        "autenticação SSH rejeitada"
-                    );
+                if let Some(ref kp) = key_path {
+                    let pass = key_passphrase
+                        .as_ref()
+                        .map(|s| s.expose_secret().to_string());
+                    let chave = russh::keys::load_secret_key(kp, pass.as_deref()).map_err(|e| {
+                        ErroSshCli::AutenticacaoSsh(format!(
+                            "falha ao carregar chave {kp}: {e}"
+                        ))
+                    })?;
+                    let hash = sessao
+                        .best_supported_rsa_hash()
+                        .await
+                        .map_err(|e| {
+                            ErroSshCli::ConexaoFalhou(format!("rsa hash: {e}"))
+                        })?
+                        .flatten();
+                    let auth = sessao
+                        .authenticate_publickey(
+                            usuario.clone(),
+                            russh::keys::PrivateKeyWithHashAlg::new(Arc::new(chave), hash),
+                        )
+                        .await
+                        .map_err(|e| {
+                            ErroSshCli::ConexaoFalhou(format!("falha auth publickey: {e}"))
+                        })?;
+                    autenticado = auth.success();
+                    if !autenticado {
+                        tracing::warn!(host = %host, "auth por chave rejeitada; tentando senha se houver");
+                    }
+                }
+
+                if !autenticado && !senha_segura.expose_secret().is_empty() {
+                    let auth = sessao
+                        .authenticate_password(usuario.clone(), senha_segura.expose_secret())
+                        .await
+                        .map_err(|e| {
+                            ErroSshCli::ConexaoFalhou(format!("falha auth password: {e}"))
+                        })?;
+                    autenticado = auth.success();
+                }
+
+                if !autenticado {
+                    tracing::warn!(host = %host, usuario = %usuario, "autenticação SSH rejeitada");
                     return Err(ErroSshCli::AutenticacaoFalhou);
                 }
 
@@ -415,6 +517,16 @@ mod real {
             &mut self,
             comando: &str,
             max_chars: usize,
+        ) -> ResultadoSshCli<SaidaExecucao> {
+            self.executar_comando_interno(comando, max_chars, true)
+                .await
+        }
+
+        async fn executar_comando_interno(
+            &mut self,
+            comando: &str,
+            max_chars: usize,
+            abort_em_timeout: bool,
         ) -> ResultadoSshCli<SaidaExecucao> {
             let inicio = Instant::now();
             let timeout = Duration::from_millis(self.cfg.timeout_ms);
@@ -453,10 +565,21 @@ mod real {
             let (stdout_bytes, stderr_bytes, exit_code) = match resultado {
                 Ok(Ok(t)) => t,
                 Ok(Err(erro)) => return Err(erro),
-                Err(_) => return Err(ErroSshCli::TimeoutSsh(self.cfg.timeout_ms)),
+                Err(_) => {
+                    if abort_em_timeout {
+                        if let Some(padrao) = crate::ssh::packing::padrao_abort_remoto(comando) {
+                            let abort_cmd = crate::ssh::packing::empacotar_abort_pkill(&padrao);
+                            tracing::warn!(
+                                padrao = %padrao,
+                                "timeout local; tentando abort remoto best-effort"
+                            );
+                            let _ = self.tentar_abort_remoto(&abort_cmd).await;
+                        }
+                    }
+                    return Err(ErroSshCli::TimeoutSsh(self.cfg.timeout_ms));
+                }
             };
 
-            // Converte de bytes para String UTF-8 de forma resiliente.
             let stdout_str = String::from_utf8_lossy(&stdout_bytes).to_string();
             let stderr_str = String::from_utf8_lossy(&stderr_bytes).to_string();
 
@@ -685,6 +808,42 @@ mod real {
                 bytes_transferidos: recebidos,
                 duracao_ms,
             })
+        }
+
+        /// Abort remoto best-effort: reconecta com timeout curto e executa pkill.
+        async fn tentar_abort_remoto(&self, abort_cmd: &str) -> ResultadoSshCli<()> {
+            // Implementação inline (sem chamar executar_comando_interno) evita
+            // recursão async detectada pelo compilador.
+            let mut cfg_abort = self.cfg.clone();
+            cfg_abort.timeout_ms = cfg_abort.timeout_ms.clamp(3_000, 10_000);
+            let outro = match Self::conectar(cfg_abort).await {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::debug!(erro = %e, "abort remoto não pôde reconectar");
+                    return Err(e);
+                }
+            };
+            let timeout = Duration::from_millis(outro.cfg.timeout_ms);
+            let _ = tokio::time::timeout(timeout, async {
+                let mut canal = outro
+                    .sessao
+                    .channel_open_session()
+                    .await
+                    .map_err(|e| ErroSshCli::CanalFalhou(format!("abort canal: {e}")))?;
+                canal
+                    .exec(true, abort_cmd)
+                    .await
+                    .map_err(|e| ErroSshCli::CanalFalhou(format!("abort exec: {e}")))?;
+                while let Some(msg) = canal.wait().await {
+                    if matches!(msg, russh::ChannelMsg::Close) {
+                        break;
+                    }
+                }
+                Ok::<(), ErroSshCli>(())
+            })
+            .await;
+            let _ = outro.desconectar().await;
+            Ok(())
         }
 
         /// Encerra a sessão SSH de forma limpa.
@@ -1040,7 +1199,11 @@ mod testes {
             porta: 22,
             usuario: "root".to_string(),
             senha: SecretString::from("senha-exemplo".to_string()),
+            key_path: None,
+            key_passphrase: None,
             timeout_ms: 5000,
+            known_hosts_path: None,
+            replace_host_key: false,
         }
     }
 

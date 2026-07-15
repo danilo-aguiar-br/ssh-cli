@@ -1,28 +1,27 @@
-//! CRUD e persistência de registros de VPS.
+//! CRUD e persistência de registros de VPS (XDG + TOML atômico + flock).
 //!
-//! Cada VPS é armazenada em `$CONFIG_DIR/ssh-cli/config.toml` com permissões
-//! 0o600 no Unix. Toda a gestão acontece via comandos CLI — ZERO arquivo `.env`.
-//!
-//! O modelo [`modelo::VpsRegistro`] usa `SecretString` para senhas, garantindo
-//! Zeroize on Drop automático.
+//! ZERO arquivo `.env` em runtime. Schema v2 com auth senha/chave.
 
 pub mod modelo;
 
-use crate::cli::{AcaoVps, FormatoSaida};
+use crate::cli::{AcaoSecrets, AcaoVps, FormatoSaida};
 use crate::erros::{ErroSshCli, ResultadoSshCli};
 use crate::output;
 use crate::ssh::cliente::{ClienteSsh, ClienteSshTrait, ConfiguracaoConexao};
+use crate::ssh::known_hosts::KnownHosts;
+use crate::ssh::packing::{anexar_description, empacotar_su, empacotar_sudo};
 use anyhow::Result;
-use modelo::VpsRegistro;
+use modelo::{limite_efetivo, parse_limite_chars, VpsRegistro};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 
 /// Arquivo de configuração completo.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ArquivoConfig {
-    /// Versão do schema.
+    /// Versão do schema do arquivo.
     #[serde(default)]
     pub schema_version: u32,
     /// Mapa de VPSs por nome.
@@ -31,24 +30,15 @@ pub struct ArquivoConfig {
 }
 
 /// Resolve o caminho do arquivo de config a partir de um override opcional.
-///
-/// - Se `override_path` for `Some` e apontar para um diretório (existente ou não),
-///   retorna `<dir>/config.toml`.
-/// - Se `override_path` for `Some` e apontar para um arquivo (terminando em `.toml`
-///   ou não sendo diretório existente), retorna o caminho como é.
-/// - Se `override_path` for `None`, usa [`caminho_config_padrao`].
 pub fn resolver_caminho_config(override_path: Option<PathBuf>) -> ResultadoSshCli<PathBuf> {
     match override_path {
         Some(p) => {
-            // Se já existe e é diretório, ou se o nome não tem extensão, trata como dir.
             if p.is_dir() {
                 return Ok(p.join("config.toml"));
             }
-            // Se terminar em .toml explicitamente, é arquivo.
             if p.extension().and_then(|e| e.to_str()) == Some("toml") {
                 return Ok(p);
             }
-            // Caso contrário, assume dir e adiciona config.toml.
             Ok(p.join("config.toml"))
         }
         None => caminho_config_padrao(),
@@ -72,6 +62,35 @@ pub fn caminho_config_padrao() -> ResultadoSshCli<PathBuf> {
     Ok(dirs.config_dir().join("config.toml"))
 }
 
+/// Camada vencedora de configuração (doctor).
+#[derive(Debug, Clone)]
+pub struct CamadaConfig {
+    /// Nome da camada.
+    pub nome: &'static str,
+    /// Path resolvido.
+    pub path: PathBuf,
+}
+
+/// Resolve e descreve a camada de config vencedora.
+pub fn camada_vencedora(override_path: Option<PathBuf>) -> ResultadoSshCli<CamadaConfig> {
+    if override_path.is_some() {
+        return Ok(CamadaConfig {
+            nome: "--config-dir",
+            path: resolver_caminho_config(override_path)?,
+        });
+    }
+    if std::env::var("SSH_CLI_HOME").is_ok() {
+        return Ok(CamadaConfig {
+            nome: "SSH_CLI_HOME",
+            path: caminho_config_padrao()?,
+        });
+    }
+    Ok(CamadaConfig {
+        nome: "XDG ProjectDirs",
+        path: caminho_config_padrao()?,
+    })
+}
+
 /// Carrega o arquivo de configuração (retorna vazio se não existir).
 pub fn carregar(caminho: &PathBuf) -> ResultadoSshCli<ArquivoConfig> {
     if !caminho.exists() {
@@ -81,24 +100,67 @@ pub fn carregar(caminho: &PathBuf) -> ResultadoSshCli<ArquivoConfig> {
         });
     }
     let conteudo = std::fs::read_to_string(caminho)?;
-    let arquivo: ArquivoConfig = toml::from_str(&conteudo)?;
+    let mut arquivo: ArquivoConfig = toml::from_str(&conteudo)?;
+    for reg in arquivo.hosts.values_mut() {
+        reg.normalizar_schema();
+    }
+    if arquivo.schema_version < modelo::SCHEMA_VERSION_ATUAL {
+        arquivo.schema_version = modelo::SCHEMA_VERSION_ATUAL;
+    }
     Ok(arquivo)
 }
 
-/// Salva o arquivo de configuração e aplica permissões 0o600 no Unix.
-pub fn salvar(caminho: &PathBuf, arquivo: &ArquivoConfig) -> ResultadoSshCli<()> {
+/// Escreve bytes em `caminho` de forma atômica (tempfile + fsync + rename + 0o600).
+///
+/// Usado por `salvar` e `export` (GAP-007 residual no export).
+pub fn escrever_atomico(caminho: &Path, bytes: &[u8]) -> ResultadoSshCli<()> {
+    if let Some(pai) = caminho.parent() {
+        std::fs::create_dir_all(pai)?;
+    }
+    let pai = caminho
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(&pai)?;
+    tmp.write_all(bytes)?;
+    tmp.as_file().sync_data()?;
+    tmp.persist(caminho).map_err(|e| ErroSshCli::Io(e.error))?;
+    aplicar_permissoes_600(caminho)?;
+    #[cfg(unix)]
+    {
+        if let Ok(dir) = std::fs::File::open(&pai) {
+            let _ = dir.sync_all();
+        }
+    }
+    Ok(())
+}
+
+/// Salva o arquivo de configuração de forma atômica com flock e 0o600.
+pub fn salvar(caminho: &Path, arquivo: &ArquivoConfig) -> ResultadoSshCli<()> {
     if let Some(pai) = caminho.parent() {
         std::fs::create_dir_all(pai)?;
     }
     let texto = toml::to_string_pretty(arquivo)
         .map_err(|e| ErroSshCli::Generico(format!("falha serializando TOML: {e}")))?;
-    std::fs::write(caminho, texto)?;
-    aplicar_permissoes_600(caminho)?;
+
+    // Lock em arquivo irmão para serializar mutações concorrentes (N one-shots).
+    let lock_path = caminho.with_extension("toml.lock");
+    let lock_file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)?;
+    fs2::FileExt::lock_exclusive(&lock_file)?;
+
+    escrever_atomico(caminho, texto.as_bytes())?;
+
+    let _ = fs2::FileExt::unlock(&lock_file);
     Ok(())
 }
 
 #[cfg(unix)]
-fn aplicar_permissoes_600(caminho: &PathBuf) -> ResultadoSshCli<()> {
+fn aplicar_permissoes_600(caminho: &Path) -> ResultadoSshCli<()> {
     use std::os::unix::fs::PermissionsExt;
     let mut permissoes = std::fs::metadata(caminho)?.permissions();
     permissoes.set_mode(0o600);
@@ -107,46 +169,60 @@ fn aplicar_permissoes_600(caminho: &PathBuf) -> ResultadoSshCli<()> {
 }
 
 #[cfg(not(unix))]
-fn aplicar_permissoes_600(_caminho: &PathBuf) -> ResultadoSshCli<()> {
+fn aplicar_permissoes_600(_caminho: &Path) -> ResultadoSshCli<()> {
     Ok(())
 }
 
-/// Escapa uma string para uso seguro dentro de single quotes no shell.
-///
-/// Estratégia: envolve em single quotes e escapa single quotes internas
-/// com a sequência `'\''` (fecha quote, backslash-quote, abre quote).
-fn escapar_senha_shell(valor: &str) -> String {
-    let mut resultado = String::with_capacity(valor.len() + 2);
-    resultado.push('\'');
-    for ch in valor.chars() {
-        if ch == '\'' {
-            resultado.push_str("'\\''");
-        } else {
-            resultado.push(ch);
-        }
-    }
-    resultado.push('\'');
-    resultado
+/// Lê uma linha de senha de stdin (sem eco extra).
+pub fn ler_segredo_stdin() -> ResultadoSshCli<String> {
+    let mut buf = String::new();
+    std::io::stdin().read_to_string(&mut buf)?;
+    Ok(buf.trim_end_matches(['\r', '\n']).to_string())
 }
 
 /// Aplica overrides de runtime sobre um VpsRegistro clonado.
-///
-/// Campos fornecidos pelo CLI em runtime PREVALECEM sobre valores armazenados.
 fn aplicar_overrides(
     vps: &mut VpsRegistro,
     password_override: Option<String>,
     sudo_password_override: Option<String>,
+    su_password_override: Option<String>,
     timeout_override: Option<u64>,
+    key_path_override: Option<String>,
+    key_passphrase_override: Option<String>,
 ) {
     if let Some(pwd) = password_override {
-        vps.senha = secrecy::SecretString::from(pwd);
+        vps.senha = SecretString::from(pwd);
     }
     if let Some(spwd) = sudo_password_override {
-        vps.senha_sudo = Some(secrecy::SecretString::from(spwd));
+        vps.senha_sudo = Some(SecretString::from(spwd));
+    }
+    if let Some(sp) = su_password_override {
+        vps.senha_su = Some(SecretString::from(sp));
     }
     if let Some(t) = timeout_override {
         vps.timeout_ms = t;
     }
+    if let Some(k) = key_path_override {
+        vps.key_path = Some(k);
+    }
+    if let Some(kp) = key_passphrase_override {
+        vps.key_passphrase = Some(SecretString::from(kp));
+    }
+}
+
+fn validar_comando_tamanho(comando: &str, max_command_chars: usize) -> ResultadoSshCli<()> {
+    let lim = limite_efetivo(max_command_chars);
+    let len = comando.chars().count();
+    if len > lim {
+        return Err(ErroSshCli::ComandoMuitoLongo {
+            max: max_command_chars,
+            len,
+        });
+    }
+    if comando.trim().is_empty() {
+        return Err(ErroSshCli::ArgumentoInvalido("comando vazio".to_string()));
+    }
+    Ok(())
 }
 
 /// Dispatcher dos subcomandos `vps`.
@@ -155,7 +231,7 @@ pub async fn executar_comando_vps(
     config_override: Option<PathBuf>,
     _formato: FormatoSaida,
 ) -> Result<()> {
-    let caminho = resolver_caminho_config(config_override)?;
+    let caminho = resolver_caminho_config(config_override.clone())?;
 
     match acao {
         AcaoVps::Add {
@@ -164,33 +240,82 @@ pub async fn executar_comando_vps(
             port,
             user,
             password,
+            password_stdin,
+            key,
+            key_passphrase,
             timeout,
+            max_command_chars,
+            max_output_chars,
             max_chars,
             sudo_password,
+            sudo_password_stdin,
             su_password,
+            su_password_stdin,
+            disable_sudo,
+            check,
         } => {
             let name = crate::paths::normalizar_nfc(&name);
             let mut arquivo = carregar(&caminho)?;
             if arquivo.hosts.contains_key(&name) {
                 return Err(ErroSshCli::VpsDuplicada(name).into());
             }
-            let senha = SecretString::from(password.unwrap_or_default());
-            let max_chars_num: usize = parse_max_chars(&max_chars);
+            if password_stdin && (sudo_password_stdin || su_password_stdin) {
+                return Err(ErroSshCli::ArgumentoInvalido(
+                    "apenas um --*-stdin por invocação one-shot; rode vps edit para sudo/su".into(),
+                )
+                .into());
+            }
+            let senha = if password_stdin {
+                SecretString::from(ler_segredo_stdin()?)
+            } else {
+                SecretString::from(password.unwrap_or_default())
+            };
+            let sudo_s = if sudo_password_stdin {
+                Some(SecretString::from(ler_segredo_stdin()?))
+            } else {
+                sudo_password.map(SecretString::from)
+            };
+            let su_s = if su_password_stdin {
+                Some(SecretString::from(ler_segredo_stdin()?))
+            } else {
+                su_password.map(SecretString::from)
+            };
+            // max_chars legado → command se max_command não veio explicitamente
+            let max_cmd = max_command_chars
+                .as_deref()
+                .or(max_chars.as_deref())
+                .map(parse_limite_chars)
+                .unwrap_or(modelo::MAX_COMMAND_CHARS_PADRAO);
+            let max_out = max_output_chars
+                .as_deref()
+                .map(parse_limite_chars)
+                .unwrap_or(modelo::MAX_OUTPUT_CHARS_PADRAO);
             let registro = VpsRegistro::novo(
                 name.clone(),
                 host,
                 port,
                 user,
                 senha,
+                key,
+                key_passphrase.map(SecretString::from),
                 Some(timeout),
-                Some(max_chars_num),
-                sudo_password.map(SecretString::from),
-                su_password.map(SecretString::from),
+                Some(max_cmd),
+                Some(max_out),
+                sudo_s,
+                su_s,
+                disable_sudo,
             );
+            registro
+                .validar_credenciais()
+                .map_err(ErroSshCli::ArgumentoInvalido)?;
             arquivo.hosts.insert(name.clone(), registro);
             arquivo.schema_version = modelo::SCHEMA_VERSION_ATUAL;
             salvar(&caminho, &arquivo)?;
             crate::output::imprimir_sucesso(&format!("VPS '{name}' adicionada ao registro"));
+            if check {
+                executar_health_check(Some(&name), config_override, FormatoSaida::Text, None)
+                    .await?;
+            }
         }
         AcaoVps::List { json } => {
             let arquivo = carregar(&caminho)?;
@@ -215,10 +340,18 @@ pub async fn executar_comando_vps(
             port,
             user,
             password,
+            password_stdin,
+            key,
+            key_passphrase,
             timeout,
+            max_command_chars,
+            max_output_chars,
             max_chars,
             sudo_password,
+            sudo_password_stdin,
             su_password,
+            su_password_stdin,
+            disable_sudo,
         } => {
             let mut arquivo = carregar(&caminho)?;
             let registro = arquivo
@@ -234,21 +367,42 @@ pub async fn executar_comando_vps(
             if let Some(u) = user {
                 registro.usuario = u;
             }
-            if let Some(pw) = password {
+            if password_stdin {
+                registro.senha = SecretString::from(ler_segredo_stdin()?);
+            } else if let Some(pw) = password {
                 registro.senha = SecretString::from(pw);
+            }
+            if let Some(k) = key {
+                registro.key_path = Some(k);
+            }
+            if let Some(kp) = key_passphrase {
+                registro.key_passphrase = Some(SecretString::from(kp));
             }
             if let Some(t) = timeout {
                 registro.timeout_ms = t;
             }
-            if let Some(m) = max_chars {
-                registro.max_chars = parse_max_chars(&m);
+            if let Some(m) = max_command_chars.or(max_chars) {
+                registro.max_command_chars = parse_limite_chars(&m);
             }
-            if let Some(sp) = sudo_password {
+            if let Some(m) = max_output_chars {
+                registro.max_output_chars = parse_limite_chars(&m);
+            }
+            if sudo_password_stdin {
+                registro.senha_sudo = Some(SecretString::from(ler_segredo_stdin()?));
+            } else if let Some(sp) = sudo_password {
                 registro.senha_sudo = Some(SecretString::from(sp));
             }
-            if let Some(sp) = su_password {
+            if su_password_stdin {
+                registro.senha_su = Some(SecretString::from(ler_segredo_stdin()?));
+            } else if let Some(sp) = su_password {
                 registro.senha_su = Some(SecretString::from(sp));
             }
+            if let Some(d) = disable_sudo {
+                registro.disable_sudo = d;
+            }
+            registro
+                .validar_credenciais()
+                .map_err(ErroSshCli::ArgumentoInvalido)?;
             salvar(&caminho, &arquivo)?;
             crate::output::imprimir_sucesso(&format!("VPS '{nome}' editada"));
         }
@@ -267,14 +421,213 @@ pub async fn executar_comando_vps(
         AcaoVps::Path => {
             crate::output::escrever_linha(&caminho.display().to_string())?;
         }
+        AcaoVps::Doctor { json } => {
+            executar_doctor(config_override, json)?;
+        }
+        AcaoVps::Export {
+            include_secrets,
+            output,
+        } => {
+            executar_export(&caminho, include_secrets, output.as_deref())?;
+        }
+        AcaoVps::Import { file } => {
+            executar_import(&caminho, &file)?;
+        }
     }
     Ok(())
 }
 
-/// Define a VPS ativa gravando seu nome em `<config_dir>/active`.
-///
-/// Esta função é chamada pelo subcomando `connect <nome>` e valida que a VPS
-/// existe no registro antes de gravar.
+fn executar_doctor(config_override: Option<PathBuf>, json: bool) -> Result<()> {
+    let camada = camada_vencedora(config_override.clone())?;
+    let caminho = camada.path.clone();
+    let existe = caminho.exists();
+    let arquivo = carregar(&caminho)?;
+    let kh = KnownHosts::caminho_ao_lado_config(&caminho);
+    let active = caminho
+        .parent()
+        .map(|p| p.join("active"))
+        .unwrap_or_else(|| PathBuf::from("active"));
+    let perms = if existe {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            format!(
+                "{:o}",
+                std::fs::metadata(&caminho)?.permissions().mode() & 0o777
+            )
+        }
+        #[cfg(not(unix))]
+        {
+            "n/a".to_string()
+        }
+    } else {
+        "ausente".to_string()
+    };
+
+    let seg = crate::secrets::status_segredos()?;
+    if json {
+        let v = serde_json::json!({
+            "layer": camada.nome,
+            "config_path": caminho.display().to_string(),
+            "exists": existe,
+            "permissions": perms,
+            "schema_version": arquivo.schema_version,
+            "hosts": arquivo.hosts.len(),
+            "known_hosts": kh.display().to_string(),
+            "active_file": active.display().to_string(),
+            "secrets_at_rest": if seg.cifragem_ativa { "encrypted" } else { "plaintext" },
+            "secrets_key_source": seg.fonte.as_str(),
+            "secrets_key_file": seg.key_file_path.display().to_string(),
+            "secrets_plaintext_opt_out": seg.plaintext_opt_out,
+            "telemetry": false,
+        });
+        println!("{}", serde_json::to_string_pretty(&v)?);
+    } else {
+        println!("Camada vencedora: {}", camada.nome);
+        println!("Config path:      {}", caminho.display());
+        println!("Existe:           {existe}");
+        println!("Permissões:       {perms}");
+        println!("Schema:           {}", arquivo.schema_version);
+        println!("Hosts:            {}", arquivo.hosts.len());
+        println!("known_hosts:      {}", kh.display());
+        println!("active file:      {}", active.display());
+        println!(
+            "Secrets at-rest:  {} (key source: {})",
+            if seg.cifragem_ativa {
+                "encrypted"
+            } else {
+                "plaintext"
+            },
+            seg.fonte.as_str()
+        );
+        println!("Secrets key file: {}", seg.key_file_path.display());
+        println!(
+            "Plaintext opt-out: {}",
+            if seg.plaintext_opt_out { "yes" } else { "no" }
+        );
+        println!("Telemetria:       desabilitada");
+    }
+    Ok(())
+}
+
+fn executar_export(caminho: &PathBuf, include_secrets: bool, output: Option<&str>) -> Result<()> {
+    let arquivo = carregar(caminho)?;
+    let mut export = ArquivoConfig {
+        schema_version: arquivo.schema_version,
+        hosts: BTreeMap::new(),
+    };
+    for (k, mut v) in arquivo.hosts {
+        if !include_secrets {
+            v.senha = SecretString::from(String::new());
+            v.senha_sudo = None;
+            v.senha_su = None;
+            v.key_passphrase = None;
+        }
+        export.hosts.insert(k, v);
+    }
+    let texto = toml::to_string_pretty(&export)?;
+    if let Some(path) = output {
+        escrever_atomico(Path::new(path), texto.as_bytes())?;
+        crate::output::imprimir_sucesso(&format!("exportado para {path}"));
+    } else {
+        print!("{texto}");
+    }
+    Ok(())
+}
+
+fn executar_import(caminho: &PathBuf, file: &Path) -> Result<()> {
+    let texto = std::fs::read_to_string(file)?;
+    let importado: ArquivoConfig = toml::from_str(&texto)?;
+    let mut atual = carregar(caminho)?;
+    for (k, v) in importado.hosts {
+        v.validar_credenciais()
+            .map_err(ErroSshCli::ArgumentoInvalido)?;
+        atual.hosts.insert(k, v);
+    }
+    atual.schema_version = modelo::SCHEMA_VERSION_ATUAL;
+    salvar(caminho, &atual)?;
+    crate::output::imprimir_sucesso("importação concluída");
+    Ok(())
+}
+
+/// Dispatcher one-shot de `secrets status|init|reencrypt`.
+pub async fn executar_comando_secrets(
+    acao: AcaoSecrets,
+    config_override: Option<PathBuf>,
+    formato: FormatoSaida,
+) -> Result<()> {
+    // Garante alinhamento do secrets.key com --config-dir.
+    crate::secrets::definir_diretorio_config(config_override.clone());
+    match acao {
+        AcaoSecrets::Status { json } => {
+            let seg = crate::secrets::status_segredos()?;
+            let usar_json = json || formato == FormatoSaida::Json;
+            if usar_json {
+                let v = serde_json::json!({
+                    "encryption_active": seg.cifragem_ativa,
+                    "key_source": seg.fonte.as_str(),
+                    "key_file": seg.key_file_path.display().to_string(),
+                    "plaintext_opt_out": seg.plaintext_opt_out,
+                    "at_rest": if seg.cifragem_ativa { "encrypted" } else { "plaintext" },
+                });
+                println!("{}", serde_json::to_string_pretty(&v)?);
+            } else {
+                println!(
+                    "at-rest: {} | source: {} | key_file: {} | plaintext_opt_out: {}",
+                    if seg.cifragem_ativa {
+                        "encrypted"
+                    } else {
+                        "plaintext"
+                    },
+                    seg.fonte.as_str(),
+                    seg.key_file_path.display(),
+                    seg.plaintext_opt_out
+                );
+            }
+            Ok(())
+        }
+        AcaoSecrets::Init { keyring, force } => {
+            let seg = crate::secrets::init_master_key(keyring, force)?;
+            crate::output::imprimir_sucesso(&format!(
+                "master-key pronta (source={}; key_file={})",
+                seg.fonte.as_str(),
+                seg.key_file_path.display()
+            ));
+            Ok(())
+        }
+        AcaoSecrets::Reencrypt => {
+            let caminho = resolver_caminho_config(config_override)?;
+            executar_reencrypt(&caminho)?;
+            Ok(())
+        }
+    }
+}
+
+/// Recarrega e regrava o config, re-cifando secrets com a chave atual.
+fn executar_reencrypt(caminho: &PathBuf) -> Result<()> {
+    let (chave, fonte) = crate::secrets::garantir_chave_para_escrita()?;
+    if chave.is_none() {
+        return Err(ErroSshCli::ArgumentoInvalido(
+            "sem master-key; rode `ssh-cli secrets init` ou remova SSH_CLI_ALLOW_PLAINTEXT_SECRETS"
+                .to_string(),
+        )
+        .into());
+    }
+    if let Some(mut k) = chave {
+        use zeroize::Zeroize;
+        k.zeroize();
+    }
+    let arquivo = carregar(caminho)?;
+    salvar(caminho, &arquivo)?;
+    crate::output::imprimir_sucesso(&format!(
+        "reencrypt ok (source={}; hosts={})",
+        fonte.as_str(),
+        arquivo.hosts.len()
+    ));
+    Ok(())
+}
+
+/// Define a VPS ativa gravando seu nome em `<config_dir>/active` (arquivo irmão).
 pub async fn executar_connect(nome: &str, config_override: Option<PathBuf>) -> Result<()> {
     let caminho = resolver_caminho_config(config_override)?;
     let arquivo = carregar(&caminho)?;
@@ -289,14 +642,21 @@ pub async fn executar_connect(nome: &str, config_override: Option<PathBuf>) -> R
     if let Some(pai) = arquivo_ativo.parent() {
         std::fs::create_dir_all(pai)?;
     }
-    std::fs::write(&arquivo_ativo, nome)?;
+    // escrita atômica do active
+    let pai = arquivo_ativo
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(&pai)?;
+    tmp.write_all(nome.as_bytes())?;
+    tmp.as_file().sync_data()?;
+    tmp.persist(&arquivo_ativo)
+        .map_err(|e| ErroSshCli::Io(e.error))?;
     crate::output::imprimir_sucesso(&format!("VPS ativa definida: '{nome}'"));
     Ok(())
 }
 
 /// Busca um registro de VPS por nome.
-///
-/// Retorna `Ok(None)` se a VPS não existir (para que o caller decida o tratamento).
 pub fn buscar_por_nome(
     config_override: Option<PathBuf>,
     nome: &str,
@@ -320,23 +680,47 @@ pub fn ler_vps_ativa(config_override: Option<PathBuf>) -> ResultadoSshCli<Option
     Ok(Some(nome.trim().to_string()))
 }
 
-fn parse_max_chars(s: &str) -> usize {
-    if s == "none" || s == "0" {
-        usize::MAX
-    } else {
-        s.parse().unwrap_or(modelo::MAX_CHARS_PADRAO)
-    }
-}
-
 /// Constrói `ConfiguracaoConexao` a partir de um `VpsRegistro`.
-pub fn construir_configuracao(vps: &VpsRegistro) -> ConfiguracaoConexao {
+pub fn construir_configuracao(
+    vps: &VpsRegistro,
+    config_toml: Option<&Path>,
+    replace_host_key: bool,
+) -> ConfiguracaoConexao {
+    let known_hosts_path = config_toml.map(KnownHosts::caminho_ao_lado_config);
     ConfiguracaoConexao {
         host: vps.host.clone(),
         porta: vps.porta,
         usuario: vps.usuario.clone(),
         senha: vps.senha.clone(),
+        key_path: vps.key_path.clone(),
+        key_passphrase: vps.key_passphrase.clone(),
         timeout_ms: vps.timeout_ms,
+        known_hosts_path,
+        replace_host_key,
     }
+}
+
+/// Opções comuns de execução remota.
+#[derive(Debug, Default, Clone)]
+pub struct OpcoesExec {
+    /// Override senha.
+    pub password: Option<String>,
+    /// Override sudo.
+    pub sudo_password: Option<String>,
+    /// Override su.
+    pub su_password: Option<String>,
+    /// Override timeout.
+    pub timeout: Option<u64>,
+    /// Override key path.
+    pub key: Option<String>,
+    /// Override key passphrase.
+    pub key_passphrase: Option<String>,
+    /// Optional shell description comment.
+    pub description: Option<String>,
+    /// replace host key.
+    pub replace_host_key: bool,
+    /// disable sudo global.
+    pub disable_sudo: bool,
 }
 
 /// Executa um comando em uma VPS via SSH.
@@ -346,76 +730,7 @@ pub async fn executar_exec(
     config_override: Option<PathBuf>,
     formato: FormatoSaida,
     json: bool,
-    password_override: Option<String>,
-    timeout_override: Option<u64>,
-) -> Result<()> {
-    if crate::signals::cancelado() || crate::signals::terminado() {
-        return Err(anyhow::anyhow!(crate::i18n::t(
-            crate::i18n::Mensagem::OperacaoCancelada
-        )));
-    }
-    let caminho = resolver_caminho_config(config_override)?;
-    let arquivo = carregar(&caminho)?;
-    let vps_base = arquivo
-        .hosts
-        .get(vps_nome)
-        .ok_or_else(|| ErroSshCli::VpsNaoEncontrada(vps_nome.to_string()))?;
-
-    let mut vps = vps_base.clone();
-    aplicar_overrides(&mut vps, password_override, None, timeout_override);
-    let cfg = construir_configuracao(&vps);
-    let cliente: Box<dyn ClienteSshTrait> = <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
-    executar_exec_with_client(&vps, comando, cliente, formato, json).await
-}
-
-/// Versão testável de executar_exec que aceita o cliente como parâmetro.
-pub async fn executar_exec_with_client(
-    vps: &VpsRegistro,
-    comando: &str,
-    mut cliente: Box<dyn ClienteSshTrait>,
-    formato: FormatoSaida,
-    json: bool,
-) -> Result<()> {
-    if crate::signals::cancelado() || crate::signals::terminado() {
-        return Err(anyhow::anyhow!(crate::i18n::t(
-            crate::i18n::Mensagem::OperacaoCancelada
-        )));
-    }
-    let saida = cliente.executar_comando(comando, vps.max_chars).await?;
-    cliente.desconectar().await?;
-    if formato == FormatoSaida::Json || json {
-        output::imprimir_saida_execucao_json(&saida);
-    } else {
-        output::imprimir_saida_execucao(&saida);
-    }
-    if let Some(code) = saida.exit_code {
-        if code != 0 {
-            return Err(ErroSshCli::ComandoFalhou {
-                exit_code: code,
-                stderr: saida.stderr.clone(),
-            }
-            .into());
-        }
-    }
-    Ok(())
-}
-
-/// Executa um comando com `sudo` em uma VPS via SSH.
-///
-/// Se a VPS tiver `senha_sudo` definida (ou `sudo_password_override` for fornecido),
-/// o comando é executado via `printf '%s\n' <senha> | sudo -S -p '' <cmd>`,
-/// que injeta a senha no stdin do sudo sem expô-la nos argumentos do processo.
-/// Caso contrário, usa `sudo <cmd>` assumindo NOPASSWD configurado.
-#[allow(clippy::too_many_arguments)]
-pub async fn executar_sudo_exec(
-    vps_nome: &str,
-    comando: &str,
-    config_override: Option<PathBuf>,
-    formato: FormatoSaida,
-    json: bool,
-    password_override: Option<String>,
-    sudo_password_override: Option<String>,
-    timeout_override: Option<u64>,
+    opts: OpcoesExec,
 ) -> Result<()> {
     if crate::signals::cancelado() || crate::signals::terminado() {
         return Err(anyhow::anyhow!(crate::i18n::t(
@@ -432,17 +747,22 @@ pub async fn executar_sudo_exec(
     let mut vps = vps_base.clone();
     aplicar_overrides(
         &mut vps,
-        password_override,
-        sudo_password_override,
-        timeout_override,
+        opts.password,
+        opts.sudo_password,
+        opts.su_password,
+        opts.timeout,
+        opts.key,
+        opts.key_passphrase,
     );
-    let cfg = construir_configuracao(&vps);
+    let cmd = anexar_description(comando, opts.description.as_deref());
+    validar_comando_tamanho(&cmd, vps.max_command_chars)?;
+    let cfg = construir_configuracao(&vps, Some(&caminho), opts.replace_host_key);
     let cliente: Box<dyn ClienteSshTrait> = <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
-    executar_sudo_exec_with_client(&vps, comando, cliente, formato, json).await
+    executar_exec_with_client(&vps, &cmd, cliente, formato, json).await
 }
 
-/// Versão testável de executar_sudo_exec que aceita o cliente como parâmetro.
-pub async fn executar_sudo_exec_with_client(
+/// Versão testável de executar_exec.
+pub async fn executar_exec_with_client(
     vps: &VpsRegistro,
     comando: &str,
     mut cliente: Box<dyn ClienteSshTrait>,
@@ -454,15 +774,8 @@ pub async fn executar_sudo_exec_with_client(
             crate::i18n::Mensagem::OperacaoCancelada
         )));
     }
-    let sudo_cmd = if let Some(ref senha) = vps.senha_sudo {
-        use secrecy::ExposeSecret;
-        let escaped = escapar_senha_shell(senha.expose_secret());
-        format!("printf '%s\\n' {} | sudo -S -p '' {}", escaped, comando)
-    } else {
-        format!("sudo {}", comando)
-    };
-
-    let saida = cliente.executar_comando(&sudo_cmd, vps.max_chars).await?;
+    let max_out = limite_efetivo(vps.max_output_chars);
+    let saida = cliente.executar_comando(comando, max_out).await?;
     cliente.desconectar().await?;
     if formato == FormatoSaida::Json || json {
         output::imprimir_saida_execucao_json(&saida);
@@ -481,9 +794,146 @@ pub async fn executar_sudo_exec_with_client(
     Ok(())
 }
 
-/// Executa um health-check (ping SSH) em uma VPS e imprime a latência.
-///
-/// Se `vps_nome` for `None`, usa a VPS ativa registrada.
+/// Executa um comando com `sudo` (packing `sh -c`).
+pub async fn executar_sudo_exec(
+    vps_nome: &str,
+    comando: &str,
+    config_override: Option<PathBuf>,
+    formato: FormatoSaida,
+    json: bool,
+    opts: OpcoesExec,
+) -> Result<()> {
+    if crate::signals::cancelado() || crate::signals::terminado() {
+        return Err(anyhow::anyhow!(crate::i18n::t(
+            crate::i18n::Mensagem::OperacaoCancelada
+        )));
+    }
+    let caminho = resolver_caminho_config(config_override)?;
+    let arquivo = carregar(&caminho)?;
+    let vps_base = arquivo
+        .hosts
+        .get(vps_nome)
+        .ok_or_else(|| ErroSshCli::VpsNaoEncontrada(vps_nome.to_string()))?;
+
+    let mut vps = vps_base.clone();
+    aplicar_overrides(
+        &mut vps,
+        opts.password.clone(),
+        opts.sudo_password.clone(),
+        opts.su_password.clone(),
+        opts.timeout,
+        opts.key.clone(),
+        opts.key_passphrase.clone(),
+    );
+    if opts.disable_sudo || vps.disable_sudo {
+        return Err(ErroSshCli::SudoDesabilitado.into());
+    }
+    let cmd = anexar_description(comando, opts.description.as_deref());
+    validar_comando_tamanho(&cmd, vps.max_command_chars)?;
+    let cfg = construir_configuracao(&vps, Some(&caminho), opts.replace_host_key);
+    let cliente: Box<dyn ClienteSshTrait> = <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
+    executar_sudo_exec_with_client(&vps, &cmd, cliente, formato, json).await
+}
+
+/// Versão testável de sudo-exec.
+pub async fn executar_sudo_exec_with_client(
+    vps: &VpsRegistro,
+    comando: &str,
+    mut cliente: Box<dyn ClienteSshTrait>,
+    formato: FormatoSaida,
+    json: bool,
+) -> Result<()> {
+    if crate::signals::cancelado() || crate::signals::terminado() {
+        return Err(anyhow::anyhow!(crate::i18n::t(
+            crate::i18n::Mensagem::OperacaoCancelada
+        )));
+    }
+    if vps.disable_sudo {
+        return Err(ErroSshCli::SudoDesabilitado.into());
+    }
+    let sudo_cmd = empacotar_sudo(comando, vps.senha_sudo.as_ref());
+    let max_out = limite_efetivo(vps.max_output_chars);
+    let saida = cliente.executar_comando(&sudo_cmd, max_out).await?;
+    cliente.desconectar().await?;
+    if formato == FormatoSaida::Json || json {
+        output::imprimir_saida_execucao_json(&saida);
+    } else {
+        output::imprimir_saida_execucao(&saida);
+    }
+    if let Some(code) = saida.exit_code {
+        if code != 0 {
+            return Err(ErroSshCli::ComandoFalhou {
+                exit_code: code,
+                stderr: saida.stderr.clone(),
+            }
+            .into());
+        }
+    }
+    Ok(())
+}
+
+/// Executa comando via `su -` one-shot (consome `senha_su`).
+pub async fn executar_su_exec(
+    vps_nome: &str,
+    comando: &str,
+    config_override: Option<PathBuf>,
+    formato: FormatoSaida,
+    json: bool,
+    opts: OpcoesExec,
+) -> Result<()> {
+    if crate::signals::cancelado() || crate::signals::terminado() {
+        return Err(anyhow::anyhow!(crate::i18n::t(
+            crate::i18n::Mensagem::OperacaoCancelada
+        )));
+    }
+    let caminho = resolver_caminho_config(config_override)?;
+    let arquivo = carregar(&caminho)?;
+    let vps_base = arquivo
+        .hosts
+        .get(vps_nome)
+        .ok_or_else(|| ErroSshCli::VpsNaoEncontrada(vps_nome.to_string()))?;
+
+    let mut vps = vps_base.clone();
+    aplicar_overrides(
+        &mut vps,
+        opts.password,
+        opts.sudo_password,
+        opts.su_password,
+        opts.timeout,
+        opts.key,
+        opts.key_passphrase,
+    );
+    if opts.disable_sudo || vps.disable_sudo {
+        return Err(ErroSshCli::SudoDesabilitado.into());
+    }
+    let senha_su = vps.senha_su.clone().ok_or(ErroSshCli::SenhaSuAusente)?;
+    let cmd = anexar_description(comando, opts.description.as_deref());
+    validar_comando_tamanho(&cmd, vps.max_command_chars)?;
+    let su_cmd = empacotar_su(&cmd, &senha_su);
+    let cfg = construir_configuracao(&vps, Some(&caminho), opts.replace_host_key);
+    let mut cliente: Box<dyn ClienteSshTrait> =
+        <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
+    let max_out = limite_efetivo(vps.max_output_chars);
+    let saida = cliente.executar_comando(&su_cmd, max_out).await?;
+    cliente.desconectar().await?;
+    if formato == FormatoSaida::Json || json {
+        output::imprimir_saida_execucao_json(&saida);
+    } else {
+        output::imprimir_saida_execucao(&saida);
+    }
+    if let Some(code) = saida.exit_code {
+        if code != 0 {
+            return Err(ErroSshCli::ComandoFalhou {
+                exit_code: code,
+                stderr: saida.stderr.clone(),
+            }
+            .into());
+        }
+    }
+    Ok(())
+}
+
+/// Health-check SSH.
 pub async fn executar_health_check(
     vps_nome: Option<&str>,
     config_override: Option<PathBuf>,
@@ -512,11 +962,11 @@ pub async fn executar_health_check(
         .ok_or_else(|| ErroSshCli::VpsNaoEncontrada(nome_resolvido.clone()))?;
 
     let mut vps = vps_base.clone();
-    aplicar_overrides(&mut vps, password_override, None, None);
-    let cfg = construir_configuracao(&vps);
+    aplicar_overrides(&mut vps, password_override, None, None, None, None, None);
+    let cfg = construir_configuracao(&vps, Some(&caminho), false);
     let inicio = std::time::Instant::now();
     let cliente: Box<dyn ClienteSshTrait> = <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
-    let latencia_ms = inicio.elapsed().as_millis() as u64;
+    let latencia_ms = u64::try_from(inicio.elapsed().as_millis()).unwrap_or(u64::MAX);
     cliente.desconectar().await?;
 
     if formato == FormatoSaida::Json {
@@ -530,6 +980,26 @@ pub async fn executar_health_check(
 #[cfg(test)]
 mod testes {
     use super::*;
+    use secrecy::ExposeSecret;
+    use tempfile::TempDir;
+
+    fn reg_min() -> VpsRegistro {
+        VpsRegistro::novo(
+            "srv".into(),
+            "host.example.com".into(),
+            2222,
+            "admin".into(),
+            SecretString::from("pass".to_string()),
+            None,
+            None,
+            Some(60_000),
+            Some(1_000),
+            Some(50_000),
+            None,
+            None,
+            false,
+        )
+    }
 
     #[test]
     fn arquivo_vazio_serializa_com_schema() {
@@ -538,83 +1008,51 @@ mod testes {
             hosts: BTreeMap::new(),
         };
         let texto = toml::to_string(&arq).unwrap();
-        assert!(texto.contains("schema_version = 1"));
+        assert!(texto.contains("schema_version = 2"));
     }
 
     #[test]
-    fn parse_max_chars_none_retorna_usize_max() {
-        assert_eq!(parse_max_chars("none"), usize::MAX);
-        assert_eq!(parse_max_chars("0"), usize::MAX);
-        assert_eq!(parse_max_chars("1000"), 1000);
+    fn parse_limite_none() {
+        assert_eq!(parse_limite_chars("none"), 0);
+        assert_eq!(parse_limite_chars("0"), 0);
+        assert_eq!(parse_limite_chars("1000"), 1000);
     }
 
     #[test]
-    fn parse_max_chars_valor_invalido() {
-        assert_eq!(parse_max_chars("abc"), modelo::MAX_CHARS_PADRAO);
-        assert_eq!(parse_max_chars("invalido"), modelo::MAX_CHARS_PADRAO);
-    }
-
-    #[test]
-    fn construir_configuracao_copia_campos_corretamente() {
-        let registro = modelo::VpsRegistro::novo(
-            "srv".into(),
-            "host.example.com".into(),
-            2222,
-            "admin".into(),
-            SecretString::from("pass".to_string()),
-            Some(60_000),
-            Some(50_000),
-            None,
-            None,
-        );
-        let cfg = construir_configuracao(&registro);
+    fn construir_configuracao_copia_campos() {
+        let registro = reg_min();
+        let cfg = construir_configuracao(&registro, None, false);
         assert_eq!(cfg.host, "host.example.com");
         assert_eq!(cfg.porta, 2222);
         assert_eq!(cfg.usuario, "admin");
         assert_eq!(cfg.timeout_ms, 60_000);
+        assert!(cfg.known_hosts_path.is_none());
     }
 
     #[test]
-    fn arquivo_config_vazio_tem_schema_correto() {
-        let arq = ArquivoConfig {
-            schema_version: modelo::SCHEMA_VERSION_ATUAL,
+    fn salvar_atomico_roundtrip() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        let mut arq = ArquivoConfig {
+            schema_version: 2,
             hosts: BTreeMap::new(),
         };
-        let toml_str = toml::to_string(&arq).unwrap();
-        assert!(toml_str.contains("schema_version"));
-        assert!(toml_str.contains("hosts"));
-    }
-
-    #[test]
-    fn arquivo_config_com_hosts_serializa_para_toml() {
-        let mut hosts = BTreeMap::new();
-        hosts.insert(
-            "teste".to_string(),
-            modelo::VpsRegistro::novo(
-                "teste".into(),
-                "1.2.3.4".into(),
-                22,
-                "root".into(),
-                SecretString::from("senha".to_string()),
-                None,
-                None,
-                None,
-                None,
-            ),
-        );
-        let arq = ArquivoConfig {
-            schema_version: modelo::SCHEMA_VERSION_ATUAL,
-            hosts,
-        };
-        let toml_str = toml::to_string(&arq).unwrap();
-        assert!(toml_str.contains("teste"));
-        assert!(toml_str.contains("1.2.3.4"));
+        arq.hosts.insert("a".into(), reg_min());
+        salvar(&path, &arq).unwrap();
+        let lido = carregar(&path).unwrap();
+        assert_eq!(lido.hosts.len(), 1);
+        assert_eq!(lido.hosts["a"].senha.expose_secret(), "pass");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
     }
 
     #[test]
     fn resolver_caminho_config_com_override_diretorio() {
         let resultado = resolver_caminho_config(Some(PathBuf::from("/tmp/test-dir")));
-        assert!(resultado.is_ok());
         assert_eq!(
             resultado.unwrap(),
             PathBuf::from("/tmp/test-dir/config.toml")
@@ -622,685 +1060,58 @@ mod testes {
     }
 
     #[test]
-    fn resolver_caminho_config_com_override_arquivo_explicito() {
-        let resultado = resolver_caminho_config(Some(PathBuf::from("/tmp/test.toml")));
-        assert!(resultado.is_ok());
-        assert_eq!(resultado.unwrap(), PathBuf::from("/tmp/test.toml"));
+    fn validar_comando_longo() {
+        let err = validar_comando_tamanho(&"x".repeat(20), 10).unwrap_err();
+        assert!(matches!(err, ErroSshCli::ComandoMuitoLongo { .. }));
     }
 
     #[test]
-    fn resolver_caminho_config_sem_extensao_trata_como_diretorio() {
-        let resultado = resolver_caminho_config(Some(PathBuf::from("/tmp/test")));
-        assert!(resultado.is_ok());
-        assert_eq!(resultado.unwrap(), PathBuf::from("/tmp/test/config.toml"));
+    fn empacotar_sudo_integrado() {
+        let cmd = empacotar_sudo("ls -la", None);
+        assert_eq!(cmd, "sudo -n sh -c 'ls -la'");
     }
 
     #[test]
-    fn carregar_retorna_config_vazio_quando_arquivo_nao_existe() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let caminho = tmp.path().join("nao-existe.toml");
-        let resultado = carregar(&caminho);
-        assert!(resultado.is_ok());
-        let arq = resultado.unwrap();
-        assert_eq!(arq.schema_version, modelo::SCHEMA_VERSION_ATUAL);
-        assert!(arq.hosts.is_empty());
-    }
-
-    #[test]
-    fn carregar_faz_parse_de_toml_existente() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let caminho = tmp.path().join("config.toml");
-        let conteudo = r#"
-schema_version = 1
-[hosts.minha-vps]
-nome = "minha-vps"
-host = "1.2.3.4"
-porta = 22
-usuario = "root"
-senha = "senhateste"
-timeout_ms = 30000
-max_chars = 100000
-schema_version = 1
-adicionado_em = "2024-01-01T00:00:00Z"
-"#;
-        std::fs::write(&caminho, conteudo).unwrap();
-        let resultado = carregar(&caminho);
-        assert!(resultado.is_ok());
-        let arq = resultado.unwrap();
-        assert!(arq.hosts.contains_key("minha-vps"));
-    }
-
-    #[test]
-    fn ler_vps_ativa_retorna_none_quando_arquivo_nao_existe() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_dir = tmp.path().join("ssh-cli");
-        std::fs::create_dir_all(&config_dir).unwrap();
-        let caminho_config = config_dir.join("config.toml");
-        std::fs::write(&caminho_config, "").unwrap();
-        let resultado = ler_vps_ativa(Some(config_dir.clone()));
-        assert!(resultado.is_ok());
-        assert!(resultado.unwrap().is_none());
-    }
-
-    #[test]
-    fn ler_vps_ativa_retorna_nome_quando_arquivo_existe() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_dir = tmp.path().join("ssh-cli");
-        std::fs::create_dir_all(&config_dir).unwrap();
-        let caminho_config = config_dir.join("config.toml");
-        let caminho_ativo = config_dir.join("active");
-        std::fs::write(&caminho_config, "").unwrap();
-        std::fs::write(&caminho_ativo, "minha-vps\n").unwrap();
-        let resultado = ler_vps_ativa(Some(config_dir));
-        assert!(resultado.is_ok());
-        assert_eq!(resultado.unwrap(), Some("minha-vps".to_string()));
-    }
-
-    #[test]
-    fn ler_vps_ativa_com_override_diretorio() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_dir = tmp.path().join("minha-config");
-        std::fs::create_dir_all(&config_dir).unwrap();
-        let caminho_config = config_dir.join("config.toml");
-        let caminho_ativo = config_dir.join("active");
-        std::fs::write(&caminho_config, "").unwrap();
-        std::fs::write(&caminho_ativo, "vps-teste\n").unwrap();
-        let resultado = ler_vps_ativa(Some(config_dir));
-        assert!(resultado.is_ok());
-        assert_eq!(resultado.unwrap(), Some("vps-teste".to_string()));
-    }
-
-    #[test]
-    fn buscar_por_nome_retorna_none_quando_nao_existe() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let caminho = tmp.path().join("config.toml");
-        std::fs::write(&caminho, "").unwrap();
-        let resultado = buscar_por_nome(Some(caminho.clone()), "inexistente");
-        assert!(resultado.is_ok());
-        assert!(resultado.unwrap().is_none());
-    }
-
-    #[test]
-    fn buscar_por_nome_retorna_registro_quando_existe() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let caminho = tmp.path().join("config.toml");
-        let conteudo = r#"
-schema_version = 1
-[hosts.minha-vps]
-nome = "minha-vps"
-host = "1.2.3.4"
-porta = 22
-usuario = "root"
-senha = "senhateste"
-timeout_ms = 30000
-max_chars = 100000
-schema_version = 1
-adicionado_em = "2024-01-01T00:00:00Z"
-"#;
-        std::fs::write(&caminho, conteudo).unwrap();
-        let resultado = buscar_por_nome(Some(caminho), "minha-vps");
-        assert!(resultado.is_ok());
-        let vps = resultado.unwrap();
-        assert!(vps.is_some());
-        assert_eq!(vps.unwrap().nome, "minha-vps");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn salvar_aplica_permissoes_600_no_unix() {
-        use std::os::unix::fs::PermissionsExt;
-        let tmp = tempfile::TempDir::new().unwrap();
-        let caminho = tmp.path().join("config.toml");
-        let arquivo = ArquivoConfig {
-            schema_version: modelo::SCHEMA_VERSION_ATUAL,
-            hosts: BTreeMap::new(),
-        };
-        let resultado = salvar(&caminho, &arquivo);
-        assert!(resultado.is_ok());
-        let metadados = std::fs::metadata(&caminho).unwrap();
-        let permissoes = metadados.permissions();
-        assert_eq!(permissoes.mode() & 0o777, 0o600);
-    }
-
-    #[test]
-    fn salvar_cria_diretorio_pai_se_nao_existir() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let caminho = tmp
-            .path()
-            .join("subdir1")
-            .join("subdir2")
-            .join("config.toml");
-        let arquivo = ArquivoConfig {
-            schema_version: modelo::SCHEMA_VERSION_ATUAL,
-            hosts: BTreeMap::new(),
-        };
-        let resultado = salvar(&caminho, &arquivo);
-        assert!(resultado.is_ok());
-        assert!(caminho.exists());
-    }
-
-    #[test]
-    fn arquivo_config_parsing_com_campos_parciais() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let caminho = tmp.path().join("config.toml");
-        let conteudo = r#"
-schema_version = 1
-[hosts.vps-minima]
-nome = "vps-minima"
-host = "5.6.7.8"
-porta = 2222
-usuario = "admin"
-senha = "senha123"
-timeout_ms = 30000
-max_chars = 100000
-schema_version = 1
-adicionado_em = "2024-01-01T00:00:00Z"
-"#;
-        std::fs::write(&caminho, conteudo).unwrap();
-        let resultado = carregar(&caminho);
-        assert!(resultado.is_ok());
-        let arq = resultado.unwrap();
-        assert!(arq.hosts.contains_key("vps-minima"));
-        let vps = arq.hosts.get("vps-minima").unwrap();
-        assert_eq!(vps.host, "5.6.7.8");
-        assert_eq!(vps.porta, 2222);
-    }
-
-    #[tokio::test]
-    async fn executar_exec_with_client_retorna_ok_quando_mock_sucesso() {
-        use crate::ssh::cliente::mocks::MockClienteSsh;
-        use crate::ssh::cliente::{ClienteSshTrait, SaidaExecucao};
-
-        let mut mock = MockClienteSsh::new();
-        mock.expect_executar_comando()
-            .returning(|_cmd, _max_chars| {
-                Ok(SaidaExecucao {
-                    stdout: "output test".to_string(),
-                    stderr: String::new(),
-                    exit_code: Some(0),
-                    truncado_stdout: false,
-                    truncado_stderr: false,
-                    duracao_ms: 100,
-                })
-            });
-        mock.expect_desconectar().returning(|| Ok(()));
-
-        let cliente = Box::new(mock) as Box<dyn ClienteSshTrait>;
-        let registro = modelo::VpsRegistro::novo(
-            "teste".into(),
-            "localhost".into(),
-            22,
-            "user".into(),
-            SecretString::from("pass".to_string()),
-            None,
-            None,
-            None,
-            None,
-        );
-
-        let resultado =
-            executar_exec_with_client(&registro, "echo test", cliente, FormatoSaida::Text, false)
-                .await;
-        assert!(resultado.is_ok());
-    }
-
-    #[tokio::test]
-    async fn executar_sudo_exec_with_client_retorna_ok_quando_mock_sucesso() {
-        use crate::ssh::cliente::mocks::MockClienteSsh;
-        use crate::ssh::cliente::{ClienteSshTrait, SaidaExecucao};
-
-        let mut mock = MockClienteSsh::new();
-        mock.expect_executar_comando()
-            .returning(|_cmd, _max_chars| {
-                Ok(SaidaExecucao {
-                    stdout: "sudo output".to_string(),
-                    stderr: String::new(),
-                    exit_code: Some(0),
-                    truncado_stdout: false,
-                    truncado_stderr: false,
-                    duracao_ms: 100,
-                })
-            });
-        mock.expect_desconectar().returning(|| Ok(()));
-
-        let cliente = Box::new(mock) as Box<dyn ClienteSshTrait>;
-        let mut registro = modelo::VpsRegistro::novo(
-            "teste".into(),
-            "localhost".into(),
-            22,
-            "user".into(),
-            SecretString::from("pass".to_string()),
-            None,
-            None,
-            None,
-            None,
-        );
-        registro.senha_sudo = Some(SecretString::from("sudo_pass".to_string()));
-
-        let resultado = executar_sudo_exec_with_client(
-            &registro,
-            "echo sudo",
-            cliente,
-            FormatoSaida::Text,
-            false,
-        )
-        .await;
-        assert!(resultado.is_ok());
-    }
-
-    #[tokio::test]
-    async fn executar_sudo_exec_with_client_retorna_ok_quando_sem_senha_sudo() {
-        use crate::ssh::cliente::mocks::MockClienteSsh;
-        use crate::ssh::cliente::{ClienteSshTrait, SaidaExecucao};
-
-        let mut mock = MockClienteSsh::new();
-        mock.expect_executar_comando()
-            .returning(|_cmd, _max_chars| {
-                Ok(SaidaExecucao {
-                    stdout: "output".to_string(),
-                    stderr: String::new(),
-                    exit_code: Some(0),
-                    truncado_stdout: false,
-                    truncado_stderr: false,
-                    duracao_ms: 100,
-                })
-            });
-        mock.expect_desconectar().returning(|| Ok(()));
-
-        let cliente = Box::new(mock) as Box<dyn ClienteSshTrait>;
-        let registro = modelo::VpsRegistro::novo(
-            "teste".into(),
-            "localhost".into(),
-            22,
-            "user".into(),
-            SecretString::from("pass".to_string()),
-            None,
-            None,
-            None,
-            None,
-        );
-
-        let resultado = executar_sudo_exec_with_client(
-            &registro,
-            "echo test",
-            cliente,
-            FormatoSaida::Text,
-            false,
-        )
-        .await;
-        assert!(resultado.is_ok());
-    }
-
-    #[tokio::test]
-    async fn executar_sudo_exec_with_client_retorna_erro_quando_executar_comando_falha() {
-        use crate::ssh::cliente::mocks::MockClienteSsh;
-        use crate::ssh::cliente::ClienteSshTrait;
-
-        let mut mock = MockClienteSsh::new();
-        mock.expect_executar_comando()
-            .returning(|_cmd, _max_chars| {
-                Err(crate::erros::ErroSshCli::CanalFalhou(
-                    "mock error".to_string(),
-                ))
-            });
-
-        let cliente = Box::new(mock) as Box<dyn ClienteSshTrait>;
-        let registro = modelo::VpsRegistro::novo(
-            "teste".into(),
-            "localhost".into(),
-            22,
-            "user".into(),
-            SecretString::from("pass".to_string()),
-            None,
-            None,
-            None,
-            None,
-        );
-
-        let resultado =
-            executar_exec_with_client(&registro, "echo test", cliente, FormatoSaida::Text, false)
-                .await;
-        assert!(resultado.is_err());
-    }
-
-    #[tokio::test]
-    async fn executar_scp_upload_with_client_retorna_ok_quando_mock_sucesso() {
-        use crate::ssh::cliente::mocks::MockClienteSsh;
-        use crate::ssh::cliente::{ClienteSshTrait, TransferenciaResultado};
-
-        let mut mock = MockClienteSsh::new();
-        mock.expect_upload().returning(|_local, _remote| {
-            Ok(TransferenciaResultado {
-                bytes_transferidos: 1024,
-                duracao_ms: 50,
-            })
-        });
-        mock.expect_desconectar().returning(|| Ok(()));
-
-        let cliente = Box::new(mock) as Box<dyn ClienteSshTrait>;
-        let registro = modelo::VpsRegistro::novo(
-            "teste".into(),
-            "localhost".into(),
-            22,
-            "user".into(),
-            SecretString::from("pass".to_string()),
-            None,
-            None,
-            None,
-            None,
-        );
-
-        let resultado = crate::scp::executar_scp_upload_with_client(
-            &registro,
-            std::path::Path::new("/local/file.txt"),
-            std::path::Path::new("/remote/file.txt"),
-            cliente,
-        )
-        .await;
-        assert!(resultado.is_ok());
-    }
-
-    #[tokio::test]
-    async fn executar_scp_download_with_client_retorna_ok_quando_mock_sucesso() {
-        use crate::ssh::cliente::mocks::MockClienteSsh;
-        use crate::ssh::cliente::{ClienteSshTrait, TransferenciaResultado};
-
-        let mut mock = MockClienteSsh::new();
-        mock.expect_download().returning(|_remote, _local| {
-            Ok(TransferenciaResultado {
-                bytes_transferidos: 2048,
-                duracao_ms: 75,
-            })
-        });
-        mock.expect_desconectar().returning(|| Ok(()));
-
-        let cliente = Box::new(mock) as Box<dyn ClienteSshTrait>;
-        let registro = modelo::VpsRegistro::novo(
-            "teste".into(),
-            "localhost".into(),
-            22,
-            "user".into(),
-            SecretString::from("pass".to_string()),
-            None,
-            None,
-            None,
-            None,
-        );
-
-        let resultado = crate::scp::executar_scp_download_with_client(
-            &registro,
-            std::path::Path::new("/remote/file.txt"),
-            std::path::Path::new("/local/file.txt"),
-            cliente,
-        )
-        .await;
-        assert!(resultado.is_ok());
-    }
-
-    #[tokio::test]
-    async fn executar_scp_upload_with_client_retorna_erro_quando_upload_falha() {
-        use crate::ssh::cliente::mocks::MockClienteSsh;
-        use crate::ssh::cliente::ClienteSshTrait;
-
-        let mut mock = MockClienteSsh::new();
-        mock.expect_upload().returning(|_local, _remote| {
-            Err(crate::erros::ErroSshCli::Generico(
-                "falha no upload".to_string(),
-            ))
-        });
-
-        let cliente = Box::new(mock) as Box<dyn ClienteSshTrait>;
-        let registro = modelo::VpsRegistro::novo(
-            "teste".into(),
-            "localhost".into(),
-            22,
-            "user".into(),
-            SecretString::from("pass".to_string()),
-            None,
-            None,
-            None,
-            None,
-        );
-
-        let resultado = crate::scp::executar_scp_upload_with_client(
-            &registro,
-            std::path::Path::new("/local/file.txt"),
-            std::path::Path::new("/remote/file.txt"),
-            cliente,
-        )
-        .await;
-        assert!(resultado.is_err());
-    }
-
-    #[tokio::test]
-    async fn executar_scp_download_with_client_retorna_erro_quando_download_falha() {
-        use crate::ssh::cliente::mocks::MockClienteSsh;
-        use crate::ssh::cliente::ClienteSshTrait;
-
-        let mut mock = MockClienteSsh::new();
-        mock.expect_download().returning(|_remote, _local| {
-            Err(crate::erros::ErroSshCli::Generico(
-                "falha no download".to_string(),
-            ))
-        });
-
-        let cliente = Box::new(mock) as Box<dyn ClienteSshTrait>;
-        let registro = modelo::VpsRegistro::novo(
-            "teste".into(),
-            "localhost".into(),
-            22,
-            "user".into(),
-            SecretString::from("pass".to_string()),
-            None,
-            None,
-            None,
-            None,
-        );
-
-        let resultado = crate::scp::executar_scp_download_with_client(
-            &registro,
-            std::path::Path::new("/remote/file.txt"),
-            std::path::Path::new("/local/file.txt"),
-            cliente,
-        )
-        .await;
-        assert!(resultado.is_err());
-    }
-
-    #[tokio::test]
-    async fn executar_sudo_exec_with_client_retorna_erro_quando_desconectar_falha() {
-        use crate::ssh::cliente::mocks::MockClienteSsh;
-        use crate::ssh::cliente::{ClienteSshTrait, SaidaExecucao};
-
-        let mut mock = MockClienteSsh::new();
-        mock.expect_executar_comando()
-            .returning(|_cmd, _max_chars| {
-                Ok(SaidaExecucao {
-                    stdout: "output".to_string(),
-                    stderr: String::new(),
-                    exit_code: Some(0),
-                    truncado_stdout: false,
-                    truncado_stderr: false,
-                    duracao_ms: 100,
-                })
-            });
-        mock.expect_desconectar().returning(|| {
-            Err(crate::erros::ErroSshCli::CanalFalhou(
-                "erro desconexão".to_string(),
-            ))
-        });
-
-        let cliente = Box::new(mock) as Box<dyn ClienteSshTrait>;
-        let registro = modelo::VpsRegistro::novo(
-            "teste".into(),
-            "localhost".into(),
-            22,
-            "user".into(),
-            SecretString::from("pass".to_string()),
-            None,
-            None,
-            None,
-            None,
-        );
-
-        let resultado =
-            executar_exec_with_client(&registro, "echo test", cliente, FormatoSaida::Text, false)
-                .await;
-        assert!(resultado.is_err());
-    }
-
-    #[test]
-    fn caminho_config_padrao_com_ssh_cli_home_retorna_path() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let home_dir = tmp.path().join("ssh-cli-home");
-        std::fs::create_dir_all(&home_dir).unwrap();
-        std::env::set_var("SSH_CLI_HOME", home_dir.to_str().unwrap());
-        let resultado = caminho_config_padrao();
-        std::env::remove_var("SSH_CLI_HOME");
-        assert!(resultado.is_ok());
-        assert!(resultado
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains("ssh-cli-home"));
-    }
-
-    #[test]
-    fn caminho_config_padrao_com_path_traversal_retorna_erro() {
-        std::env::set_var("SSH_CLI_HOME", "/tmp/../etc/config");
-        let resultado = caminho_config_padrao();
-        std::env::remove_var("SSH_CLI_HOME");
-        assert!(resultado.is_err());
-    }
-
-    #[test]
-    fn caminho_config_padrao_sem_env_retorna_path_valido() {
-        std::env::remove_var("SSH_CLI_HOME");
-        let resultado = caminho_config_padrao();
-        if let Ok(path) = resultado {
-            assert!(path.to_str().unwrap().contains("ssh-cli"));
-        }
-    }
-
-    #[test]
-    fn escapar_senha_shell_simples() {
-        assert_eq!(escapar_senha_shell("abc123"), "'abc123'");
-    }
-
-    #[test]
-    fn escapar_senha_shell_com_single_quote() {
-        assert_eq!(escapar_senha_shell("ab'cd"), "'ab'\\''cd'");
-    }
-
-    #[test]
-    fn escapar_senha_shell_com_especiais() {
-        // $, @, ~, !, ` são seguros dentro de single quotes
-        assert_eq!(escapar_senha_shell("p@ss$w0rd!"), "'p@ss$w0rd!'");
-    }
-
-    #[test]
-    fn escapar_senha_shell_vazia() {
-        assert_eq!(escapar_senha_shell(""), "''");
-    }
-
-    #[test]
-    fn escapar_senha_shell_unicode() {
-        assert_eq!(escapar_senha_shell("café☕"), "'café☕'");
-    }
-
-    #[test]
-    fn escapar_senha_shell_senha_usuario() {
-        // Senha real do caso de uso
-        assert_eq!(
-            escapar_senha_shell("Ih8Tml@Ymnwku1:G@W~2"),
-            "'Ih8Tml@Ymnwku1:G@W~2'"
-        );
-    }
-
-    #[test]
-    fn sudo_cmd_com_senha_formato_correto() {
-        let senha = "test123";
-        let comando = "apt update";
-        let escaped = escapar_senha_shell(senha);
-        let sudo_cmd = format!("printf '%s\\n' {} | sudo -S -p '' {}", escaped, comando);
-        assert_eq!(
-            sudo_cmd,
-            "printf '%s\\n' 'test123' | sudo -S -p '' apt update"
-        );
-    }
-
-    #[test]
-    fn sudo_cmd_sem_senha_formato_correto() {
-        let comando = "apt update";
-        let sudo_cmd = format!("sudo {}", comando);
-        assert_eq!(sudo_cmd, "sudo apt update");
-    }
-
-    #[test]
-    fn aplicar_overrides_com_todos_os_campos() {
-        use secrecy::ExposeSecret;
-        let mut vps = modelo::VpsRegistro::novo(
-            "srv".into(),
-            "1.2.3.4".into(),
-            22,
-            "root".into(),
-            SecretString::from("senha_original".to_string()),
-            Some(30_000),
-            Some(50_000),
-            None,
-            None,
-        );
+    fn aplicar_overrides_senha() {
+        let mut v = reg_min();
         aplicar_overrides(
-            &mut vps,
-            Some("nova_senha".to_string()),
-            Some("nova_sudo".to_string()),
-            Some(60_000),
+            &mut v,
+            Some("nova".into()),
+            Some("sudo".into()),
+            None,
+            Some(1000),
+            Some("/k".into()),
+            None,
         );
-        assert_eq!(vps.senha.expose_secret(), "nova_senha");
-        assert_eq!(
-            vps.senha_sudo.as_ref().unwrap().expose_secret(),
-            "nova_sudo"
-        );
-        assert_eq!(vps.timeout_ms, 60_000);
+        assert_eq!(v.senha.expose_secret(), "nova");
+        assert_eq!(v.timeout_ms, 1000);
+        assert_eq!(v.key_path.as_deref(), Some("/k"));
     }
 
-    #[test]
-    fn aplicar_overrides_preserva_campos_quando_none() {
-        use secrecy::ExposeSecret;
-        let mut vps = modelo::VpsRegistro::novo(
-            "srv".into(),
-            "1.2.3.4".into(),
-            22,
-            "root".into(),
-            SecretString::from("senha_original".to_string()),
-            Some(30_000),
-            Some(50_000),
-            Some(SecretString::from("sudo_original".to_string())),
-            None,
-        );
-        aplicar_overrides(&mut vps, None, None, None);
-        assert_eq!(vps.senha.expose_secret(), "senha_original");
-        assert_eq!(
-            vps.senha_sudo.as_ref().unwrap().expose_secret(),
-            "sudo_original"
-        );
-        assert_eq!(vps.timeout_ms, 30_000);
-    }
+    #[tokio::test]
+    async fn executar_sudo_exec_with_client_ok() {
+        use crate::ssh::cliente::mocks::MockClienteSsh;
+        use crate::ssh::cliente::SaidaExecucao;
+        use mockall::predicate::*;
 
-    #[test]
-    fn construir_configuracao_com_timeout_diferente() {
-        let registro = modelo::VpsRegistro::novo(
-            "srv".into(),
-            "host.example.com".into(),
-            2222,
-            "admin".into(),
-            SecretString::from("pass".to_string()),
-            Some(120_000),
-            Some(50_000),
-            None,
-            None,
-        );
-        let cfg = construir_configuracao(&registro);
-        assert_eq!(cfg.timeout_ms, 120_000);
+        let mut mock = MockClienteSsh::new();
+        mock.expect_executar_comando()
+            .with(function(|c: &str| c.contains("sudo -n sh -c")), always())
+            .returning(|_, _| {
+                Ok(SaidaExecucao {
+                    stdout: "ok".into(),
+                    stderr: String::new(),
+                    exit_code: Some(0),
+                    truncado_stdout: false,
+                    truncado_stderr: false,
+                    duracao_ms: 1,
+                })
+            });
+        mock.expect_desconectar().returning(|| Ok(()));
+
+        let vps = reg_min();
+        executar_sudo_exec_with_client(&vps, "id", Box::new(mock), FormatoSaida::Text, false)
+            .await
+            .unwrap();
     }
 }

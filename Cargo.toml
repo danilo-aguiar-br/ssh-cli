@@ -1,12 +1,12 @@
 [package]
 name = "ssh-cli"
-version = "0.3.3"
+version = "0.3.6"
 edition = "2021"
 rust-version = "1.85.0"
 default-run = "ssh-cli"
 description = "Native Rust CLI that gives LLMs (Claude Code, Cursor, Windsurf) the ability to operate remote servers via SSH over stdin/stdout"
 authors = ["Danilo Aguiar <daniloaguiarbr@proton.me>"]
-license = "MIT"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/danilo-aguiar-br/ssh-cli"
 homepage = "https://github.com/danilo-aguiar-br/ssh-cli"
 documentation = "https://docs.rs/ssh-cli"
@@ -16,10 +16,18 @@ categories = ["command-line-utilities", "network-programming"]
 exclude = [
     ".serena/",
     ".claude/",
+    ".vscode/",
     "logs/",
-    "CLAUDE.md",
-    "AGENTS.md",
+    "memory/",
+    "/CLAUDE.md",
+    "/AGENTS.md",
+    "/MEMORY.md",
     "docs_rules/",
+    "docs_prd/",
+    "/gaps.md",
+    "graphrag.sqlite",
+    "graphrag.sqlite-shm",
+    "graphrag.sqlite-wal",
     "projeto_ssh-cli.md",
     ".github/",
     "tests/fixtures/",
@@ -51,7 +59,9 @@ clap_complete = "4.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
-directories = "5.0"
+directories = "6"
+tempfile = "3.13"
+fs2 = "0.4"
 
 # Internacionalização
 sys-locale = "0.3"
@@ -67,6 +77,11 @@ mimalloc = { version = "0.1", optional = true }
 # Segurança de credenciais
 zeroize = { version = "1.8", features = ["derive"] }
 secrecy = { version = "0.10", features = ["serde"] }
+# Cifragem at-rest default (GAP-009/R-SECRETS): ChaCha20-Poly1305 + env/file/keyring/xdg secrets.key
+chacha20poly1305 = "0.10"
+base64 = "0.22"
+getrandom = "0.2"
+keyring = "3"
 
 # Logs e erros
 tracing = "0.1"
@@ -85,13 +100,21 @@ async-trait = "0.1"
 # Ativamos apenas `aws-lc-rs` (crypto backend) e `flate2` (compressão zlib).
 # `russh` 0.60.x inclui `russh_keys` no módulo `russh::keys`.
 # MSRV 1.85 é requerido por russh >= 0.55.
-russh = { version = "0.60", default-features = false, features = ["aws-lc-rs", "flate2"], optional = true }
+# Pin exato: 0.60.1+ quebra com pkcs5 0.8.1 (API renomeada) no re-resolve de install.
+russh = { version = "=0.60.0", default-features = false, features = ["aws-lc-rs", "flate2"], optional = true }
 
-# COMPAT PIN: russh 0.60 depende de p256/p384/p521 0.14.0-rc.8 que NÃO implementam
-# MulVartime/MulByGeneratorVartime introduzidos em elliptic-curve 0.14.0-rc.31+.
-# Sem este pin, `cargo install` resolve rc.31+ e falha ao compilar a cadeia crypto.
-# Remover quando russh atualizar para p256/p384/p521 compatíveis com rc.31+.
+# COMPAT PINS (GAP-014 / R-PINS freeze 0.3.6): `cargo install` re-resolve sem
+# Cargo.lock quebra se primefield sobe 0.14.0-rc.8 → 0.14.0 estável (trait PrimeField
+# diverge: rustcrypto-ff vs ff). Manter pins RC alinhados ao lock até russh migrar
+# crypto estável. NÃO remover sem rodar scripts/verify_install_resolve.sh.
+# elliptic-curve: p256/p384/p521 0.14.0-rc.8 não implementam MulVartime de rc.31+.
+# pkcs5: estável 0.8.1 remove `pbkdf2_sha256_aes256cbc` usado por russh 0.60.0.
+# Pin freeze: russh =0.60.0 (0.60.1+ quebra com pkcs5 0.8.1 no re-resolve).
 elliptic-curve = "=0.14.0-rc.30"
+primefield = "=0.14.0-rc.8"
+primeorder = "=0.14.0-rc.8"
+ecdsa = "=0.17.0-rc.16"
+pkcs5 = "=0.8.0-rc.13"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"

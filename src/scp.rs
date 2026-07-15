@@ -35,7 +35,8 @@ pub async fn executar_scp(
                 registro.senha = secrecy::SecretString::from(pwd);
             }
 
-            let cfg = crate::vps::construir_configuracao(&registro);
+            let caminho = crate::vps::resolver_caminho_config(config_override.clone())?;
+            let cfg = crate::vps::construir_configuracao(&registro, Some(&caminho), false);
 
             let cliente: Box<dyn ClienteSshTrait> =
                 <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
@@ -54,7 +55,8 @@ pub async fn executar_scp(
                 registro.senha = secrecy::SecretString::from(pwd);
             }
 
-            let cfg = crate::vps::construir_configuracao(&registro);
+            let caminho = crate::vps::resolver_caminho_config(config_override.clone())?;
+            let cfg = crate::vps::construir_configuracao(&registro, Some(&caminho), false);
 
             let cliente: Box<dyn ClienteSshTrait> =
                 <ClienteSsh as ClienteSshTrait>::conectar(cfg).await?;
@@ -191,10 +193,14 @@ mod testes {
             1,
             "root".to_string(),
             SecretString::from("senha-teste".to_string()),
+            None,
+            None,
             Some(100),
+            Some(1000),
             Some(1000),
             None,
             None,
+            false,
         )
     }
 

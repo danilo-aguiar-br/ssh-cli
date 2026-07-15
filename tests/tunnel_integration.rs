@@ -96,6 +96,6 @@ fn tunnel_help_exibe_descricao_port_forward() {
         .args(["tunnel", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("forward"))
+        .stdout(predicate::str::contains("deadline"))
         .stdout(predicate::str::contains("SSH"));
 }

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-list.schema.json",
+  "title": "vps list JSON",
+  "type": "array",
+  "items": {
+    "$ref": "vps-show.schema.json"
+  }
+}
