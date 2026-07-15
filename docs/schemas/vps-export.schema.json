@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-export.schema.json",
+  "title": "vps export JSON",
+  "description": "Structured stdout payload for `ssh-cli vps export --json` (or global --output-format json). Redacted by default (GAP-SSH-UX-001). Never emits sshcli-enc ciphertext for empty secrets (EXP-001 parity).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ok",
+    "event",
+    "schema_version",
+    "include_secrets",
+    "hosts"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "event": {
+      "type": "string",
+      "const": "vps-export"
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "include_secrets": {
+      "type": "boolean",
+      "description": "True only when --include-secrets was passed"
+    },
+    "hosts": {
+      "type": "object",
+      "description": "Map of host name → host object (redacted or with secrets)",
+      "additionalProperties": {
+        "type": "object"
+      }
+    }
+  }
+}

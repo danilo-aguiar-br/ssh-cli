@@ -62,14 +62,11 @@ pub async fn executar_tunnel(
 
     // GAP-SSH-IO-006: banners só em TTY humano; agentes/pipes não poluem stdout.
     // GAP-SSH-IO-008: em JSON, zero prosa — evento estruturado após bind.
+    // Banner com porta efetiva fica pós-bind (TUN-003: porta 0 é efêmera).
     if !json {
-        let banner = format!(
-            "Tunnel SSH: localhost:{} -> {}:{} via {} (timeout {}ms)",
-            porta_local, host_remoto, porta_remota, vps_nome, timeout_ms
+        output::imprimir_banner_humano(
+            "Pressione Ctrl+C para encerrar o tunnel antes do deadline.",
         );
-        tracing::info!("{banner}");
-        output::imprimir_banner_humano(&banner);
-        output::imprimir_banner_humano("Pressione Ctrl+C para encerrar antes do deadline.");
     }
 
     // GAP-SSH-TUN-001: deadline cobre connect + loop (não só o accept loop).
@@ -130,21 +127,36 @@ pub async fn executar_tunnel_with_client(
             ErroSshCli::Generico(format!("falha ao abrir porta local {}: {}", porta_local, e))
         })?;
 
+    // GAP-SSH-TUN-003: porta 0 (efêmera) deve reportar a porta real atribuída pelo SO.
+    // Agentes usam `local_port` do evento `tunnel_listening` para conectar.
+    let porta_efetiva = listener
+        .local_addr()
+        .map(|a| a.port())
+        .unwrap_or(porta_local);
+
     if let Some(flag) = bound_flag.as_ref() {
         flag.store(true, Ordering::SeqCst);
     }
 
-    tracing::info!(porta = %porta_local, vps = %vps_nome, "listener TCP local iniciado");
+    tracing::info!(porta = %porta_efetiva, solicitada = %porta_local, vps = %vps_nome, "listener TCP local iniciado");
 
     // GAP-SSH-IO-008: agente recebe confirmação estruturada de que o bind local subiu.
+    // GAP-SSH-TUN-003: sempre reportar `porta_efetiva` (não a solicitada quando 0).
     if json {
         output::imprimir_tunnel_listening_json(
             vps_nome,
-            porta_local,
+            porta_efetiva,
             host_remoto,
             porta_remota,
             timeout_ms,
         );
+    } else {
+        let banner = format!(
+            "Tunnel SSH: localhost:{} -> {}:{} via {} (timeout {}ms)",
+            porta_efetiva, host_remoto, porta_remota, vps_nome, timeout_ms
+        );
+        tracing::info!("{banner}");
+        output::imprimir_banner_humano(&banner);
     }
 
     loop {
@@ -221,6 +233,34 @@ mod testes {
     fn timeout_zero_rejeitado_conceitual() {
         // validação no executar_tunnel
         assert_eq!(0_u64, 0);
+    }
+
+    /// GAP-SSH-TUN-003: bind em 127.0.0.1:0 deve expor porta real ≠ 0.
+    #[tokio::test]
+    async fn tunnel_ephemeral_bind_reporta_porta_real() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind efêmero");
+        let porta = listener.local_addr().expect("local_addr").port();
+        assert_ne!(porta, 0, "SO deve atribuir porta > 0 após bind :0");
+        assert!(
+            (1..=65535).contains(&porta),
+            "porta efetiva fora de 1..=65535: {porta}"
+        );
+    }
+
+    /// GAP-SSH-TUN-003: fonte usa local_addr após bind.
+    #[test]
+    fn tunnel_source_usa_local_addr_para_porta_efetiva() {
+        let src = include_str!("tunnel.rs");
+        assert!(
+            src.contains("local_addr()"),
+            "tunnel deve ler local_addr() pós-bind (TUN-003)"
+        );
+        assert!(
+            src.contains("porta_efetiva"),
+            "tunnel deve expor porta_efetiva no evento JSON"
+        );
     }
 
     #[tokio::test]

@@ -3,7 +3,7 @@
 > Run the right ssh-cli test profile without hanging on remote networks.
 
 - Read this document in [Portuguese (pt-BR)](TESTING.pt-BR.md).
-- Product line: **0.4.1**.
+- Product line: **0.4.2**.
 
 
 ## Why Categorized Tests
@@ -21,7 +21,7 @@
 - Agent I/O residual suite under `tests/gaps_v037_integration.rs`
 - Post-0.3.7 residual suite under `tests/gaps_v038_integration.rs`
 - Post-0.3.8 residual suite under `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC/DENY/CHG)
-- Post-0.3.9 / **0.4.0** suite `tests/gaps_v040_integration.rs`; AUD-POST **0.4.1** suite `tests/gaps_v041_integration.rs` (EXP-001 export empty, TUN-002 post-bind exit 0, CLI-005/006 auth parity, IO-009 `event: scp-transfer`, REL-006, DOC-041 honesty)
+- Post-0.3.9 / **0.4.0** suite `tests/gaps_v040_integration.rs`; AUD-POST **0.4.1** suite `tests/gaps_v041_integration.rs`; AUD-E2E **0.4.2** suite `tests/gaps_v042_integration.rs` (TUN-003, IO-010, UX-001, REL-007, ENV-001, DOC-042, SCP-024)
 - Storage integration under `tests/storage_integration.rs`
 - Snapshot tests under `tests/snapshot_tests.rs`
 - SCP surface under `tests/scp_integration.rs`
@@ -29,7 +29,7 @@
 - Property tests under `tests/proptest_tests.rs`
 - i18n integration under `tests/i18n_integration.rs`
 - Install resolve script `scripts/verify_install_resolve.sh`
-- Real SSH E2E (optional, machine-local): `scripts/e2e_real_ssh.sh` — official matrix **E01–E14** (E10–E14 cover SCP upload/download/cmp/missing/preserve)
+- Real SSH E2E (optional, machine-local): `scripts/e2e_real_ssh.sh` — official matrix **E01–E16** (E10–E14 cover SCP upload/download/cmp/missing/preserve)
 - Benchmarks under `benches/` (manual)
 
 
@@ -52,6 +52,7 @@ cargo test --locked --test gaps_v038_integration
 cargo test --locked --test gaps_v039_integration
 cargo test --locked --test gaps_v040_integration
 cargo test --locked --test gaps_v041_integration
+cargo test --locked --test gaps_v042_integration
 cargo test --locked --test storage_integration
 cargo test --locked --test snapshot_tests
 cargo test --locked packing
@@ -70,7 +71,7 @@ bash scripts/e2e_real_ssh.sh
 bash scripts/e2e_real_ssh.sh --from-grok-config
 ```
 
-- Official matrix **E01–E14**; **E10–E14** = SCP upload, download, integrity (`cmp`), missing remote, preserve mode+mtime (SCP-023).
+- Official matrix **E01–E16**; **E10–E14** = SCP upload, download, integrity (`cmp`), missing remote, preserve mode+mtime (SCP-023).
 - Script prints only PASS/FAIL labels — never host, user, or password.
 
 
@@ -99,4 +100,5 @@ bash scripts/e2e_real_ssh.sh --from-grok-config
 - Permission failures: confirm temp dirs are writable and mode assertions match the OS.
 - Encrypted fixture surprises: set `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` or provide a test master-key via env.
 - Unexpected quiet stderr: default is error-level tracing; set `RUST_LOG` or `-v` if you need debug lines.
-- SCP / AUD-POST residual failures: run `cargo test --locked --test gaps_v040_integration` and `cargo test --locked --test gaps_v041_integration`; read `gaps.md` AUD-SCP and AUD-POST blocks.
+- SCP / AUD-POST residual failures: run `cargo test --locked --test gaps_v040_integration` and `cargo test --locked --test gaps_v041_integration
+cargo test --locked --test gaps_v042_integration`; read `gaps.md` AUD-SCP and AUD-POST blocks.

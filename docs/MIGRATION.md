@@ -1,6 +1,6 @@
 # Migration Guide
 
-> Move from ssh-cli 0.3.3 (or later) to **0.4.1** without losing multi-host inventory.
+> Move from ssh-cli 0.3.3 (or later) to **0.4.2** without losing multi-host inventory.
 
 - Read this document in [Portuguese (pt-BR)](MIGRATION.pt-BR.md).
 

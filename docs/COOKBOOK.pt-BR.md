@@ -3,7 +3,7 @@
 > Copie receitas executáveis que resolvem problemas reais de SSH multi-host com agentes.
 
 - Leia este documento em [inglês](COOKBOOK.md).
-- Linha de produto: **0.4.1**.
+- Linha de produto: **0.4.2**.
 
 
 ## Nota de latência
@@ -23,7 +23,7 @@
 - Instalação: `cargo install ssh-cli --locked`
 - Supply chain: russh 0.62.2; `cargo deny` com `yanked=deny`, `multiple-versions=warn`
 - SCP: somente arquivos regulares (sem `-r` / sem diretórios / sem SFTP); sufixo partial de download `.ssh-cli.partial`; JSON exige `event: "scp-transfer"`
-- Wire SCP: exija **0.4.1+** (crates.io **0.3.9** anunciava SCP mas era inoperante)
+- Wire SCP: exija **0.4.2+** (crates.io **0.3.9** anunciava SCP mas era inoperante)
 - Export redacted: secrets vazios como `""` (nunca blob `sshcli-enc:`)
 - Tunnel pós-bind: deadline one-shot sai com exit **0** após `tunnel_listening` (TUN-002); timeout pré-bind permanece **74**
 - Auth tunnel/health: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`
@@ -100,7 +100,7 @@ ssh-cli exec prod "dmesg" --json
 ```bash
 ssh-cli vps add --name lab --host lab.example.com --user lab --key ~/.ssh/id_ed25519 --check
 ssh-cli health-check lab --json
-# overrides opcionais de auth (paridade com exec/scp desde 0.4.1):
+# overrides opcionais de auth (paridade com exec/scp desde 0.4.2):
 # printf '%s' "$PASS" | ssh-cli health-check lab --json --password-stdin
 # ssh-cli health-check lab --json --key ~/.ssh/id_ed25519
 ```
@@ -150,7 +150,7 @@ ssh-cli secrets reencrypt
 
 ```bash
 ssh-cli vps export -o /tmp/hosts.mascarado.toml
-# secrets vazios serializam como "" — nunca ciphertext sshcli-enc: (EXP-001 / 0.4.1)
+# secrets vazios serializam como "" — nunca ciphertext sshcli-enc: (EXP-001 / 0.4.2)
 # skeleton redacted pode ser importado cross-machine sem blob falso de senha vazia
 ssh-cli --config-dir /tmp/ssh-cli-copy vps import --file /tmp/hosts.mascarado.toml
 ```
@@ -178,7 +178,7 @@ ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json \
 ```bash
 ssh-cli health-check prod --json
 ssh-cli health-check prod --timeout 5000 --json
-# paridade auth 0.4.1 (CLI-006):
+# paridade auth 0.4.2 (CLI-006):
 printf '%s' "$PASS" | ssh-cli health-check prod --json --password-stdin
 ssh-cli health-check prod --json --key ~/.ssh/id_ed25519
 printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
@@ -189,7 +189,7 @@ printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
 ## Como transferir artefato de release (somente arquivo regular)
 
 ```bash
-# Exija 0.4.1+ — wire SCP do crates.io 0.3.9 estava quebrado (remoto 0 bytes / timeout)
+# Exija 0.4.2+ — wire SCP do crates.io 0.3.9 estava quebrado (remoto 0 bytes / timeout)
 # Sem diretórios / sem -r / sem SFTP
 ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
   --timeout 120000 --json

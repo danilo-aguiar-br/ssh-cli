@@ -25,7 +25,7 @@
 - `0.3.5` adds `--key-passphrase-stdin` runtime paths, auto JSON on non-TTY, doctor `secrets_at_rest`, residual atomic export and AEAD (then optional).
 - `0.3.4` adds `--key`, `--key-passphrase`, `--password-stdin`, `--sudo-password-stdin`, `--su-password-stdin`, `--timeout-ms` (tunnel), `--disable-sudo`, `--description`, `--replace-host-key`, `max_command_chars`, `max_output_chars`, `vps doctor`, `vps export`, `vps import`, `su-exec`.
 - `0.2.0` adds runtime `--password`, `--sudo-password`, `--timeout` overrides and camelCase aliases.
-- Prefer **0.4.1+** for working SCP + `tunnel --json`, full SSH automation, default secret encryption, and clean supply-chain.
+- Prefer **0.4.2+** for working SCP + `tunnel --json`, full SSH automation, default secret encryption, and clean supply-chain.
 
 
 ## Summary Table

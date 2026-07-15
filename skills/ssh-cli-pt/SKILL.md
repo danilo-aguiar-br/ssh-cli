@@ -308,6 +308,9 @@ ssh-cli scp upload prod ./payload.bin /tmp/payload.bin --json --key ~/.ssh/id_ed
 ## Tunnel
 ### REQUIRED
 - DEVE passar `--timeout-ms` em todo comando `tunnel`
+
+- DEVE tratar porta local `0` como efêmera atribuída pelo SO; após bind, confiar no JSON `local_port` (>=1), nunca conectar na porta 0 (GAP-SSH-TUN-003)
+- DEVE NUNCA inventar flag `--local-port`; args do tunnel são posicionais: `tunnel <vps> <local_port> <remote_host> <remote_port>` (GAP-SSH-DOC-042)
 - DEVE passar `--json` quando o agente precisar de sinal estruturado de ready
 - DEVE aguardar um objeto no stdout com `event` igual a `tunnel_listening` antes de usar a porta local
 - DEVE fazer parse dos campos de ready do tunnel `ok`, `event`, `vps`, `local_port`, `remote_host`, `remote_port`, `timeout_ms`

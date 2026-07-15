@@ -4,7 +4,7 @@
 
 - Read this document in [Portuguese (pt-BR)](AGENTS.pt-BR.md).
 - Pair with [../INTEGRATIONS.md](../INTEGRATIONS.md) and [../skills/ssh-cli-en/SKILL.md](../skills/ssh-cli-en/SKILL.md).
-- Product line: **0.4.1** (closed inventory; russh 0.62.2; AUD-SCP + AUD-POST EXP/TUN/CLI/IO closed).
+- Product line: **0.4.2** (closed inventory; russh 0.62.2; AUD-SCP + AUD-POST EXP/TUN/CLI/IO closed).
 
 
 ## Why

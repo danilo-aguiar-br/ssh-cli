@@ -461,6 +461,10 @@ pub enum AcaoVps {
         /// Arquivo de saída (stdout se omitido).
         #[arg(long, short)]
         output: Option<String>,
+        /// Exporta em JSON agent-first (default: TOML). Redacted a menos que `--include-secrets`.
+        /// GAP-SSH-UX-001.
+        #[arg(long)]
+        json: bool,
     },
 
     /// Importa hosts de um TOML.

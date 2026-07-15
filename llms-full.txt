@@ -2,7 +2,7 @@
 
 > Complete discovery map for one-shot multi-host SSH automation
 
-ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start the binary, run one operation, and the process exits. Multi-host credentials live under XDG via directories::ProjectDirs. Authentication accepts password or OpenSSH private key. sudo uses secure `sh -c` packing. su-exec provides real elevation. known_hosts implements TOFU. config writes are atomic with flock. Secrets in config.toml are **encrypted by default** (ChaCha20-Poly1305; auto `secrets.key`). Install is gated with crypto pins for clean `cargo install --locked`. Product line **0.4.1** closes AUD-POST (export empty secret, tunnel deadline exit 0, tunnel/health auth parity, scp-transfer event) on top of 0.4.0 SCP wire; russh 0.62.2.
+ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start the binary, run one operation, and the process exits. Multi-host credentials live under XDG via directories::ProjectDirs. Authentication accepts password or OpenSSH private key. sudo uses secure `sh -c` packing. su-exec provides real elevation. known_hosts implements TOFU. config writes are atomic with flock. Secrets in config.toml are **encrypted by default** (ChaCha20-Poly1305; auto `secrets.key`). Install is gated with crypto pins for clean `cargo install --locked`. Product line **0.4.2** closes AUD-POST (export empty secret, tunnel deadline exit 0, tunnel/health auth parity, scp-transfer event) on top of 0.4.0 SCP wire; russh 0.62.2.
 
 - Portuguese discovery file: [llms.pt-BR.txt](llms.pt-BR.txt)
 - Short index: [llms.txt](llms.txt)
@@ -52,10 +52,10 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - [tunnel-listening.schema.json](docs/schemas/tunnel-listening.schema.json) (`tunnel --json` post-bind event)
 - [error-envelope.schema.json](docs/schemas/error-envelope.schema.json)
 
-## Commands (product surface 0.4.1)
+## Commands (product surface 0.4.2)
 - `vps add|list|show|edit|remove|path|doctor|export|import`
 - `connect`, `exec`, `sudo-exec`, `su-exec`
-- `scp upload|download` (**regular files only**; no `-r`/SFTP; avoid crates.io **0.3.9** broken SCP wire — use **0.4.1**): flags `--timeout|--password-stdin|--key|--key-passphrase[-stdin]|--json` → `scp-transfer` with required `event: "scp-transfer"`; download `.ssh-cli.partial` then rename; preserve mtime/mode; stream upload 32 KiB
+- `scp upload|download` (**regular files only**; no `-r`/SFTP; avoid crates.io **0.3.9** broken SCP wire — use **0.4.2**): flags `--timeout|--password-stdin|--key|--key-passphrase[-stdin]|--json` → `scp-transfer` with required `event: "scp-transfer"`; download `.ssh-cli.partial` then rename; preserve mtime/mode; stream upload 32 KiB
 - `tunnel --timeout-ms` with auth `--password-stdin|--key|--key-passphrase[-stdin]`; `--json` → `tunnel_listening` after bind; post-bind deadline exits **0** after listening (pre-bind timeout still **74**)
 - `health-check [--timeout]` with auth `--password-stdin|--key|--key-passphrase[-stdin]`
 - `vps export` redacted: empty password is `""`, never an `sshcli-enc:` blob of empty
@@ -74,7 +74,7 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - Secrets at rest: encrypted by default (auto `secrets.key`); opt-out `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` for tests only
 - Redacted export: empty secrets serialize as empty strings, never `sshcli-enc:` ciphertext of empty
 - Telemetry is always false
-- Install: always prefer `--locked`; product line **0.4.1** uses russh 0.62.2
+- Install: always prefer `--locked`; product line **0.4.2** uses russh 0.62.2
 
 ## Operational Rules for Agents
 - Birth execute die after every product command

@@ -1,6 +1,6 @@
 # Guia de migração
 
-> Passe de ssh-cli 0.3.3 (ou posterior) para **0.4.1** sem perder o inventário multi-host.
+> Passe de ssh-cli 0.3.3 (ou posterior) para **0.4.2** sem perder o inventário multi-host.
 
 - Leia este documento em [inglês](MIGRATION.md).
 
@@ -48,9 +48,9 @@
 - String de versão reporta `-dirty` quando a working tree está suja.
 - Suite residual completa `tests/gaps_v038_integration.rs`.
 
-### Desde 0.4.1 (atual)
+### Desde 0.4.2 (atual)
 - **Patch AUD-POST:** secrets vazios nunca viram blob `sshcli-enc` no export redacted (EXP-001); deadline do tunnel pós-bind sai **0** (TUN-002); paridade de flags auth em `tunnel`/`health-check` (CLI-005/006); JSON SCP com `event: "scp-transfer"` (IO-009). Só aditivo — sem breaking.
-- **Correção wire SCP (0.4.0):** crates.io **0.3.9** SCP quebrado. Atualize para **0.4.0+** (prefira **0.4.1**) antes de depender de `scp`.
+- **Correção wire SCP (0.4.0):** crates.io **0.3.9** SCP quebrado. Atualize para **0.4.0+** (prefira **0.4.2**) antes de depender de `scp`.
 - SCP é **somente arquivos regulares** (sem `-r` / sem SFTP). Use `--timeout` para arquivos grandes (cobre connect + transfer). JSON de sucesso via `--json` / `--output-format json` (`docs/schemas/scp-transfer.schema.json`).
 - Download SCP grava `{path}.ssh-cli.partial` e faz rename atômico; mode/times aplicados no **partial** antes do rename.
 - Upload SCP faz stream em blocos de **32 KiB** (sem `fs::read` do arquivo inteiro na RAM).
@@ -61,7 +61,7 @@
 - Tracing default error (não info); `-v` ativa debug; `RUST_LOG` sobrescreve — stderr JSON/tunnel limpo por omissão.
 - Senha vazia ou ausente em VPS só-chave serializa como JSON `null` (não `"***"`); não vazia ainda mascara como `***`; texto humano em show usa "(não definida)" para vazio.
 - `health-check` aceita override `--timeout <ms>` (alinhado ao exec).
-- Docs de product line alinhados a **0.4.1** + inventário AUD-POST (`gaps.md` / suite `tests/gaps_v041_integration.rs`); suites `tests/gaps_v039_integration.rs` + `tests/gaps_v040_integration.rs` + **`gaps_v041`**; e2e oficial **E01–E14** (E10–E14 cobrem SCP).
+- Docs de product line alinhados a **0.4.2** + inventário AUD-POST (`gaps.md` / suite `tests/gaps_v041_integration.rs`); suites `tests/gaps_v039_integration.rs` + `tests/gaps_v040_integration.rs` + **`gaps_v041`**; e2e oficial **E01–E14** (E10–E14 cobrem SCP).
 
 
 ## Migração passo a passo
@@ -116,7 +116,7 @@ ssh-cli su-exec prod "id"
 - Em falha de `scp`/`tunnel` com `--json`, parseie o envelope de erro em stderr (não prosa humana).
 - Trate SCP como somente arquivos regulares; não envie árvores de diretório.
 - Re-teste transferências após sair do **0.3.9** (SCP daquela release não era confiável).
-- Se veio de **0.4.0**: export redacted podia mostrar ciphertext falso de senha vazia; tunnel podia emitir `ok:true` e sair 74 — atualize wrappers e o binário para **0.4.1**.
+- Se veio de **0.4.0**: export redacted podia mostrar ciphertext falso de senha vazia; tunnel podia emitir `ok:true` e sair 74 — atualize wrappers e o binário para **0.4.2**.
 - Trate `--maxChars` como limite de entrada, não de saída.
 - Prefira `--password-stdin` para segredos.
 - Trate erros de mismatch de host-key antes de forçar replace.
@@ -129,7 +129,7 @@ ssh-cli su-exec prod "id"
 - Espere banners de tunnel só em caminhos humanos/TTY, não no stdout JSON do agente.
 
 
-## Campos de host / schema (estáveis até 0.4.1)
+## Campos de host / schema (estáveis até 0.4.2)
 
 ### Após 0.3.4+
 - `timeout_ms`
@@ -148,8 +148,8 @@ ssh-cli su-exec prod "id"
 - Senha vazia → JSON `null`; não vazia → string `***`.
 - Texto humano em show ainda usa "(não definida)" para senha vazia.
 
-### Eventos de transfer / tunnel (0.4.0 / 0.4.1)
-- JSON de sucesso SCP inclui `event: "scp-transfer"` obrigatório (IO-009, 0.4.1).
+### Eventos de transfer / tunnel (0.4.0 / 0.4.2)
+- JSON de sucesso SCP inclui `event: "scp-transfer"` obrigatório (IO-009, 0.4.2).
 - Tunnel continua emitindo `event: "tunnel_listening"` após bind.
 - Sucesso SCP: `docs/schemas/scp-transfer.schema.json`
 - Tunnel listening: `docs/schemas/tunnel-listening.schema.json`
@@ -163,7 +163,7 @@ ssh-cli su-exec prod "id"
 - Comportamento always-trust de host key sumiu em builds de release.
 - Cifragem padrão ligada; plaintext exige env de opt-out explícito (testes).
 - Tracing padrão é error; prosa INFO não é esperada no stderr do agente.
-- SCP permanece file-only por design em 0.4.0+ (ainda verdade em 0.4.1; não é limitação temporária).
+- SCP permanece file-only por design em 0.4.0+ (ainda verdade em 0.4.2; não é limitação temporária).
 
 
 ## Rollback

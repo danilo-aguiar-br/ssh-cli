@@ -4,7 +4,7 @@
 
 - Leia este documento em [inglês](HOW_TO_USE.md).
 - Volte ao [README.pt-BR.md](../README.pt-BR.md) para o mapa completo de comandos.
-- Linha de produto documentada aqui: **0.4.1** (GAP-001–014 fechados; residual LOG/JSON/CLI fechado; correção wire AUD-SCP + JSON de agente para scp/tunnel; AUD-POST EXP-001/TUN-002/CLI-005/006/IO-009 fechados).
+- Linha de produto documentada aqui: **0.4.2** (GAP-001–014 fechados; residual LOG/JSON/CLI fechado; correção wire AUD-SCP + JSON de agente para scp/tunnel; AUD-POST EXP-001/TUN-002/CLI-005/006/IO-009 fechados).
 
 
 ## Pré-requisitos
@@ -12,8 +12,8 @@
 - Garanta conectividade de rede até o host SSH alvo.
 - Tenha senha ou chave privada OpenSSH para esse host.
 - Prefira um XDG config home gravável para storage multi-host.
-- Instale com `cargo install ssh-cli --locked` (**0.4.1+** no crates.io; evite **0.3.9** para SCP).
-- Não dependa do crates.io **0.3.9** para SCP: aquela release anunciava transferência, mas o protocolo wire estava quebrado (arquivos remotos de 0 bytes ou timeouts). Use **0.4.1+**.
+- Instale com `cargo install ssh-cli --locked` (**0.4.2+** no crates.io; evite **0.3.9** para SCP).
+- Não dependa do crates.io **0.3.9** para SCP: aquela release anunciava transferência, mas o protocolo wire estava quebrado (arquivos remotos de 0 bytes ou timeouts). Use **0.4.2+**.
 
 
 ## Primeiro comando em 60 segundos
@@ -63,7 +63,7 @@ ssh-cli exec demo "uname -a" --json
 - Anexe comentários shell com `--description` para histórico remoto auditável.
 - Desabilite elevação em tarefas não confiáveis com `--disable-sudo`.
 - Substitua host key legítima só após confirmação humana com `--replace-host-key` (TOFU).
-- Exporte inventário com segredos mascarados: `ssh-cli vps export -o hosts.toml` (secret vazio serializa como `""`, nunca blob `sshcli-enc:`; EXP-001 / 0.4.1).
+- Exporte inventário com segredos mascarados: `ssh-cli vps export -o hosts.toml` (secret vazio serializa como `""`, nunca blob `sshcli-enc:`; EXP-001 / 0.4.2).
 - Importe hosts com `ssh-cli vps import --file hosts.toml`.
 - Re-cifre inventário plaintext após upgrade: `ssh-cli secrets reencrypt`.
 - Espere JSON automático quando stdout não é TTY, salvo `--output-format`.
@@ -85,11 +85,11 @@ ssh-cli exec demo "uname -a" --json
 
 ## Subcomandos não cobertos acima
 - `health-check [--timeout <ms>]` sonda conectividade e imprime latência (`vps add --check` após cadastro); sobrescreva o timeout quando o padrão do host for longo ou curto demais.
-- Paridade auth em `health-check` (0.4.1 / CLI-006): `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`.
+- Paridade auth em `health-check` (0.4.2 / CLI-006): `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`.
 - Nível de tracing padrão é error para manter stderr de JSON e tunnel limpos; use `RUST_LOG` ou `-v` (debug) ao diagnosticar.
 - `tunnel` exige porta local, host remoto, porta remota e `--timeout-ms`.
-- Opcional: `tunnel --json` emite `event: "tunnel_listening"` estruturado no stdout após o bind local (`docs/schemas/tunnel-listening.schema.json`); deadline pós-bind sai com exit **0** após o agente receber o evento (TUN-002 / 0.4.1); timeout pré-bind permanece **74**.
-- Paridade auth em `tunnel` (0.4.1 / CLI-005): `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`.
+- Opcional: `tunnel --json` emite `event: "tunnel_listening"` estruturado no stdout após o bind local (`docs/schemas/tunnel-listening.schema.json`); deadline pós-bind sai com exit **0** após o agente receber o evento (TUN-002 / 0.4.2); timeout pré-bind permanece **74**.
+- Paridade auth em `tunnel` (0.4.2 / CLI-005): `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`.
 - `completions` grava scripts de completion no stdout.
 - `su-exec` exige senha `su` configurada no registro do host.
 - `secrets` gerencia a master-key de cifragem sem nunca imprimi-la.

@@ -3,4 +3,4 @@ source: tests/snapshot_tests.rs
 assertion_line: 74
 expression: redacted
 ---
-ssh-cli 0.4.1 (HASH)
+ssh-cli 0.4.2 (HASH)

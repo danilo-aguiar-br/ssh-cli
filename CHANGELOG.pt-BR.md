@@ -8,6 +8,30 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.4.2] - 2026-07-15
+
+### Corrigido
+- **Tunnel porta efêmera** (`local_port=0`): após bind, JSON/banner reportam a porta **atribuída pelo SO** via `local_addr()` (nunca `0` pós-bind) (GAP-SSH-TUN-003). Schema `local_port.minimum` = 1.
+- **SCP remote missing** agora sai com **66** `ArquivoNaoEncontrado` (paridade com missing local) em vez de **74** `CanalFalhou` quando o OpenSSH reporta `No such file` / `not found` (GAP-SSH-IO-010). Erros de protocolo/permissão permanecem 74.
+
+### Adicionado
+- `vps export --json` envelope agent-first: `event: "vps-export"`, hosts redacted por padrão, sem `sshcli-enc:` para secrets vazios (GAP-SSH-UX-001 / paridade EXP-001); schema `docs/schemas/vps-export.schema.json`
+- Embed de commit hash no pack crates.io: `build.rs` com precedência env → `.commit_hash` → git → `unknown` (GAP-SSH-REL-007)
+- e2e oficial **E15** (tunnel porta 0) + **E16** (symlink) + E13 exige exit **66**; política ENV-001/fail2ban no header do script
+- Suite `tests/gaps_v042_integration.rs`
+
+### Alterado
+- Versão 0.4.1 → **0.4.2**
+- Docs/skills: tunnel continua com args **posicionais**; porta `0` = efêmera; confiar em `local_port` do JSON; nunca inventar `--local-port` (GAP-SSH-DOC-042)
+
+### Segurança / honestidade
+- Ban TCP na VPS após e2e de auditoria foi **fail2ban** por senhas erradas intencionais (ENV-001), **não** TUN-003.
+- Sem telemetria
+
+### Notas
+- CLI one-shot: nascer → executar → morrer
+- Contratos agent aditivos (PATCH)
+
 
 ## [0.4.1] - 2026-07-15
 
@@ -242,7 +266,8 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 Release inicial.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.9...v0.4.0
 [0.3.9]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.3.8...v0.3.9

@@ -29,9 +29,9 @@
     },
     "local_port": {
       "type": "integer",
-      "minimum": 0,
+      "minimum": 1,
       "maximum": 65535,
-      "description": "Local listen port after bind"
+      "description": "Local listen port after bind (OS-assigned when the requested port was 0 / ephemeral; never 0 after successful bind — GAP-SSH-TUN-003)"
     },
     "remote_host": {
       "type": "string",

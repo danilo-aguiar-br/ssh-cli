@@ -10,7 +10,7 @@
 | Versão | Status | Correções de segurança |
 | --- | --- | --- |
 | 0.4.x | Suportada | Sim, **linha atual** |
-| 0.3.x | Limitada | Só críticas quando viável; no crates.io **0.3.9** o SCP anunciado tinha wire inoperante — atualize para **0.4.1+** para transferências |
+| 0.3.x | Limitada | Só críticas quando viável; no crates.io **0.3.9** o SCP anunciado tinha wire inoperante — atualize para **0.4.2+** para transferências |
 | 0.2.x | Limitada | Só correções críticas quando viável |
 | 0.1.x | Sem suporte | Sem patches |
 | < 0.1 | Sem suporte | Sem patches |
@@ -66,7 +66,7 @@
 - CLI: `ssh-cli secrets status|init|reencrypt` (nunca imprime a master-key).
 - Opt-out só para testes: `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
 - **Nunca** logue master-key, senhas ou segredos decifrados.
-- `vps export` redacted limpa segredos; secret vazio serializa como `""` e **nunca** como blob `sshcli-enc:…` (EXP-001 / 0.4.1).
+- `vps export` redacted limpa segredos; secret vazio serializa como `""` e **nunca** como blob `sshcli-enc:…` (EXP-001 / 0.4.2).
 - Mantenha `config.toml` com mode `0600` e restrinja locais de backup.
 - Revise erros de mudança de host key TOFU antes de usar `--replace-host-key`.
 - Nunca faça commit de inventários de host com segredos vivos.
@@ -76,4 +76,4 @@
 - Desabilite elevação com `--disable-sudo` quando o workflow não deve escalar.
 - Rode apenas comandos one-shot; nunca espere um daemon SSH de longa duração desta CLI.
 - Instale com `--locked` para evitar drift de re-resolve crypto.
-- Prefira a linha atual **0.4.1+** para o piso de supply-chain (russh 0.62.2) e para SCP com wire funcional (crates.io **0.3.9** SCP era inoperante).
+- Prefira a linha atual **0.4.2+** para o piso de supply-chain (russh 0.62.2) e para SCP com wire funcional (crates.io **0.3.9** SCP era inoperante).

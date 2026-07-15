@@ -520,8 +520,15 @@ pub async fn executar_comando_vps(
         AcaoVps::Export {
             include_secrets,
             output,
+            json,
         } => {
-            executar_export(&caminho, include_secrets, output.as_deref())?;
+            // GAP-SSH-UX-001: flag local --json ou --output-format json global.
+            executar_export(
+                &caminho,
+                include_secrets,
+                output.as_deref(),
+                usar_json(json, formato),
+            )?;
         }
         AcaoVps::Import {
             file,
@@ -622,7 +629,12 @@ fn executar_doctor(config_override: Option<PathBuf>, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn executar_export(caminho: &PathBuf, include_secrets: bool, output: Option<&str>) -> Result<()> {
+fn executar_export(
+    caminho: &PathBuf,
+    include_secrets: bool,
+    output: Option<&str>,
+    json: bool,
+) -> Result<()> {
     let arquivo = carregar(caminho)?;
     let mut export = ArquivoConfig {
         schema_version: arquivo.schema_version,
@@ -630,6 +642,7 @@ fn executar_export(caminho: &PathBuf, include_secrets: bool, output: Option<&str
     };
     for (k, mut v) in arquivo.hosts {
         if !include_secrets {
+            // EXP-001 parity: redacted limpa secrets (nunca sshcli-enc de empty).
             v.senha = SecretString::from(String::new());
             v.senha_sudo = None;
             v.senha_su = None;
@@ -637,12 +650,35 @@ fn executar_export(caminho: &PathBuf, include_secrets: bool, output: Option<&str
         }
         export.hosts.insert(k, v);
     }
-    let texto = toml::to_string_pretty(&export)?;
+
+    let bytes = if json {
+        // GAP-SSH-UX-001 / M-AUD-07: envelope agent-first com discriminador.
+        let hosts_json = crate::output::export_hosts_para_json(&export.hosts, include_secrets);
+        let v = serde_json::json!({
+            "ok": true,
+            "event": "vps-export",
+            "schema_version": export.schema_version,
+            "include_secrets": include_secrets,
+            "hosts": hosts_json,
+        });
+        let texto = serde_json::to_string_pretty(&v)?;
+        texto.into_bytes()
+    } else {
+        let texto = toml::to_string_pretty(&export)?;
+        texto.into_bytes()
+    };
+
     if let Some(path) = output {
-        escrever_atomico(Path::new(path), texto.as_bytes())?;
+        escrever_atomico(Path::new(path), &bytes)?;
         crate::output::imprimir_sucesso(&format!("exportado para {path}"));
     } else {
-        print!("{texto}");
+        // TOML/JSON body to stdout (agent-first: single payload).
+        use std::io::Write;
+        let mut out = std::io::stdout().lock();
+        out.write_all(&bytes)?;
+        if !bytes.ends_with(b"\n") {
+            out.write_all(b"\n")?;
+        }
     }
     Ok(())
 }

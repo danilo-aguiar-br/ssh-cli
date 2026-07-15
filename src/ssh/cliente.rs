@@ -493,6 +493,23 @@ mod real {
         std::path::PathBuf::from(p)
     }
 
+    /// GAP-SSH-IO-010: classifica mensagem de erro SCP em missing-file (66) vs canal (74).
+    ///
+    /// OpenSSH emite tipicamente `scp: PATH: No such file or directory` no status `1`/`2`
+    /// ou em stderr. Permission denied / protocol errors permanecem `CanalFalhou`.
+    fn classificar_mensagem_scp(msg: &str) -> ErroSshCli {
+        let lower = msg.to_ascii_lowercase();
+        if lower.contains("no such file") || lower.contains("not found") {
+            ErroSshCli::ArquivoNaoEncontrado(msg.to_string())
+        } else if msg.is_empty() {
+            ErroSshCli::CanalFalhou("SCP rejeitou a transferência".to_string())
+        } else if msg.starts_with("SCP:") || msg.starts_with("SCP ") {
+            ErroSshCli::CanalFalhou(msg.to_string())
+        } else {
+            ErroSshCli::CanalFalhou(format!("SCP: {msg}"))
+        }
+    }
+
     /// Interpreta o primeiro byte de status SCP: `0`=OK, `1`/`2`=erro (+ mensagem).
     fn interpretar_status_scp(bytes: &[u8]) -> ResultadoSshCli<()> {
         if bytes.is_empty() {
@@ -504,11 +521,16 @@ mod real {
             SCP_OK => Ok(()),
             1 | 2 => {
                 let msg = String::from_utf8_lossy(&bytes[1..]).trim().to_string();
-                Err(ErroSshCli::CanalFalhou(if msg.is_empty() {
-                    format!("SCP rejeitou a transferência (status {})", bytes[0])
+                if msg.is_empty() {
+                    Err(ErroSshCli::CanalFalhou(format!(
+                        "SCP rejeitou a transferência (status {})",
+                        bytes[0]
+                    )))
                 } else {
-                    format!("SCP: {msg}")
-                }))
+                    // Prefixo estável para agentes; classificador olha o texto OpenSSH.
+                    let full = format!("SCP: {msg}");
+                    Err(classificar_mensagem_scp(&full))
+                }
             }
             other => Err(ErroSshCli::CanalFalhou(format!(
                 "status SCP inesperado: 0x{other:02x}"
@@ -567,7 +589,9 @@ mod real {
                         continue;
                     }
                     let msg = String::from_utf8_lossy(data.as_ref()).trim().to_string();
-                    return Err(ErroSshCli::CanalFalhou(format!("SCP stderr: {msg}")));
+                    // GAP-SSH-IO-010: stderr OpenSSH "No such file" → 66, não 74.
+                    let full = format!("SCP stderr: {msg}");
+                    return Err(classificar_mensagem_scp(&full));
                 }
                 Some(ChannelMsg::ExitStatus { exit_status }) if exit_status != 0 => {
                     return Err(ErroSshCli::CanalFalhou(format!(
@@ -1303,11 +1327,12 @@ mod real {
     #[cfg(test)]
     mod testes_real {
         use super::{
-            caminho_parcial_download, comando_scp_remoto, formatar_header_upload_scp,
-            formatar_header_upload_scp_com_modo, formatar_linha_t_scp, interpretar_status_scp,
-            mapear_exit_status, parse_header_scp, parse_linha_t_scp, processar_mensagem_exec,
-            SCP_PARTIAL_SUFFIX,
+            caminho_parcial_download, classificar_mensagem_scp, comando_scp_remoto,
+            formatar_header_upload_scp, formatar_header_upload_scp_com_modo, formatar_linha_t_scp,
+            interpretar_status_scp, mapear_exit_status, parse_header_scp, parse_linha_t_scp,
+            processar_mensagem_exec, SCP_PARTIAL_SUFFIX,
         };
+        use crate::erros::ErroSshCli;
 
         #[test]
         fn mapear_exit_status_normal() {
@@ -1407,6 +1432,36 @@ mod real {
             assert!(interpretar_status_scp(&[0]).is_ok());
             assert!(interpretar_status_scp(&[1, b'f', b'a', b'i', b'l']).is_err());
             assert!(interpretar_status_scp(&[]).is_err());
+        }
+
+        /// GAP-SSH-IO-010: remote missing → ArquivoNaoEncontrado (exit 66).
+        #[test]
+        fn interpretar_status_scp_no_such_file_e_arquivo_nao_encontrado() {
+            let mut payload = vec![1u8];
+            payload.extend_from_slice(b"scp: /tmp/missing: No such file or directory\n");
+            let err = interpretar_status_scp(&payload).unwrap_err();
+            assert!(
+                matches!(err, ErroSshCli::ArquivoNaoEncontrado(_)),
+                "esperado ArquivoNaoEncontrado, got {err:?}"
+            );
+            assert_eq!(err.exit_code(), 66);
+        }
+
+        #[test]
+        fn classificar_mensagem_scp_protocol_permanece_canal() {
+            let err = classificar_mensagem_scp("SCP: protocol error");
+            assert!(matches!(err, ErroSshCli::CanalFalhou(_)));
+            assert_eq!(err.exit_code(), 74);
+            let err2 = classificar_mensagem_scp("SCP stderr: Permission denied");
+            assert!(matches!(err2, ErroSshCli::CanalFalhou(_)));
+            assert_eq!(err2.exit_code(), 74);
+        }
+
+        #[test]
+        fn classificar_mensagem_scp_not_found_e_66() {
+            let err = classificar_mensagem_scp("SCP stderr: scp: foo: not found");
+            assert!(matches!(err, ErroSshCli::ArquivoNaoEncontrado(_)));
+            assert_eq!(err.exit_code(), 66);
         }
 
         #[test]

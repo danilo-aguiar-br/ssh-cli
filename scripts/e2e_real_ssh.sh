@@ -12,6 +12,12 @@
 #   - Never prints host/user/password. Prints only PASS/FAIL E0n.
 #   - Uses /tmp (outside workspace). Temp dir destroyed on exit.
 #   - Refuses grok config paths that resolve inside the repository root.
+#
+# GAP-SSH-ENV-001 (fail2ban / sshd ban policy):
+#   - PROIBIDO loops de autenticação falha em host de produção.
+#   - Auth-negative: no máximo 1 tentativa por execução, se algum dia for adicionado.
+#   - Preferir VPS throwaway em CI; em prod, manter fail2ban ignoreip / whitelist do IP do mantenedor.
+#   - Matrix oficial E01–E16 NÃO inclui mass wrong-password.
 set -euo pipefail
 set +x
 
@@ -247,13 +253,13 @@ else
   fail E12
 fi
 
-# E13: remote missing must fail (non-zero exit)
-if ! cli scp download e2e --timeout 30000 "/tmp/ssh-cli-e2e-missing-$$-no-such" "$TMP/should-not-exist" >/dev/null 2>&1; then
-  if [[ ! -f "$TMP/should-not-exist" ]]; then
-    pass E13
-  else
-    fail E13
-  fi
+# E13: remote missing → exit 66 (ArquivoNaoEncontrado / GAP-SSH-IO-010); no residual local file
+set +e
+cli scp download e2e --timeout 30000 "/tmp/ssh-cli-e2e-missing-$$-no-such" "$TMP/should-not-exist" >/dev/null 2>&1
+E13_EC=$?
+set -e
+if [[ "$E13_EC" -eq 66 && ! -f "$TMP/should-not-exist" ]]; then
+  pass E13
 else
   fail E13
 fi
@@ -297,6 +303,50 @@ else
   fail E14
 fi
 cli exec e2e --json "rm -f $(printf '%q' "$PRESERVE_REMOTE")" >/dev/null 2>&1 || true
+
+# E15: GAP-SSH-TUN-003 — local port 0 binds ephemeral; JSON local_port must be >= 1
+TUN_JSON_OUT="$TMP/tunnel-e15.json"
+set +e
+# wall timeout; tunnel --timeout-ms 2000 one-shot post-bind exit 0
+timeout 8 "$BIN" --config-dir "$TMP" --output-format json tunnel e2e 0 127.0.0.1 22 --timeout-ms 2000 --json >"$TUN_JSON_OUT" 2>/dev/null
+set -e
+if python3 - "$TUN_JSON_OUT" <<'PY'
+import json, sys
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        raw = f.read().strip()
+    # first complete JSON object
+    d = json.loads(raw)
+    lp = int(d.get("local_port") or 0)
+    ev = d.get("event")
+    ok = d.get("ok") is True and ev == "tunnel_listening" and lp >= 1
+    sys.exit(0 if ok else 1)
+except Exception:
+    sys.exit(1)
+PY
+then
+  pass E15
+else
+  fail E15
+fi
+
+# E16: GAP-SSH-SCP-024 — symlink: follow target content if regular file; else contract fail
+SYM_TARGET="$TMP/symlink-target.txt"
+SYM_LINK="$TMP/symlink-link.txt"
+SYM_REMOTE="/tmp/ssh-cli-e2e-symlink-$$.txt"
+SYM_DOWN="$TMP/symlink-down.txt"
+printf 'symlink-payload-v1\n' >"$SYM_TARGET"
+ln -sfn "$SYM_TARGET" "$SYM_LINK"
+if cli scp upload e2e --timeout 60000 "$SYM_LINK" "$SYM_REMOTE" >/dev/null 2>&1 \
+  && cli scp download e2e --timeout 60000 "$SYM_REMOTE" "$SYM_DOWN" >/dev/null 2>&1 \
+  && cmp -s "$SYM_TARGET" "$SYM_DOWN"; then
+  pass E16
+else
+  # OpenSSH scp may reject non-regular; still no residual wrong content
+  fail E16
+fi
+cli exec e2e "rm -f $(printf '%q' "$SYM_REMOTE")" >/dev/null 2>&1 || true
 
 # Best-effort remote cleanup (never print paths with secrets)
 cli exec e2e "rm -f $(printf '%q' "$REMOTE_SCP") $(printf '%q' "$REMOTE_SPACE") $(printf '%q' "${REMOTE_SCP}.1m")" >/dev/null 2>&1 || true

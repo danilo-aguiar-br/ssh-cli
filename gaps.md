@@ -1,105 +1,70 @@
-# gaps.md — ssh-cli v0.4.1
+# gaps.md — ssh-cli v0.4.2 (AUD-E2E Fechado)
 
 ## Metadados
 
 | Campo | Valor |
 |-------|--------|
-| Versão de código | **0.4.1** (`Cargo.toml`) |
+| Versão de código | **0.4.2** (`Cargo.toml`) |
 | Data | **2026-07-15** |
-| Escopo | Fechamento AUD-POST (EXP-001, TUN-002, CLI-005, CLI-006, IO-009, REL-006) + ship 0.4.1 |
-| Status deste inventário | **Fechado (0 Abertos)** |
-| Suite de regressão | `gaps_v038` + `gaps_v039` + `gaps_v040` + **`gaps_v041`** + e2e E01–E14 |
-| Supply-chain | **russh 0.62.2**; `yanked=deny`; `ignore=[]` |
-| Telemetria | **Ausente** |
-| Publish | **Publicado** — GitHub `v0.4.1` + crates.io `ssh-cli 0.4.1` |
+| Escopo | Ship TUN-003 + IO-010 + UX-001 + REL-007 + ENV-001 + DOC-042 + SCP-024 |
+| Suite | `gaps_v042` + suites históricas 038–041 |
+| Telemetria | **Ausente** (`doctor.telemetry: false`) |
+| Publish remoto | **STOP** — só com OK explícito do mantenedor |
 
-## Inventário consolidado
+## Inventário — Fechado (0 Abertos)
 
-### Histórico 0.3.7–0.4.0
+### Histórico 0.4.1 (ship)
 
-Todos **Resolvidos** (LOG/JSON/CLI/DOC/DENY/REL/CHG + SEC + AUD-SCP 010–023 + DOC-004* + IO-007/008 + REL-004/005). Ver histórico em git tag `v0.4.0`.
+| ID | Status |
+|----|--------|
+| GAP-SSH-EXP-001 | **Resolvido (0.4.1)** |
+| GAP-SSH-TUN-002 | **Resolvido (0.4.1)** |
+| GAP-SSH-CLI-005 | **Resolvido (0.4.1)** |
+| GAP-SSH-CLI-006 | **Resolvido (0.4.1)** |
+| GAP-SSH-IO-009 | **Resolvido (0.4.1)** |
+| GAP-SSH-REL-006 | **Resolvido (0.4.1)** |
 
-### Bloco AUD-POST-0.4.0 → **0.4.1**
-
-| ID | Título | Status | Teste / evidência |
-|----|--------|--------|-------------------|
-| GAP-SSH-EXP-001 | `vps export` redacted com ciphertext de senha vazia | **Resolvido (0.4.1)** | unit `empty_secret_never_encrypted_blob`; integration export sem `sshcli-enc:`; `gap_exp_001_*` |
-| GAP-SSH-TUN-002 | Tunnel deadline pós-bind → exit 74 | **Resolvido (0.4.1)** | `AtomicBool` bound; `gap_tun_002_*`; e2e/ad-hoc EC=0 |
-| GAP-SSH-CLI-005 | `tunnel` sem password-stdin / key-passphrase | **Resolvido (0.4.1)** | `gap_cli_005_*`; help + conflicts |
-| GAP-SSH-CLI-006 | `health-check` sem password-stdin / key override | **Resolvido (0.4.1)** | `gap_cli_006_*`; `aplicar_overrides` key |
-| GAP-SSH-IO-009 | JSON SCP sem `event` | **Resolvido (0.4.1)** | `event: scp-transfer`; schema; `gap_io_009_*` |
-| GAP-SSH-PROC-001 | `cargo fmt --check` sujo | **Resolvido (0.4.1)** | fmt gate |
-| GAP-SSH-REL-006 | Tag 0.4.0 sem EXP/TUN/CLI/IO patch | **Resolvido (0.4.1)** GitHub + crates.io | commit+tag `v0.4.1`; release + `cargo publish` |
-
-### Melhorias M1–M6 (dentro de 0.4.1)
+### AUD-E2E → 0.4.2
 
 | ID | Título | Status |
 |----|--------|--------|
-| M1 | health-check honra `--replace-host-key` | **Feito** |
-| M2 | health-check `--json` → `definir_json_erros` | **Feito** |
-| M3 | tunnel usa `aplicar_overrides` | **Feito** |
-| M4 | revalidação EXP unit/integration | **Feito** |
-| M5 | tabela gap→teste neste inventário | **Feito** |
-| M6 | CHANGELOG honesty residual 0.4.0 | **Feito** |
+| GAP-SSH-TUN-003 | Tunnel `porta_local=0` reporta porta OS via `local_addr()` | **Resolvido (0.4.2)** |
+| GAP-SSH-IO-010 | SCP remote missing → exit **66** | **Resolvido (0.4.2)** |
+| GAP-SSH-UX-001 | `vps export --json` envelope `event: vps-export` | **Resolvido (0.4.2)** |
+| GAP-SSH-REL-007 | `.commit_hash` + build.rs precedence (crates.io) | **Resolvido (0.4.2)** |
+| GAP-SSH-ENV-001 | e2e policy fail2ban / max 1 auth-neg | **Resolvido (0.4.2)** |
+| GAP-SSH-DOC-042 | tunnel posicional + porta 0 efêmera | **Resolvido (0.4.2)** |
+| GAP-SSH-SCP-024 | e2e symlink E16 | **Resolvido (0.4.2)** |
+| GAP-SSH-INV-001 | gaps.md versionado | **Resolvido** |
+| GAP-SSH-REL-008 | release 0.4.2 local (push/publish c/ OK) | **Resolvido local** |
 
-## PA — contra-medidas
-
-| PA | Contra-medida | Status |
-|----|---------------|--------|
-| PA-EXP-01..03 | empty secret + testes | **Feito** |
-| PA-TUN-02 | bound flag pós-bind | **Feito** |
-| PA-CLI-05 | flags tunnel | **Feito** |
-| PA-CLI-06 | flags health-check | **Feito** |
-| PA-IO-09 | event scp-transfer | **Feito** |
-| PA-M1 / M2 | replace_host_key + json erros health | **Feito** |
-| PA-TEST-041 | gaps_v041 | **Feito** |
-| PA-DOC-041 | product line + CHANGELOG + honesty AUD-POST em checklists/root docs (DOC-041 follow-up: export vazio sem `sshcli-enc:`, tunnel exit 0 pós-bind, auth flags tunnel/health, `event` scp-transfer, gaps_v041) | **Feito** |
-| PA-REL-06 | release 0.4.1 | **Feito** (push main+tag, GitHub Release, crates.io) |
-
-## Política
-
-- **Resolvido** = código + teste + inventário
-- Inventário **Fechado** com **0 Abertos**
-- Sem telemetria
-- Docs longos: atomwrite
-- One-shot: nascer → executar → morrer
-- PROIBIDO push/publish sem OK do mantenedor
-
-## Tabela gap→teste (0.4.1)
+## Tabela gap → teste (0.4.2)
 
 | Gap | Teste |
-|-----|-------|
-| EXP-001 | `empty_secret_never_encrypted_blob`; `export_redacted_nao_contem_senha`; `gap_exp_001_serializar_empty_source` |
-| TUN-002 | `gap_tun_002_bound_flag_source`; ad-hoc/e2e tunnel |
-| CLI-005 | `gap_cli_005_tunnel_help_auth_flags`; `gap_cli_005_tunnel_password_stdin_conflict` |
-| CLI-006 | `gap_cli_006_health_help_auth_flags`; `gap_cli_006_health_password_stdin_conflict` |
-| IO-009 | `gap_io_009_scp_event_schema`; `gap_scp_021` (event required) |
-| REL-006 | `gap_rel_006_changelog_041`; `gap_version_041` |
+|-----|--------|
+| TUN-003 | unit tunnel + `gap_tun_003_*` + e2e E15 |
+| IO-010 | unit `interpretar_status_scp_no_such_file` + `gap_io_010_*` + e2e E13 ec=66 |
+| UX-001 | `gap_ux_001_export_json_*` + schema vps-export |
+| REL-007 | `gap_rel_007_build_rs_precedence` + `.commit_hash` |
+| ENV-001 | `gap_env_001_e2e_script_auth_policy` |
+| DOC-042 | `gap_doc_042_tunnel_positional_skills` |
+| SCP-024 | e2e E16 |
+| REL-008 | `gap_rel_008_changelog_042` + version 0.4.2 |
 
-## Resumo quantitativo
+## Honesty
+
+- Ban TCP na VPS pós-auditoria = **fail2ban** (ENV-001 / senhas erradas em massa), **não** bug TUN-003.
+- One-shot: nascer → executar → morrer. Zero telemetria.
+- Publish GitHub + crates.io: **somente com OK**.
+
+## PA status
+
+Todos PA-TUN-03*, PA-IO-10, PA-UX-01, PA-REL-07, PA-ENV-01, PA-DOC-042, PA-SCP-24, PA-TEST-042, PA-GATE-042, PA-REL-08 (local): **Feito**.
+
+## Resumo
 
 | Métrica | Valor |
 |---------|--------|
-| Gaps AUD-POST resolvidos | **6** (EXP/TUN/CLI×2/IO/REL) |
-| Melhorias M1–M6 | **6 Feito** |
 | Abertos | **0** |
-| russh | **0.62.2** |
+| Versão | **0.4.2** |
 | Telemetria | Ausente |
-| Versão | **0.4.1** |
-
-## Causa raiz (resumo)
-
-### EXP-001
-`serializar_segredo` cifrava string vazia → early-return `""`.
-
-### TUN-002
-Deadline pós-bind tratado como erro → bound flag distingue sucesso one-shot.
-
-### CLI-005 / CLI-006
-Subset de flags vs exec/scp → paridade clap + `aplicar_overrides`.
-
-### IO-009
-JSON SCP sem discriminador → `event: "scp-transfer"` + schema.
-
-### REL-006
-Fixes só no tree dirty → release **0.4.1**.

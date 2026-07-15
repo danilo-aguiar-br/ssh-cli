@@ -3,7 +3,8 @@
 > Mandatory gates before marking a release and `gaps.md` inventory as closed (Fechado).
 
 - Read this document in [Portuguese (pt-BR)](RELEASE_CHECKLIST.pt-BR.md).
-- Release target / product line: **0.4.1**.
+- Release target / product line: **0.4.2**.
+- Historical gate: **0.4.1** DOC-041 / AUD-POST honesty (export empty, tunnel exit 0, auth parity, scp-transfer event).
 - Canonical inventory: [../gaps.md](../gaps.md).
 - Residual suites: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG); `tests/gaps_v040_integration.rs` (SCP 0.4.0); `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006).
 
@@ -27,11 +28,11 @@
 9. Inventory versioned — `gaps.md` is tracked (not gitignored); `git check-ignore gaps.md` is empty.
 10. Honest pre/post-fix evidence in inventory (DOC-002 / inventory integrity).
 11. Version string (REL-002) — `ssh-cli --version` matches Cargo version plus git hash; reports `-dirty` when the tree is dirty.
-12. Local release commit and tag (REL-003) — clean `git status` for release commit; HEAD message is Release; local tag `vX.Y.Z` (for 0.4.1: `v0.4.1`); no remote push unless authorized.
+12. Local release commit and tag (REL-003) — clean `git status` for release commit; HEAD message is Release; local tag `vX.Y.Z` (for 0.4.2: `v0.4.2`); no remote push unless authorized.
 13. No telemetry — `vps doctor --json` reports `"telemetry": false`; no metrics/telemetry SDKs in the tree.
 14. Temporary probes removed — no leftover `_probe_*` artifacts in the tree.
 15. Default tracing error (LOG-001) — default level is error (not info); tunnel/JSON mode stderr is envelope-only (no INFO progress banners such as "Tunnel SSH:" / "iniciando tunnel").
-16. Product-line docs match Cargo version (DOC-003) — every product-line surface states **0.4.1**, including:
+16. Product-line docs match Cargo version (DOC-003) — every product-line surface states **0.4.2**, including:
     - `llms.txt`, `llms.pt-BR.txt`, `llms-full.txt`
     - `README.md`, `README.pt-BR.md`
     - `INTEGRATIONS.md`, `INTEGRATIONS.pt-BR.md`
@@ -45,7 +46,7 @@
     - `docs/RELEASE_CHECKLIST.md`, `docs/RELEASE_CHECKLIST.pt-BR.md`
 17. JSON empty password is null (JSON-001) — runtime: key-only `vps show|list --json` emits `"password": null` (not `"***"`); non-empty remains masked `***`. Schema: `docs/schemas/vps-show.schema.json` (and list via `$ref`) declares `password` type as `string` | `null`.
 18. Health-check timeout (CLI-004) — `health-check --timeout <ms>` is accepted (clap parse), aligned with exec overrides; covered by gaps_v039.
-19. CHANGELOG anchors (CHG-001) — `CHANGELOG.md` has section `## [0.4.1]` and compare/footer anchors for 0.4.1 (and prior 0.4.0 / 0.3.9 as needed).
+19. CHANGELOG anchors (CHG-001) — `CHANGELOG.md` has section `## [0.4.2]` and compare/footer anchors for 0.4.2 (and prior 0.4.0 / 0.3.9 as needed).
 20. Optional package dry-run — `cargo package --allow-dirty --list` succeeds; never auto-publish.
 21. DOC-004 / SCP honesty (0.4.0+) — product-line surfaces document:
     - SCP **regular files only** (no directories / no `-r` / no SFTP)
@@ -56,7 +57,7 @@
     - bilingual `skills/ssh-cli-en` and `skills/ssh-cli-pt` teach scp-transfer, tunnel_listening, file-only, partial, 32 KiB, timeout matrix (DOC-004d)
     - SECURITY Supported Versions brands **0.4.x** as current line (not 0.3.x)
     - `cargo test --locked --test gaps_v040_integration` + `gaps_v041_integration` green
-22. DOC-041 / AUD-POST honesty (0.4.1) — product-line and agent surfaces document:
+22. DOC-041 / AUD-POST honesty (0.4.2) — product-line and agent surfaces document:
     - redacted `vps export` **never** documents or expects `sshcli-enc:` for empty secrets
     - tunnel post-bind deadline exits **0** after `tunnel_listening` (one-shot success; not 74)
     - `tunnel` / `health-check` auth flags parity documented (`--password-stdin`, key / passphrase overrides as applicable)
@@ -78,12 +79,12 @@ ssh-cli --version
 - LOG-001: tunnel with `--output-format json` fails without connecting; stderr has JSON envelope and no INFO prose.
 - JSON-001: key-only host show JSON contains `"password": null`; schema file contains null in password type.
 - CLI-004: `health-check --timeout 50` is not "unexpected argument".
-- DOC-003: product-line files (including this checklist pair) contain `0.4.1`.
+- DOC-003: product-line files (including this checklist pair) contain `0.4.2`.
 - DOC-004: README/INTEGRATIONS/AGENTS/HOW_TO_USE/COOKBOOK/MIGRATION mention file-only SCP and 0.3.9 wire warning; scp-transfer schema present.
 - DOC-004d: `skills/ssh-cli-en` and `skills/ssh-cli-pt` teach scp-transfer, tunnel_listening, file-only, partial, 32 KiB stream, and timeout matrix; evals cover the surface.
 - DOC-041: export redacted empty secrets have no `sshcli-enc:`; tunnel post-bind deadline exit 0 after `tunnel_listening`; tunnel/health auth flag parity documented; scp-transfer schema requires `event`; gaps_v041 green.
 - DENY-002: `deny.toml` has `yanked = "deny"`, `ignore = []`, multiple-versions policy documented.
-- CHG-001 / REL: CHANGELOG section + local tag `v0.4.1` without unauthorized push.
+- CHG-001 / REL: CHANGELOG section + local tag `v0.4.2` without unauthorized push.
 - TEST-004 / SCP: gaps_v040 covers wire, schema, partial path, preserve, e2e script E10–E14.
 - AUD-POST / gaps_v041: EXP-001, TUN-002, CLI-005/006, IO-009, REL-006 residual suite green.
 
@@ -109,4 +110,4 @@ ssh-cli --version
 - [schemas/vps-show.schema.json](schemas/vps-show.schema.json) — password `null` | masked `***`
 - [schemas/scp-transfer.schema.json](schemas/scp-transfer.schema.json) — SCP success JSON (files only; requires `event`)
 - [schemas/tunnel-listening.schema.json](schemas/tunnel-listening.schema.json) — tunnel bind event
-- [schemas/README.md](schemas/README.md) — schema index (product line 0.4.1)
+- [schemas/README.md](schemas/README.md) — schema index (product line 0.4.2)

@@ -17,7 +17,7 @@
 - Follow first use in [docs/HOW_TO_USE.md](docs/HOW_TO_USE.md).
 - Copy recipes from [docs/COOKBOOK.md](docs/COOKBOOK.md).
 - Check platforms in [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md).
-- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.4.1**).
+- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.4.2**).
 - Run tests via [docs/TESTING.md](docs/TESTING.md).
 - Consume JSON contracts under [docs/schemas/README.md](docs/schemas/README.md).
 - Teach LLMs with [skills/ssh-cli-en/SKILL.md](skills/ssh-cli-en/SKILL.md).
@@ -53,7 +53,7 @@
 - Dual limits `max_command_chars` and `max_output_chars`
 - Timeout with best-effort remote abort
 - Bounded tunnel via mandatory `--timeout-ms`
-- SCP upload and download of **regular files only** (no recursive directories / no SFTP subsystem; first solid wire fix in **0.4.0**; patch **0.4.1** — avoid crates.io 0.3.9 SCP)
+- SCP upload and download of **regular files only** (no recursive directories / no SFTP subsystem; first solid wire fix in **0.4.0**; patch **0.4.2** — avoid crates.io 0.3.9 SCP)
 - SCP flag parity with exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (contract `docs/schemas/scp-transfer.schema.json`)
 - SCP download writes `{path}.ssh-cli.partial` then atomic rename; preserve remote mtime/mode bi-directional; upload streams 32 KiB chunks
 - SCP JSON success requires `event: "scp-transfer"` (0.4.1 IO-009)
@@ -91,7 +91,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Installation
 ### Choose the install path that matches your environment
-- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (**0.4.1+** on crates.io; avoid **0.3.9** for SCP).
+- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (**0.4.2+** on crates.io; avoid **0.3.9** for SCP).
 - Rebuild from a checkout: `cargo install --path . --locked`
 - Do **not** use install without `--locked` unless you verified the crypto pins resolve cleanly.
 - Force upgrade after a release: `cargo install ssh-cli --locked --force`

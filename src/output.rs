@@ -265,6 +265,60 @@ fn registro_para_json_mascarado(r: &VpsRegistro) -> serde_json::Value {
     })
 }
 
+/// GAP-SSH-UX-001: hosts para `vps export --json`.
+///
+/// - Redacted (`include_secrets=false`): secrets vazios/null, **nunca** ciphertext `sshcli-enc:`
+///   (paridade EXP-001). Password empty → `""` no envelope de export (honest skeleton).
+/// - Com secrets: password em claro só se `--include-secrets` (mesmo risco do TOML).
+pub fn export_hosts_para_json(
+    hosts: &std::collections::BTreeMap<String, VpsRegistro>,
+    include_secrets: bool,
+) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    for (nome, r) in hosts {
+        let entry = if include_secrets {
+            json!({
+                "name": r.nome,
+                "host": r.host,
+                "port": r.porta,
+                "user": r.usuario,
+                "password": r.senha.expose_secret(),
+                "key_path": r.key_path,
+                "key_passphrase": r.key_passphrase.as_ref().map(|s| s.expose_secret().to_string()),
+                "sudo_password": r.senha_sudo.as_ref().map(|s| s.expose_secret().to_string()),
+                "su_password": r.senha_su.as_ref().map(|s| s.expose_secret().to_string()),
+                "timeout_ms": r.timeout_ms,
+                "max_command_chars": r.max_command_chars,
+                "max_output_chars": r.max_output_chars,
+                "disable_sudo": r.disable_sudo,
+                "schema_version": r.schema_version,
+                "added_at": r.adicionado_em,
+            })
+        } else {
+            // Redacted: empty password string (import skeleton), null optional secrets.
+            json!({
+                "name": r.nome,
+                "host": r.host,
+                "port": r.porta,
+                "user": r.usuario,
+                "password": "",
+                "key_path": r.key_path,
+                "key_passphrase": null,
+                "sudo_password": null,
+                "su_password": null,
+                "timeout_ms": r.timeout_ms,
+                "max_command_chars": r.max_command_chars,
+                "max_output_chars": r.max_output_chars,
+                "disable_sudo": r.disable_sudo,
+                "schema_version": r.schema_version,
+                "added_at": r.adicionado_em,
+            })
+        };
+        map.insert(nome.clone(), entry);
+    }
+    serde_json::Value::Object(map)
+}
+
 /// Imprime stdout/stderr de execução de comando SSH.
 ///
 /// Formato:
