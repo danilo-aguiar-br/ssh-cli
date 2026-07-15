@@ -113,13 +113,17 @@ ssh-cli su-exec prod "id"
 ## Campos de host / schema (estáveis até 0.3.9)
 
 ### Após 0.3.4+
-- `timeout_ms`, `max_command_chars`, `max_output_chars`
-- `key_path`, `key_passphrase` (mascarado)
-- `disable_sudo`, `schema_version` 2
+- `timeout_ms`
+- `max_command_chars`
+- `max_output_chars`
+- `key_path`
+- `key_passphrase` (mascarado)
+- `disable_sudo`
+- `schema_version` 2
 
 ### Segredos at-rest (era 0.3.6; ainda atuais)
 - Campos de senha/sudo/su/passphrase podem guardar blobs `sshcli-enc:v1:…`
-- Fontes de master-key: env, arquivo, keyring ou XDG `secrets.key`
+- Fontes de master-key: `SSH_CLI_SECRETS_KEY`, `SSH_CLI_SECRETS_KEY_FILE`, keyring ou XDG `secrets.key`.
 
 ### Mascaramento (0.3.9)
 - Senha vazia → JSON `null`; não vazia → string `***`.

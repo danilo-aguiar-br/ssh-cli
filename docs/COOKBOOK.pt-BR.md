@@ -2,7 +2,7 @@
 
 > Copie receitas executáveis que resolvem problemas reais de SSH multi-host com agentes.
 
-- Read this document in [English](COOKBOOK.md).
+- Leia este documento em [inglês](COOKBOOK.md).
 - Linha de produto: **0.3.9**.
 
 

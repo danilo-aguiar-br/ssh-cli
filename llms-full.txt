@@ -32,6 +32,8 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - [docs/MIGRATION.pt-BR.md](docs/MIGRATION.pt-BR.md)
 - [docs/TESTING.md](docs/TESTING.md)
 - [docs/TESTING.pt-BR.md](docs/TESTING.pt-BR.md)
+- [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)
+- [docs/RELEASE_CHECKLIST.pt-BR.md](docs/RELEASE_CHECKLIST.pt-BR.md)
 - [docs/schemas/README.md](docs/schemas/README.md)
 - [skills/ssh-cli-en/SKILL.md](skills/ssh-cli-en/SKILL.md)
 - [skills/ssh-cli-pt/SKILL.md](skills/ssh-cli-pt/SKILL.md)

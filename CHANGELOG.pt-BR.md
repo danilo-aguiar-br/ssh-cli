@@ -9,6 +9,12 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Corrigido
+- `docs/schemas/vps-show.schema.json` permite `password` com tipo `string | null` (paridade do contrato JSON-001 com o runtime)
+- Aberturas de link cruzado em `docs/*.pt-BR.md` usam narrativa em português ("Leia este documento em inglês")
+- `docs/RELEASE_CHECKLIST.md` + `docs/RELEASE_CHECKLIST.pt-BR.md` bilíngues com gates residuais LOG/JSON/CLI/DOC/DENY/REL/CHG
+- Testes DOC-003 cobrem checklists e janela `null` do schema de password
+
 ## [0.3.9] - 2026-07-15
 
 ### Corrigido

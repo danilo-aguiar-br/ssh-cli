@@ -29,8 +29,11 @@
       "type": "string"
     },
     "password": {
-      "type": "string",
-      "description": "Masked secret"
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Empty/key-only hosts serialize as null; non-empty is the masked string \"***\""
     },
     "key_path": {
       "type": [

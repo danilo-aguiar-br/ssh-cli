@@ -5,6 +5,8 @@
 - Validate agent parsers against these schemas before treating fields as stable.
 - `vps-list.schema.json` contracts `ssh-cli vps list --json`.
 - `vps-show.schema.json` contracts `ssh-cli vps show <name> --json`.
+- `vps-list.schema.json` reuses the vps-show item schema via `$ref` (`items.$ref` → `vps-show.schema.json`).
+- `vps-show` / `vps-list` schemas allow `password` as JSON `null` or the masked string `***` (GAP-SSH-JSON-001 / **0.3.9**): empty/key-only hosts serialize as `null`; non-empty is never a raw credential.
 - `vps-doctor.schema.json` contracts `ssh-cli vps doctor --json` including `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out`, and `telemetry: false`.
 - `exec.schema.json` contracts `ssh-cli exec ... --json`.
 - `sudo-exec.schema.json` contracts `ssh-cli sudo-exec ... --json`.
@@ -21,6 +23,8 @@
 - Valide parsers de agentes contra estes schemas antes de tratar campos como estáveis.
 - `vps-list.schema.json` cobre `ssh-cli vps list --json`.
 - `vps-show.schema.json` cobre `ssh-cli vps show <name> --json`.
+- `vps-list.schema.json` reutiliza o schema de item de vps-show via `$ref` (`items.$ref` → `vps-show.schema.json`).
+- Os schemas `vps-show` / `vps-list` permitem `password` como JSON `null` ou a string mascarada `***` (GAP-SSH-JSON-001 / **0.3.9**): hosts vazios/só-chave serializam como `null`; não vazio nunca é credencial crua.
 - `vps-doctor.schema.json` cobre `ssh-cli vps doctor --json` incluindo `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out` e `telemetry: false`.
 - `exec.schema.json` cobre `ssh-cli exec ... --json`.
 - `sudo-exec.schema.json` cobre `ssh-cli sudo-exec ... --json`.

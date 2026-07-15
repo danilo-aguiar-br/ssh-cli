@@ -61,9 +61,10 @@ Todos **Resolvidos** — ver seções anteriores e commit `94941e4` (0.3.8).
 ## GAP-SSH-DOC-003
 
 | Status | **Resolvido (0.3.9)** |
-| Arquivos | Product line **0.3.9** + comportamentos LOG/JSON/CLI em `README*`, `llms*`, `INTEGRATIONS*`, `docs/HOW_TO_USE*`, `COOKBOOK*`, `MIGRATION*`, `TESTING*`, `CROSS_PLATFORM*`, `AGENTS*`, `schemas/README`, `skills/*` |
+| Arquivos | Product line **0.3.9** + comportamentos LOG/JSON/CLI em `README*`, `llms*`, `INTEGRATIONS*`, `docs/HOW_TO_USE*`, `COOKBOOK*`, `MIGRATION*`, `TESTING*`, `CROSS_PLATFORM*`, `AGENTS*`, `schemas/README`, `docs/RELEASE_CHECKLIST*`, `skills/*` |
 | Testes | `gap_doc_003_version_contem_039`, `gap_doc_003_product_line_docs_contem_039`, `gap_doc_003_residual_behaviors_documentados` |
-| Nota | Auditoria GraphRAG 2026-07-15 fechou docs que ainda diziam **0.3.6** como linha atual |
+| Nota | Auditoria GraphRAG 2026-07-15 (raiz + product line) fechou **0.3.6** como linha atual |
+| Nota docs/ | Auditoria pasta `docs/` 2026-07-15: schema `password` `string\|null` (JSON-001); headers pt-BR em português; `RELEASE_CHECKLIST` bilíngue; paridade MIGRATION campos; gate schema no teste DOC-003 |
 
 ## GAP-SSH-DENY-002
 

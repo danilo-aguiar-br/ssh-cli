@@ -1,40 +1,86 @@
 # Release checklist — ssh-cli
 
-Use this list before marking any release (and `gaps.md`) as **Fechado**.
+> Mandatory gates before marking a release and `gaps.md` inventory as closed (Fechado).
 
-## Gates (obrigatórios)
+- Read this document in [Portuguese (pt-BR)](RELEASE_CHECKLIST.pt-BR.md).
+- Release target / product line: **0.3.9**.
+- Canonical inventory: [../gaps.md](../gaps.md).
+- Residual suite: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG).
 
-| # | Critério | Como verificar |
-|---|----------|----------------|
-| 1 | `cargo build --release` | exit 0 |
-| 2 | `cargo clippy --all-targets -- -D warnings` | exit 0 |
-| 3 | `cargo deny check` | exit 0; **sem** `ignore` de CVE russh; `yanked=deny` |
-| 4 | `bash scripts/verify_install_resolve.sh` | exit 0; russh ≥ 0.60.3 |
-| 5 | `cargo test` (lib + integration + gaps_v037 + gaps_v038 + gaps_v039) | exit 0 |
-| 6 | Suite gaps 1:1 (`tests/gaps_v038_integration.rs`, `tests/gaps_v039_integration.rs`) | todos `gap_*` verdes |
-| 7 | e2e manual subcomandos locais (help, vps CRUD fake, completions) | OK |
-| 8 | e2e VPS real (smoke) | health-check / exec; registrar em `gaps.md` sem secrets |
-| 9 | Inventário `gaps.md` versionado (não gitignored) | `git check-ignore gaps.md` vazio |
-| 10 | Evidências pré/pós-fix honestas no inventário | DOC-002 |
-| 11 | Version string coerente (`--version` = Cargo version + hash; `-dirty` se tree suja) | REL-002 |
-| 12 | Commit/tag local da release | `git status` clean; HEAD mensagem Release; `git tag vX.Y.Z` local (sem push) |
-| 13 | Sem telemetria | doctor `"telemetry": false`; sem SDKs de métricas |
-| 14 | Probes temporários removidos (`_probe_*`) | ausentes no tree |
-| 15 | Default tracing **error** (LOG-001); JSON stderr sem INFO | tunnel JSON stderr envelope-only |
-| 16 | Product line docs = Cargo version (DOC-003) | `llms*.txt`, `README*.md`, `INTEGRATIONS*.md`, `docs/AGENTS*.md`, `docs/HOW_TO_USE*.md`, `docs/COOKBOOK*.md`, `docs/MIGRATION*.md`, `docs/TESTING*.md`, `docs/CROSS_PLATFORM*.md`, `docs/schemas/README.md` |
-| 17 | Empty password JSON `null` (JSON-001); `health-check --timeout` (CLI-004) | list/show + health-check help/tests |
-| 18 | (Opcional) `cargo package --allow-dirty --list` dry-run | sem publish automático |
 
-## Política
+## Purpose
+- Prevent shipping with open gaps, stale product-line docs, or supply-chain waivers.
+- Keep release evidence honest (pre/post-fix notes in inventory, no secrets in logs).
+- Align Cargo version, `--version`, docs product line, tags, and CHANGELOG anchors.
 
-- **PROIBIDO** declarar inventário Fechado com gaps Abertos.
-- **PROIBIDO** waiver eterno de RUSTSEC sem tracking fechado na mesma release.
-- **PROIBIDO** push/publish sem autorização explícita do maintainer.
-- Escrita multi-linha de inventário/CHANGELOG: **atomwrite**.
 
-## Referência
+## Gates (required)
 
-- `gaps.md` — inventário canônico
-- `deny.toml` — supply-chain
-- `scripts/verify_install_resolve.sh` — install re-resolve
-- `tests/gaps_v039_integration.rs` — residuals LOG/JSON/CLI/DOC/DENY/CHG
+1. Release build — `cargo build --release` exits 0.
+2. Clippy clean — `cargo clippy --all-targets -- -D warnings` exits 0.
+3. Supply chain deny (DENY-002) — `cargo deny check` exits 0; no russh CVE `ignore`; `yanked=deny`; empty `ignore = []`.
+4. Install resolve — `bash scripts/verify_install_resolve.sh` exits 0; russh at security floor (≥ 0.60.3; product line uses 0.62.2).
+5. Full tests — `cargo test` green (lib + integration + gaps_v037 + gaps_v038 + gaps_v039).
+6. Gap suites 1:1 — all `gap_*` tests in `tests/gaps_v038_integration.rs` and `tests/gaps_v039_integration.rs` green; **gaps_v039** residual suite green (LOG/JSON/CLI/DOC/DENY/CHG).
+7. Local e2e (no real VPS) — help, fake VPS CRUD, completions behave as documented.
+8. Real VPS smoke (when available) — `health-check` / `exec`; record outcome in `gaps.md` without secrets.
+9. Inventory versioned — `gaps.md` is tracked (not gitignored); `git check-ignore gaps.md` is empty.
+10. Honest pre/post-fix evidence in inventory (DOC-002 / inventory integrity).
+11. Version string (REL-002) — `ssh-cli --version` matches Cargo version plus git hash; reports `-dirty` when the tree is dirty.
+12. Local release commit and tag (REL-003) — clean `git status` for release commit; HEAD message is Release; local tag `vX.Y.Z` (for 0.3.9: `v0.3.9`); no remote push unless authorized.
+13. No telemetry — `vps doctor --json` reports `"telemetry": false`; no metrics/telemetry SDKs in the tree.
+14. Temporary probes removed — no leftover `_probe_*` artifacts in the tree.
+15. Default tracing error (LOG-001) — default level is error (not info); tunnel/JSON mode stderr is envelope-only (no INFO progress banners such as "Tunnel SSH:" / "iniciando tunnel").
+16. Product-line docs match Cargo version (DOC-003) — every product-line surface states **0.3.9**, including:
+    - `llms.txt`, `llms.pt-BR.txt`, `llms-full.txt`
+    - `README.md`, `README.pt-BR.md`
+    - `INTEGRATIONS.md`, `INTEGRATIONS.pt-BR.md`
+    - `docs/AGENTS.md`, `docs/AGENTS.pt-BR.md`
+    - `docs/HOW_TO_USE.md`, `docs/HOW_TO_USE.pt-BR.md`
+    - `docs/COOKBOOK.md`, `docs/COOKBOOK.pt-BR.md`
+    - `docs/MIGRATION.md`, `docs/MIGRATION.pt-BR.md`
+    - `docs/TESTING.md`, `docs/TESTING.pt-BR.md`
+    - `docs/CROSS_PLATFORM.md`, `docs/CROSS_PLATFORM.pt-BR.md`
+    - `docs/schemas/README.md`
+    - `docs/RELEASE_CHECKLIST.md`, `docs/RELEASE_CHECKLIST.pt-BR.md`
+17. JSON empty password is null (JSON-001) — runtime: key-only `vps show|list --json` emits `"password": null` (not `"***"`); non-empty remains masked `***`. Schema: `docs/schemas/vps-show.schema.json` (and list via `$ref`) declares `password` type as `string` | `null`.
+18. Health-check timeout (CLI-004) — `health-check --timeout <ms>` is accepted (clap parse), aligned with exec overrides; covered by gaps_v039.
+19. CHANGELOG anchors (CHG-001) — `CHANGELOG.md` has section `## [0.3.9]` and compare/footer anchor for 0.3.9 (and prior 0.3.8 as needed).
+20. Optional package dry-run — `cargo package --allow-dirty --list` succeeds; never auto-publish.
+
+
+## How to verify residuals quickly
+
+```bash
+cargo test --locked --test gaps_v039_integration
+cargo deny check
+bash scripts/verify_install_resolve.sh
+ssh-cli --version
+```
+
+- LOG-001: tunnel with `--output-format json` fails without connecting; stderr has JSON envelope and no INFO prose.
+- JSON-001: key-only host show JSON contains `"password": null`; schema file contains null in password type.
+- CLI-004: `health-check --timeout 50` is not "unexpected argument".
+- DOC-003: product-line files (including this checklist pair) contain `0.3.9`.
+- DENY-002: `deny.toml` has `yanked = "deny"`, `ignore = []`, multiple-versions policy documented.
+- CHG-001 / REL: CHANGELOG section + local tag `v0.3.9` without unauthorized push.
+
+
+## Policy
+
+- FORBIDDEN: declare inventory Fechado (closed) while any gap remains Aberto (open).
+- FORBIDDEN: eternal RUSTSEC / CVE waive without closed tracking in the same release.
+- FORBIDDEN: `git push` or crates.io publish without explicit maintainer authorization.
+- FORBIDDEN: log or paste real secrets into inventory, checklist notes, or CI logs.
+- REQUIRED: multi-line inventory / CHANGELOG writes use atomwrite (or equivalent atomic write).
+- REQUIRED: Status Resolvido only with code + test + version note in `gaps.md`.
+
+
+## Reference
+
+- [../gaps.md](../gaps.md) — canonical gap inventory
+- [../deny.toml](../deny.toml) — supply-chain policy
+- [../scripts/verify_install_resolve.sh](../scripts/verify_install_resolve.sh) — install re-resolve gate
+- [../tests/gaps_v039_integration.rs](../tests/gaps_v039_integration.rs) — residual gates LOG/JSON/CLI/DOC/DENY/CHG
+- [schemas/vps-show.schema.json](schemas/vps-show.schema.json) — password `null` | masked `***`
+- [schemas/README.md](schemas/README.md) — schema index (product line 0.3.9)

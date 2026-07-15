@@ -2,7 +2,7 @@
 
 > Corte o desperdício de RAM de processos residentes e mantenha SSH multi-host sob controle do agente.
 
-- Read this document in [English](AGENTS.md).
+- Leia este documento em [inglês](AGENTS.md).
 - Combine com [../INTEGRATIONS.pt-BR.md](../INTEGRATIONS.pt-BR.md) e [../skills/ssh-cli-pt/SKILL.md](../skills/ssh-cli-pt/SKILL.md).
 - Linha de produto: **0.3.9** (inventário Fechado; russh 0.62.2).
 

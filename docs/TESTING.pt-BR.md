@@ -2,7 +2,7 @@
 
 > Rode o perfil certo de testes do ssh-cli sem travar em redes remotas.
 
-- Read this document in [English](TESTING.md).
+- Leia este documento em [inglês](TESTING.md).
 - Linha de produto: **0.3.9**.
 
 

@@ -2,7 +2,7 @@
 
 > Vá da instalação ao primeiro comando remoto em menos de 60 segundos.
 
-- Read this document in [English](HOW_TO_USE.md).
+- Leia este documento em [inglês](HOW_TO_USE.md).
 - Volte ao [README.pt-BR.md](../README.pt-BR.md) para o mapa completo de comandos.
 - Linha de produto documentada aqui: **0.3.9** (GAP-001–014 fechados; auditoria residual LOG/JSON/CLI fechada).
 

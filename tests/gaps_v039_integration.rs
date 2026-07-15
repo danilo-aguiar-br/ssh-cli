@@ -203,6 +203,8 @@ fn gap_doc_003_product_line_docs_contem_039() {
         "docs/CROSS_PLATFORM.md",
         "docs/CROSS_PLATFORM.pt-BR.md",
         "docs/schemas/README.md",
+        "docs/RELEASE_CHECKLIST.md",
+        "docs/RELEASE_CHECKLIST.pt-BR.md",
     ];
     for path in FILES {
         let body = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("ler {path}: {e}"));
@@ -230,6 +232,7 @@ fn gap_doc_003_product_line_docs_contem_039() {
 }
 
 /// Residual audit behaviors must appear in agent-facing docs (LOG/JSON/CLI).
+/// Schema JSON-001: vps-show.schema.json must allow password null.
 #[test]
 fn gap_doc_003_residual_behaviors_documentados() {
     let agents = std::fs::read_to_string("docs/AGENTS.md").expect("AGENTS");
@@ -257,6 +260,20 @@ fn gap_doc_003_residual_behaviors_documentados() {
             && !skill.contains("0.3.9 did")
             && !skill.contains("in version 0.3.9"),
         "skill en deve consolidar null/timeout/error sem changelog por versão"
+    );
+
+    // JSON-001 schema contract: password type includes null (not string-only).
+    let schema = std::fs::read_to_string("docs/schemas/vps-show.schema.json")
+        .expect("vps-show.schema.json");
+    let password_block = schema
+        .split("\"password\"")
+        .nth(1)
+        .expect("schema deve declarar propriedade password");
+    // First property after "password" key: type array must list string and null.
+    let window: String = password_block.chars().take(120).collect();
+    assert!(
+        window.contains("null") && window.contains("string"),
+        "vps-show.schema.json password deve permitir type null|string (JSON-001): {window}"
     );
 }
 
