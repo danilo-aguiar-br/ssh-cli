@@ -3,7 +3,7 @@
 > Run the right ssh-cli test profile without hanging on remote networks.
 
 - Read this document in [Portuguese (pt-BR)](TESTING.pt-BR.md).
-- Product line: **0.5.0**.
+- Product line: **0.5.1** (historical residual suite gates include **0.4.1** AUD-POST / `gaps_v041`).
 
 
 ## Why Categorized Tests
@@ -21,7 +21,10 @@
 - Agent I/O residual suite under `tests/gaps_v037_integration.rs`
 - Post-0.3.7 residual suite under `tests/gaps_v038_integration.rs`
 - Post-0.3.8 residual suite under `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC/DENY/CHG)
-- Post-0.3.9 / **0.4.0** suite `tests/gaps_v040_integration.rs`; AUD-POST **0.4.1** suite `tests/gaps_v041_integration.rs`; AUD-E2E **0.5.0** suite `tests/gaps_v042_integration.rs` (TUN-003, IO-010, UX-001, REL-007, ENV-001, DOC-042, SCP-024)
+- Post-0.3.9 / **0.4.0** suite `tests/gaps_v040_integration.rs`
+- AUD-POST suite `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006, DOC-041)
+- AUD-E2E suite `tests/gaps_v042_integration.rs` (TUN-003, IO-010, UX-001, REL-007, ENV-001, DOC-042, SCP-024)
+- **0.5.1** suite `tests/gaps_v051_integration.rs` (export TOML default, `vps-export` JSON, schema v3 dual-read, secrets-init event, include-secrets guard, CRUD `vps-added`, empty command, import exit 65)
 - Storage integration under `tests/storage_integration.rs`
 - Snapshot tests under `tests/snapshot_tests.rs`
 - SCP surface under `tests/scp_integration.rs`
@@ -29,6 +32,7 @@
 - Property tests under `tests/proptest_tests.rs`
 - i18n integration under `tests/i18n_integration.rs`
 - Install resolve script `scripts/verify_install_resolve.sh`
+- English identifier gate `scripts/check_en_identifiers.sh`
 - Real SSH E2E (optional, machine-local): `scripts/e2e_real_ssh.sh` — official matrix **E01–E16** (E10–E14 cover SCP upload/download/cmp/missing/preserve)
 - Benchmarks under `benches/` (manual)
 
@@ -37,8 +41,10 @@
 ### Local developer loop
 
 ```bash
-cargo test --locked
+cargo test --locked --all-targets
 cargo clippy --all-targets --locked -- -D warnings
+bash scripts/check_en_identifiers.sh
+cargo build --release
 bash scripts/verify_install_resolve.sh
 ```
 
@@ -53,6 +59,7 @@ cargo test --locked --test gaps_v039_integration
 cargo test --locked --test gaps_v040_integration
 cargo test --locked --test gaps_v041_integration
 cargo test --locked --test gaps_v042_integration
+cargo test --locked --test gaps_v051_integration
 cargo test --locked --test storage_integration
 cargo test --locked --test snapshot_tests
 cargo test --locked packing
@@ -73,12 +80,13 @@ bash scripts/e2e_real_ssh.sh --from-grok-config
 
 - Official matrix **E01–E16**; **E10–E14** = SCP upload, download, integrity (`cmp`), missing remote, preserve mode+mtime (SCP-023).
 - Script prints only PASS/FAIL labels — never host, user, or password.
+- **GAP-014 / fail2ban policy:** prefer local `sshd` or a throwaway VPS. **FORBIDDEN:** auth-failure storms against production hosts (fail2ban bans). Production VPS e2e only with care, IP whitelist / `ignoreip`, and **no** intentional wrong passwords.
 
 
 ## CI Profiles
 - This repository currently ships without GitHub Actions workflows.
 - Maintainers run the local developer loop before every publish.
-- Publish gates include package dry-run, install resolve verification, bilingual docs parity, and `gaps_v040` + `gaps_v041` residual suites.
+- Publish gates include package dry-run, install resolve verification, bilingual docs parity, English identifier check (`bash scripts/check_en_identifiers.sh`), residual suites `gaps_v040` + `gaps_v041` + `gaps_v042` + **`gaps_v051`**, plus the canonical loop: `cargo test --locked --all-targets`, clippy `-D warnings`, and `cargo build --release`.
 
 
 ## Environment Variables
@@ -98,7 +106,6 @@ bash scripts/e2e_real_ssh.sh --from-grok-config
 - Crypto resolve failures: re-check pins and rerun the install script without ignoring lock policy.
 - Flaky timeout tests: ensure no real remote host is required unless explicitly configured.
 - Permission failures: confirm temp dirs are writable and mode assertions match the OS.
-- Encrypted fixture surprises: set `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` or provide a test master-key via env.
+- Encrypted fixture surprises: set `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` or provide a test primary-key via env.
 - Unexpected quiet stderr: default is error-level tracing; set `RUST_LOG` or `-v` if you need debug lines.
-- SCP / AUD-POST residual failures: run `cargo test --locked --test gaps_v040_integration` and `cargo test --locked --test gaps_v041_integration
-cargo test --locked --test gaps_v042_integration`; read `gaps.md` AUD-SCP and AUD-POST blocks.
+- SCP / AUD-POST / 0.5.1 residual failures: run `cargo test --locked --test gaps_v040_integration`, `cargo test --locked --test gaps_v041_integration`, `cargo test --locked --test gaps_v042_integration`, and `cargo test --locked --test gaps_v051_integration`; read `gaps.md` AUD-SCP, AUD-POST, and 0.5.1 blocks.

@@ -1,7 +1,8 @@
 # JSON Schemas Index
 
 ## English
-- This directory versions machine-readable JSON contracts for ssh-cli stdout/stderr payloads (**0.5.0**).
+- This directory versions machine-readable JSON contracts for ssh-cli stdout/stderr payloads (**0.5.1**).
+- Host wire inventory on disk uses **schema v3** (English serialize + dual-read Portuguese aliases); JSON schemas here contract CLI stdout/stderr, not the full TOML host file.
 - Validate agent parsers against these schemas before treating fields as stable.
 - `vps-list.schema.json` contracts `ssh-cli vps list --json`.
 - `vps-show.schema.json` contracts `ssh-cli vps show <name> --json`.
@@ -13,16 +14,20 @@
 - `su-exec.schema.json` contracts `ssh-cli su-exec ... --json`.
 - `health-check.schema.json` contracts `ssh-cli health-check --json`.
 - Optional CLI `--timeout` on `health-check` does not change response schema fields.
-- `scp-transfer.schema.json` contracts `ssh-cli scp upload|download --json` **success on stdout** (regular files only; no directories / no `-r` / no SFTP); required field `event: "scp-transfer"` (IO-009 / **0.5.0**).
+- `scp-transfer.schema.json` contracts `ssh-cli scp upload|download --json` **success on stdout** (regular files only; no directories / no `-r` / no SFTP); required field `event: "scp-transfer"` (IO-009 from 0.4.x retained in product line **0.5.1**).
 - `tunnel-listening.schema.json` contracts the post-bind stdout event for `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`). After `tunnel_listening`, one-shot post-bind deadline is process exit **0** (not a schema field; see AGENTS / TUN-002). Pre-bind timeout remains **74**.
-- `vps-export.schema.json` contracts `ssh-cli vps export --json` (`event: "vps-export"`, redacted by default; GAP-SSH-UX-001 / **0.5.0**).
+- `vps-export.schema.json` contracts **only** `ssh-cli vps export --json` (`event: "vps-export"`, redacted by default; GAP-SSH-UX-001 / **0.5.1**). Default `vps export` body is **TOML** (even on pipe/non-TTY) — not this schema.
+- `secrets-init.schema.json` contracts `ssh-cli secrets init --json` (`event: "secrets-init"`).
+- `secrets-reencrypt.schema.json` contracts `ssh-cli secrets reencrypt --json` (`event: "secrets-reencrypt"`).
 - `error-envelope.schema.json` contracts **stderr** failure payloads when JSON errors mode is active (`--json` / global `--output-format json` / effective JSON on scp and tunnel): fields `exit_code`, `message`, optional `remote_exit_code`.
 - Secrets in list/show payloads: empty password is JSON `null` (key-only hosts); non-empty password is the masked string `***`, never raw credentials.
-- There is no schema for `secrets status` key material (command never emits the master key); treat status JSON as non-sensitive metadata only.
+- There is no schema for `secrets status` key material (command never emits the primary key); treat status JSON as non-sensitive metadata only. Keyring may still accept the legacy `secrets-master-key` read alias.
+- CRUD success events (`vps-added`, …) and `secrets-key-auto-created` may appear without dedicated schema files — parsers should treat the `event` field as discriminator.
 - `telemetry` in doctor output is always false.
 
 ## Português Brasileiro
-- Este diretório versiona contratos JSON legíveis por máquina para payloads stdout/stderr do ssh-cli (**0.5.0**).
+- Este diretório versiona contratos JSON legíveis por máquina para payloads stdout/stderr do ssh-cli (**0.5.1**).
+- O inventário wire em disco usa **schema v3** (serialização em inglês + dual-read de aliases em português); os JSON schemas aqui contratam stdout/stderr da CLI, não o arquivo TOML completo de hosts.
 - Valide parsers de agentes contra estes schemas antes de tratar campos como estáveis.
 - `vps-list.schema.json` cobre `ssh-cli vps list --json`.
 - `vps-show.schema.json` cobre `ssh-cli vps show <name> --json`.
@@ -34,9 +39,13 @@
 - `su-exec.schema.json` cobre `ssh-cli su-exec ... --json`.
 - `health-check.schema.json` cobre `ssh-cli health-check --json`.
 - O CLI opcional `--timeout` em `health-check` não altera os campos do schema de resposta.
-- `scp-transfer.schema.json` cobre sucesso em **stdout** de `ssh-cli scp upload|download --json` (somente arquivos regulares; sem diretórios / sem `-r` / sem SFTP); o campo `event: "scp-transfer"` é **obrigatório** (GAP-SSH-IO-009 / **0.5.0**).
+- `scp-transfer.schema.json` cobre sucesso em **stdout** de `ssh-cli scp upload|download --json` (somente arquivos regulares; sem diretórios / sem `-r` / sem SFTP); o campo `event: "scp-transfer"` é **obrigatório** (IO-009 de 0.4.x retido na linha de produto **0.5.1**).
 - `tunnel-listening.schema.json` cobre o evento pós-bind em stdout de `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`). Após `tunnel_listening`, o deadline one-shot pós-bind é exit **0** do processo (não é campo de schema; ver AGENTS / TUN-002). Timeout pré-bind permanece **74**.
+- `vps-export.schema.json` cobre **somente** `ssh-cli vps export --json` (`event: "vps-export"`, redacted por omissão; GAP-SSH-UX-001 / **0.5.1**). O corpo padrão de `vps export` é **TOML** (mesmo em pipe/non-TTY) — não este schema.
+- `secrets-init.schema.json` cobre `ssh-cli secrets init --json` (`event: "secrets-init"`).
+- `secrets-reencrypt.schema.json` cobre `ssh-cli secrets reencrypt --json` (`event: "secrets-reencrypt"`).
 - `error-envelope.schema.json` cobre payloads de falha em **stderr** quando o modo de erros JSON está ativo (`--json` / `--output-format json` global / JSON efetivo em scp e tunnel): campos `exit_code`, `message`, opcional `remote_exit_code`.
 - Segredos em list/show: senha vazia é JSON `null` (hosts só-chave); senha não vazia é a string mascarada `***`, nunca credenciais cruas.
-- Não há schema de material de chave de `secrets status` (o comando nunca emite a master-key); trate o JSON de status como metadado não sensível.
+- Não há schema de material de chave de `secrets status` (o comando nunca emite a primary-key); trate o JSON de status como metadado não sensível. O keyring ainda pode aceitar o alias legado de leitura `secrets-master-key`.
+- Eventos de sucesso CRUD (`vps-added`, …) e `secrets-key-auto-created` podem aparecer sem arquivos de schema dedicados — parsers devem tratar o campo `event` como discriminador.
 - `telemetry` no doctor é sempre false.

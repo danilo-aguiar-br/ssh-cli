@@ -28,7 +28,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Nunca suba MSRV sem issue explícita de discussão.
 
 ### Pins de dependência
-- A linha de produto **0.5.0** usa **russh 0.62.2** (desde 0.3.8) sem os pins COMPAT RC antigos; não reintroduza pins RC mortos sem issue.
+- A linha de produto **0.5.1** usa **russh 0.62.2** (desde 0.3.8) sem os pins COMPAT RC antigos; não reintroduza pins RC mortos sem issue.
 - Nunca rode `cargo update` cego no grafo crypto.
 - Rode `scripts/verify_install_resolve.sh` após qualquer mudança de dependência.
 
@@ -63,9 +63,9 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Leia [docs/TESTING.pt-BR.md](docs/TESTING.pt-BR.md) para categorias e perfis.
 - Prefira unit tests determinísticos para packing e migração de schema.
 - Use integration tests em `tests/` para contratos da CLI.
-- Inclua as suites de regressão de gaps `tests/gaps_v038_integration.rs`, `tests/gaps_v039_integration.rs` e `tests/gaps_v040_integration.rs` / `tests/gaps_v041_integration.rs` (SCP/tunnel/IO 0.4.0 + AUD-POST 0.4.2) ao tocar superfície residual de auditoria.
-- Para E2E SSH real local, prefira env `SSH_CLI_E2E_*`, ou `bash scripts/e2e_real_ssh.sh --from-grok-config` só em maintainer lendo `/.grok/config.toml`; a matriz oficial é **E01–E14** (E10–E14 cobrem SCP upload/download/`cmp`/ausente/preserve); nunca logue credenciais; nunca faça commit de config Grok/MCP ou inventário de hosts neste repositório.
-- Testes que precisam de secrets em claro devem definir `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
+- Inclua as suites de regressão de gaps ao tocar superfície residual de auditoria: `tests/gaps_v038_integration.rs`, `tests/gaps_v039_integration.rs`, `tests/gaps_v040_integration.rs`, `tests/gaps_v041_integration.rs`, `tests/gaps_v042_integration.rs` (TUN-003/IO-010) e `tests/gaps_v051_integration.rs` (export/import/wire/secrets 0.5.1).
+- Para E2E SSH real local, prefira env `SSH_CLI_E2E_*`, ou `bash scripts/e2e_real_ssh.sh --from-grok-config` só em maintainer lendo `$HOME/.grok/config.toml`; a matriz oficial é **E01–E16** (E10–E14 SCP; E15 tunnel porta 0; E16 symlink); prefira **sshd local** / lab e **sem storm intencional de auth** em alvos de produção com fail2ban; nunca logue credenciais; nunca faça commit de config Grok/MCP ou inventário de hosts neste repositório.
+- Testes que precisam de secrets em claro devem definir `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` ou passar `--allow-plaintext-secrets`.
 - Nunca deixe testes flaky dependentes de rede sem timeout.
 
 
@@ -91,7 +91,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 ## Processo de release
 - Suba SemVer em `Cargo.toml` e atualize ambos os CHANGELOGs.
 - Rode suite completa, clippy `-D warnings`, `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps` e gate de install.
-- Confirme docs bilíngues da raiz (README, SECURITY, INTEGRATIONS, llms*) alinhadas à superfície do release (inclui `secrets`, cifragem default, SCP file-only + honestidade 0.3.9, schema `scp-transfer` com `event`, `tunnel --json` / exit 0 pós-bind, honestidade export empty-secret, paridade auth tunnel/health e gaps_v041).
+- Confirme docs bilíngues da raiz (README, SECURITY, INTEGRATIONS, llms*) alinhadas à superfície de release **0.5.1**: `secrets` + cifragem default, flags CLI de secrets, export TOML default / envelope `--json`, import TOML+JSON, wire schema v3 dual-read, guarda `--include-secrets`, tunnel `--bind`, SCP file-only + honestidade 0.3.9, schemas `scp-transfer` / `secrets-init` / `secrets-reencrypt` / `vps-export`, exit 0 pós-bind, honestidade export empty-secret, paridade auth tunnel/health e suites `gaps_v042` + `gaps_v051`.
 - Empacote com `cargo package --locked` e dry-run de publish quando necessário.
 - Tag `vX.Y.Z` só após gates verdes e **autorização explícita do maintainer**.
 - Prefira `cargo install ssh-cli --locked` na doc pública de install.

@@ -1,10 +1,10 @@
 # ssh-cli
 
-- Historical note: patch line **0.4.2** preceded **0.5.0** (EN/API rename + secrets force-init reencrypt).
+- Historical note: **0.4.1** closed AUD-POST (export empty honesty, tunnel deadline, auth parity, scp-transfer event); **0.4.2** closed TUN-003 / IO-010; **0.5.0** was EN/API rename + secrets force-init reencrypt; current product line is **0.5.1** (export/import agent roundtrip, wire schema v3 dual-read, secrets CLI flags, tunnel `--bind`).
 
 > One-shot multi-host SSH CLI for AI agents with XDG storage and no Node daemon
 
-ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers through stdin/stdout. It replaces persistent long-lived Node SSH daemons processes with birth-execute-die invocations, multi-host XDG registries, password or key auth, safe sudo packing, su-exec, bounded tunnels, TOFU known_hosts, dual command/output char limits, and **default at-rest secret encryption** (ChaCha20-Poly1305 + `secrets.key`). Telemetry is forbidden. Prefer `cargo install ssh-cli --locked`. Current product line: **0.5.0** (inventory closed; russh 0.62.2; residual audit gaps closed).
+ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers through stdin/stdout. It replaces persistent long-lived Node SSH daemons processes with birth-execute-die invocations, multi-host XDG registries, password or key auth, safe sudo packing, su-exec, bounded tunnels, TOFU known_hosts, dual command/output char limits, and **default at-rest secret encryption** (ChaCha20-Poly1305 + `secrets.key`). Telemetry is forbidden. Prefer `cargo install ssh-cli --locked`. Current product line: **0.5.1** (inventory closed; russh 0.62.2; residual audit gaps closed; wire schema v3).
 
 - Read this document in [Portuguese (pt-BR)](llms.pt-BR.txt).
 - Expanded index: [llms-full.txt](llms-full.txt)
@@ -15,7 +15,7 @@ ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers throu
 - [HOW_TO_USE](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/HOW_TO_USE.md): first command in 60 seconds
 - [COOKBOOK](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/COOKBOOK.md): executable recipes for hosts and remote ops
 - [AGENTS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/AGENTS.md): agent economics plus JSON contract
-- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.md): upgrade path from 0.3.3 to **0.5.0**
+- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.md): upgrade path from 0.3.3 to **0.5.1**
 - [INTEGRATIONS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/INTEGRATIONS.md): agent and IDE catalog
 - [CHANGELOG](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.md): release history
 - [CONTRIBUTING](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CONTRIBUTING.md): contribution workflow
@@ -31,11 +31,12 @@ ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers throu
 - `exec` runs one-shot remote command
 - `sudo-exec` elevates with safe `sh -c` packing
 - `su-exec` elevates with one-shot `su -`
-- `scp upload|download` transfers **regular files only** (no `-r` / no SFTP; crates.io **0.3.9** SCP wire was broken — use **0.4.1**); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → contract `docs/schemas/scp-transfer.schema.json` with required `event: "scp-transfer"`; download uses `.ssh-cli.partial` then rename; preserve mtime/mode; upload streams 32 KiB
-- `tunnel` opens bounded local port forward with required `--timeout-ms`; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`; optional `--json` emits `tunnel_listening` after bind; post-bind deadline exits **0** after listening (pre-bind timeout still **74**)
+- `scp upload|download` transfers **regular files only** (no `-r` / no SFTP; crates.io **0.3.9** SCP wire was broken — use **0.5.1+**); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → contract `docs/schemas/scp-transfer.schema.json` with required `event: "scp-transfer"`; download uses `.ssh-cli.partial` then rename; preserve mtime/mode; upload streams 32 KiB; missing remote → `file not found: <path>` exit **66**
+- `tunnel` opens bounded local port forward with required `--timeout-ms`; optional `--bind` (default `127.0.0.1`); auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`; optional `--json` emits `tunnel_listening` after bind; post-bind deadline exits **0** after listening (pre-bind timeout still **74**)
 - `health-check [--timeout]` probes connectivity and latency; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`
-- `vps export` redacted: empty password is `""`, never an `sshcli-enc:` blob of empty
-- `secrets status|init|reencrypt` manages master-key and at-rest encryption (never prints key)
+- `vps export` **TOML by default** (TTY and pipe); JSON agent envelope only with `--json`; redacted: empty password is `""`, never an `sshcli-enc:` blob of empty; `--include-secrets` to pipe/non-TTY needs `-o`/`--output` or `--i-understand-secrets-on-stdout`
+- `vps import` accepts TOML (EN keys + PT aliases) **or** JSON `vps-export` envelopes; redacted skeletons need `--allow-incomplete`; bad TOML → exit **65**
+- `secrets status|init|reencrypt` manages master-key and at-rest encryption (never prints key); `--json` → `secrets-init` / `secrets-reencrypt` schemas; auto-create emits `secrets-key-auto-created`; flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`
 - `completions` emits shell completion scripts
 
 ## Defaults and Limits
@@ -43,19 +44,19 @@ ssh-cli is a memory-safe Rust binary that lets LLMs operate remote servers throu
 - Default timeout is 60000 ms
 - Default max_command_chars is 1000
 - Default max_output_chars is 100000
-- Schema version for new hosts is 2
+- Schema version for new hosts is **3** (dual-read EN serialize + legacy PT aliases)
 - Default tracing filter is **error**; `RUST_LOG` overrides; `-v` enables debug
 - Empty password fields are JSON `null` on key-only hosts (`vps list` / `show`); non-empty secrets mask as `"***"`
 - `health-check` accepts `--timeout <ms>` plus auth flags above
-- Secrets at rest: **encrypted by default** (auto `secrets.key`); opt-out `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` for tests only
+- Secrets at rest: **encrypted by default** (auto `secrets.key`); prefer CLI flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` over env; opt-out for tests only
 - Redacted export: empty secrets serialize as empty strings, never `sshcli-enc:` ciphertext of empty
 - Telemetry is always false
-- Install: always prefer `--locked`
+- Install: always prefer `--locked`; product line **0.5.1+**
 
 ## Security rules for agents
 - Prefer `--password-stdin` / `--key` over argv passwords
 - Never log host passwords, master-key, or decrypted secrets
-- On auth failure try `--key`, `--password-stdin`, `--key-passphrase-stdin`
+- On auth failure try `--key`, `--password-stdin`, `--key-passphrase-stdin` (auth reject → exit **77**)
 - Review TOFU host-key errors before `--replace-host-key`
 - Parse stdout only; default stderr is silent at tracing level error
 

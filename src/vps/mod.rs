@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! VPS record CRUD and persistence (XDG + atomic TOML + flock).
 //!
-//! ZERO file `.env` em runtime. Schema v2 com auth password/key.
+//! No `.env` at runtime. Schema v3 English wire (dual-read PT legacy).
 
 pub mod model;
 
@@ -25,7 +25,7 @@ pub struct ConfigFile {
     /// File schema version.
     #[serde(default)]
     pub schema_version: u32,
-    /// Mapa de VPSs por name.
+    /// Host map keyed by VPS name.
     #[serde(default)]
     pub hosts: BTreeMap<String, VpsRecord>,
 }
@@ -116,7 +116,7 @@ pub fn load(path: &PathBuf) -> SshCliResult<ConfigFile> {
 
 /// Writes bytes to `path` atomically (tempfile + fsync + rename + 0o600).
 ///
-/// Usado por `save` e `export` (GAP-007 residual no export).
+/// Used by `save` and `export -o` (atomwrite rule).
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> SshCliResult<()> {
     if let Some(parent_dir) = path.parent() {
         std::fs::create_dir_all(parent_dir)?;
@@ -304,7 +304,7 @@ fn validate_command_length(command: &str, max_command_chars: usize) -> SshCliRes
         });
     }
     if command.trim().is_empty() {
-        return Err(SshCliError::InvalidArgument("comando vazio".to_string()));
+        return Err(SshCliError::InvalidArgument("empty command".to_string()));
     }
     Ok(())
 }
@@ -379,6 +379,12 @@ pub async fn run_vps_command(
                 .as_deref()
                 .map(parse_char_limit)
                 .unwrap_or(model::DEFAULT_MAX_OUTPUT_CHARS);
+            // GAP-AUD-009: timeout is milliseconds; warn agents that use "5" meaning seconds.
+            if timeout > 0 && timeout < 1000 {
+                eprintln!(
+                    "warning: --timeout {timeout} is only {timeout}ms (< 1s); did you mean seconds? Use e.g. --timeout 5000 for 5s"
+                );
+            }
             let registro = VpsRecord::new(
                 name.clone(),
                 host,
@@ -399,7 +405,13 @@ pub async fn run_vps_command(
             file.hosts.insert(name.clone(), registro);
             file.schema_version = model::CURRENT_SCHEMA_VERSION;
             save(&path, &file)?;
-            crate::output::print_success(&crate::i18n::t(crate::i18n::Message::VpsAdded { name: name.clone() }));
+            emit_auto_key_if_needed(format == OutputFormat::Json)?;
+            crate::output::emit_success(
+                "vps-added",
+                serde_json::json!({ "name": name }),
+                &crate::i18n::t(crate::i18n::Message::VpsAdded { name: name.clone() }),
+                format == OutputFormat::Json,
+            )?;
             if check {
                 run_health_check(
                     Some(&name),
@@ -433,7 +445,12 @@ pub async fn run_vps_command(
             save(&path, &file)?;
             // GAP-SSH-STATE-001: clear orphan active marker.
             clear_active_if_name(&path, &name)?;
-            crate::output::print_success(&crate::i18n::t(crate::i18n::Message::VpsRemoved { name: name.clone() }));
+            crate::output::emit_success(
+                "vps-removed",
+                serde_json::json!({ "name": name }),
+                &crate::i18n::t(crate::i18n::Message::VpsRemoved { name: name.clone() }),
+                format == OutputFormat::Json,
+            )?;
         }
         VpsAction::Edit {
             name,
@@ -504,7 +521,12 @@ pub async fn run_vps_command(
             }
             registro.validate().map_err(SshCliError::InvalidArgument)?;
             save(&path, &file)?;
-            crate::output::print_success(&crate::i18n::t(crate::i18n::Message::VpsEdited { name: name.clone() }));
+            crate::output::emit_success(
+                "vps-edited",
+                serde_json::json!({ "name": name }),
+                &crate::i18n::t(crate::i18n::Message::VpsEdited { name: name.clone() }),
+                format == OutputFormat::Json,
+            )?;
         }
         VpsAction::Show { name, json } => {
             let file = load(&path)?;
@@ -528,20 +550,23 @@ pub async fn run_vps_command(
             include_secrets,
             output,
             json,
+            i_understand_secrets_on_stdout,
         } => {
-            // GAP-SSH-UX-001: flag local --json ou --output-format json global.
+            // GAP-AUD-001/022: export body is TOML unless local `--json` (not non-TTY global).
             run_export(
                 &path,
                 include_secrets,
                 output.as_deref(),
-                use_json(json, format),
+                json,
+                i_understand_secrets_on_stdout,
+                format,
             )?;
         }
         VpsAction::Import {
             file,
             allow_incomplete,
         } => {
-            run_import(&path, &file, allow_incomplete)?;
+            run_import(&path, &file, allow_incomplete, format)?;
         }
     }
     Ok(())
@@ -641,25 +666,41 @@ fn run_export(
     include_secrets: bool,
     output: Option<&str>,
     json: bool,
+    i_understand_secrets_on_stdout: bool,
+    format: OutputFormat,
 ) -> Result<()> {
+    // GAP-AUD-011: refuse plaintext secrets on non-file stdout without explicit ack.
+    if include_secrets && output.is_none() && !i_understand_secrets_on_stdout {
+        let stdout_is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+        if !stdout_is_tty {
+            return Err(SshCliError::InvalidArgument(
+                "refusing --include-secrets to a pipe/non-TTY stdout; \
+                 use `--output <file>` (mode 0o600) or pass `--i-understand-secrets-on-stdout`"
+                    .into(),
+            )
+            .into());
+        }
+    }
+
     let file = load(path)?;
     let mut export = ConfigFile {
-        schema_version: file.schema_version,
+        schema_version: model::CURRENT_SCHEMA_VERSION,
         hosts: BTreeMap::new(),
     };
     for (k, mut v) in file.hosts {
         if !include_secrets {
-            // EXP-001 parity: redacted limpa secrets (nunca sshcli-enc de empty).
+            // EXP-001 parity: redacted clears secrets (never sshcli-enc of empty).
             v.password = SecretString::from(String::new());
             v.sudo_password = None;
             v.su_password = None;
             v.key_passphrase = None;
         }
+        v.schema_version = model::CURRENT_SCHEMA_VERSION;
         export.hosts.insert(k, v);
     }
 
+    // GAP-AUD-001/022: JSON body only when local `--json` is set (not global non-TTY).
     let bytes = if json {
-        // GAP-SSH-UX-001 / M-AUD-07: envelope agent-first com discriminador.
         let hosts_json = crate::output::export_hosts_to_json(&export.hosts, include_secrets);
         let v = serde_json::json!({
             "ok": true,
@@ -675,9 +716,20 @@ fn run_export(
         text.into_bytes()
     };
 
-    if let Some(path) = output {
-        write_atomic(Path::new(path), &bytes)?;
-        crate::output::print_success(&crate::i18n::t(crate::i18n::Message::ExportCompleted { path: path.to_string() }));
+    if let Some(out_path) = output {
+        write_atomic(Path::new(out_path), &bytes)?;
+        crate::output::emit_success(
+            "vps-export",
+            serde_json::json!({
+                "path": out_path,
+                "include_secrets": include_secrets,
+                "format": if json { "json" } else { "toml" },
+            }),
+            &crate::i18n::t(crate::i18n::Message::ExportCompleted {
+                path: out_path.to_string(),
+            }),
+            format == OutputFormat::Json,
+        )?;
     } else {
         // TOML/JSON body to stdout (agent-first: single payload).
         use std::io::Write;
@@ -690,16 +742,129 @@ fn run_export(
     Ok(())
 }
 
-fn run_import(path: &PathBuf, file: &Path, allow_incomplete: bool) -> Result<()> {
-    let text = std::fs::read_to_string(file)?;
-    let imported: ConfigFile = toml::from_str(&text)?;
+/// Parses import source: TOML wire or JSON `vps-export` envelope / hosts map.
+fn parse_import_payload(text: &str) -> SshCliResult<ConfigFile> {
+    let trimmed = text.trim_start();
+    if trimmed.starts_with('{') {
+        parse_import_json(trimmed)
+    } else {
+        toml::from_str(text).map_err(SshCliError::TomlDe)
+    }
+}
+
+fn parse_import_json(text: &str) -> SshCliResult<ConfigFile> {
+    let v: serde_json::Value = serde_json::from_str(text).map_err(SshCliError::Json)?;
+    // Envelope: { event, hosts: { name: {…} } } or bare { hosts: … }
+    let hosts_val = v.get("hosts").cloned().ok_or_else(|| {
+        SshCliError::InvalidArgument(
+            "JSON import requires a top-level `hosts` object (vps-export envelope or bare map)"
+                .into(),
+        )
+    })?;
+    let obj = hosts_val.as_object().ok_or_else(|| {
+        SshCliError::InvalidArgument("JSON import `hosts` must be an object map".into())
+    })?;
+    let mut hosts = BTreeMap::new();
+    for (key, entry) in obj {
+        let rec = vps_record_from_export_json(key, entry)?;
+        hosts.insert(key.clone(), rec);
+    }
+    let schema_version = v
+        .get("schema_version")
+        .and_then(|x| x.as_u64())
+        .map(|n| n as u32)
+        .unwrap_or(model::CURRENT_SCHEMA_VERSION);
+    Ok(ConfigFile {
+        schema_version,
+        hosts,
+    })
+}
+
+/// Builds a [`VpsRecord`] from a `vps-export` JSON host entry (`user` alias for username).
+fn vps_record_from_export_json(key: &str, entry: &serde_json::Value) -> SshCliResult<VpsRecord> {
+    let str_field = |names: &[&str]| -> Option<String> {
+        for n in names {
+            if let Some(s) = entry.get(*n).and_then(|x| x.as_str()) {
+                return Some(s.to_string());
+            }
+        }
+        None
+    };
+    let name = str_field(&["name", "nome"]).unwrap_or_else(|| key.to_string());
+    let host = str_field(&["host"]).unwrap_or_default();
+    let port = entry
+        .get("port")
+        .or_else(|| entry.get("porta"))
+        .and_then(|x| x.as_u64())
+        .unwrap_or(22) as u16;
+    let username = str_field(&["username", "user", "usuario"]).unwrap_or_default();
+    let password = SecretString::from(str_field(&["password", "senha"]).unwrap_or_default());
+    let key_path = str_field(&["key_path"]);
+    let key_passphrase = str_field(&["key_passphrase"]).map(SecretString::from);
+    let timeout_ms = entry
+        .get("timeout_ms")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(model::DEFAULT_TIMEOUT_MS);
+    let max_command_chars = entry
+        .get("max_command_chars")
+        .and_then(|x| x.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(model::DEFAULT_MAX_COMMAND_CHARS);
+    let max_output_chars = entry
+        .get("max_output_chars")
+        .or_else(|| entry.get("max_chars"))
+        .and_then(|x| x.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(model::DEFAULT_MAX_OUTPUT_CHARS);
+    let sudo_password = str_field(&["sudo_password", "senha_sudo"]).map(SecretString::from);
+    let su_password = str_field(&["su_password", "senha_su"]).map(SecretString::from);
+    let disable_sudo = entry
+        .get("disable_sudo")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let added_at = str_field(&["added_at", "adicionado_em"])
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+    let schema_version = entry
+        .get("schema_version")
+        .and_then(|x| x.as_u64())
+        .map(|n| n as u32)
+        .unwrap_or(model::CURRENT_SCHEMA_VERSION);
+    Ok(VpsRecord {
+        name,
+        host,
+        port,
+        username,
+        password,
+        key_path,
+        key_passphrase,
+        timeout_ms,
+        max_command_chars,
+        max_output_chars,
+        sudo_password,
+        su_password,
+        disable_sudo,
+        schema_version,
+        added_at,
+    })
+}
+
+fn run_import(
+    path: &PathBuf,
+    file: &Path,
+    allow_incomplete: bool,
+    format: OutputFormat,
+) -> Result<()> {
+    let text = std::fs::read_to_string(file).map_err(SshCliError::Io)?;
+    let imported = parse_import_payload(&text)?;
     let mut current = load(path)?;
+    let mut imported_count = 0usize;
     for (k, mut v) in imported.hosts {
-        // VAL-001 no import.
+        // VAL-001 on import.
         let name = crate::paths::validate_and_normalize(&k).map_err(|e| {
             SshCliError::InvalidArgument(format!("invalid VPS name in import '{k}': {e}"))
         })?;
         v.name = name.clone();
+        v.normalize_schema();
         if let Some(ref key) = v.key_path {
             if !key.trim().is_empty() {
                 validate_key_path_exists(key)?;
@@ -708,11 +873,13 @@ fn run_import(path: &PathBuf, file: &Path, allow_incomplete: bool) -> Result<()>
         match v.validate() {
             Ok(()) => {
                 current.hosts.insert(name, v);
+                imported_count += 1;
             }
             Err(msg) if allow_incomplete => {
                 // GAP-SSH-IMP-001: incomplete skeleton allowed.
                 tracing::warn!(host = %name, %msg, "import incomplete allowed");
                 current.hosts.insert(name, v);
+                imported_count += 1;
             }
             Err(msg) => {
                 // Detect redacted export.
@@ -734,7 +901,12 @@ fn run_import(path: &PathBuf, file: &Path, allow_incomplete: bool) -> Result<()>
     }
     current.schema_version = model::CURRENT_SCHEMA_VERSION;
     save(path, &current)?;
-    crate::output::print_success(&crate::i18n::t(crate::i18n::Message::ImportCompleted));
+    crate::output::emit_success(
+        "vps-import",
+        serde_json::json!({ "imported": imported_count }),
+        &crate::i18n::t(crate::i18n::Message::ImportCompleted),
+        format == OutputFormat::Json,
+    )?;
     Ok(())
 }
 
@@ -774,7 +946,11 @@ pub async fn run_secrets_command(
             }
             Ok(())
         }
-        SecretsAction::Init { keyring, force } => {
+        SecretsAction::Init {
+            keyring,
+            force,
+            json,
+        } => {
             // GAP-AUD-SEC-001: rotating the primary key without re-encrypting hosts
             // permanently loses at-rest secrets. Load/decrypt BEFORE overwriting the key,
             // then save under the new key after rotation.
@@ -786,8 +962,10 @@ pub async fn run_secrets_command(
             };
 
             let seg = crate::secrets::init_primary_key(keyring, force)?;
+            let mut reencrypted_hosts = 0usize;
 
             if let Some(file) = hosts_to_reencrypt {
+                reencrypted_hosts = file.hosts.len();
                 save(&path, &file).map_err(|e| {
                     SshCliError::Generic(format!(
                         "primary key was rotated but re-encrypting config failed: {e}; \
@@ -796,22 +974,33 @@ pub async fn run_secrets_command(
                 })?;
             }
 
-            crate::output::print_success(&crate::i18n::t(crate::i18n::Message::PrimaryKeyReady {
-                source: seg.source.as_str().to_string(),
-                key_file: seg.key_file_path.display().to_string(),
-            }));
+            let use_json = json || format == OutputFormat::Json;
+            crate::output::emit_success(
+                "secrets-init",
+                serde_json::json!({
+                    "key_source": seg.source.as_str(),
+                    "key_file": seg.key_file_path.display().to_string(),
+                    "reencrypted_hosts": reencrypted_hosts,
+                    "force": force,
+                }),
+                &crate::i18n::t(crate::i18n::Message::PrimaryKeyReady {
+                    source: seg.source.as_str().to_string(),
+                    key_file: seg.key_file_path.display().to_string(),
+                }),
+                use_json,
+            )?;
             Ok(())
         }
-        SecretsAction::Reencrypt => {
+        SecretsAction::Reencrypt { json } => {
             let path = resolve_config_path(config_override)?;
-            run_reencrypt(&path)?;
+            run_reencrypt(&path, json || format == OutputFormat::Json)?;
             Ok(())
         }
     }
 }
 
 /// Reloads and rewrites config, re-encrypting secrets with the current key.
-fn run_reencrypt(path: &PathBuf) -> Result<()> {
+fn run_reencrypt(path: &PathBuf, json: bool) -> Result<()> {
     let (key, _source) = crate::secrets::ensure_key_for_write()?;
     if key.is_none() {
         return Err(SshCliError::InvalidArgument(
@@ -827,14 +1016,37 @@ fn run_reencrypt(path: &PathBuf) -> Result<()> {
     let file = load(path)?;
     let hosts = file.hosts.len();
     save(path, &file)?;
-    crate::output::print_success(&crate::i18n::t(crate::i18n::Message::ReencryptCompleted {
-        hosts,
-    }));
+    crate::output::emit_success(
+        "secrets-reencrypt",
+        serde_json::json!({ "hosts": hosts }),
+        &crate::i18n::t(crate::i18n::Message::ReencryptCompleted { hosts }),
+        json,
+    )?;
+    Ok(())
+}
+
+fn emit_auto_key_if_needed(json: bool) -> Result<()> {
+    if crate::secrets::take_auto_key_created() {
+        let path = crate::secrets::secrets_key_path().unwrap_or_default();
+        crate::output::emit_success(
+            "secrets-key-auto-created",
+            serde_json::json!({
+                "key_file": path.display().to_string(),
+                "key_source": "xdg_file",
+            }),
+            &format!("primary-key auto-created at {}", path.display()),
+            json,
+        )?;
+    }
     Ok(())
 }
 
 /// Sets the active VPS by writing its name to `<config_dir>/active` (sibling file).
-pub async fn run_connect(name: &str, config_override: Option<PathBuf>) -> Result<()> {
+pub async fn run_connect(
+    name: &str,
+    config_override: Option<PathBuf>,
+    format: OutputFormat,
+) -> Result<()> {
     let path = resolve_config_path(config_override)?;
     let file = load(&path)?;
     if !file.hosts.contains_key(name) {
@@ -858,7 +1070,14 @@ pub async fn run_connect(name: &str, config_override: Option<PathBuf>) -> Result
     tmp.as_file().sync_data()?;
     tmp.persist(&active_file)
         .map_err(|e| SshCliError::Io(e.error))?;
-    crate::output::print_success(&crate::i18n::t(crate::i18n::Message::VpsActiveSelected { name: name.to_string() }));
+    crate::output::emit_success(
+        "vps-connected",
+        serde_json::json!({ "name": name }),
+        &crate::i18n::t(crate::i18n::Message::VpsActiveSelected {
+            name: name.to_string(),
+        }),
+        format == OutputFormat::Json,
+    )?;
     Ok(())
 }
 
@@ -1239,7 +1458,7 @@ mod tests {
             hosts: BTreeMap::new(),
         };
         let text = toml::to_string(&arq).unwrap();
-        assert!(text.contains("schema_version = 2"));
+        assert!(text.contains("schema_version = 3"));
     }
 
     #[test]

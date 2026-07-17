@@ -22,7 +22,7 @@ pub fn register_handler() -> Result<()> {
 
     ctrlc::set_handler(move || {
         flag_clone.store(true, Ordering::SeqCst);
-        tracing::debug!("sinal de cancelamento recebido via Ctrl+C");
+        tracing::debug!("cancellation signal received via Ctrl+C");
     })?;
 
     tracing::debug!("Ctrl+C handler registered successfully");

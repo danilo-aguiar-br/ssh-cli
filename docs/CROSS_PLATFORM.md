@@ -3,7 +3,7 @@
 > Escape OS-specific SSH glue with one portable Rust binary.
 
 - Read this document in [Portuguese (pt-BR)](CROSS_PLATFORM.pt-BR.md).
-- Product line: **0.5.0**.
+- Product line: 0.5.1.
 
 
 ## The Pain You Already Know
@@ -35,7 +35,7 @@
 - Same cargo install path as Linux.
 - Clear quarantine with `xattr -d com.apple.quarantine` when Gatekeeper blocks the binary.
 - Expect config under the macOS application support/project dirs resolved by `directories` 6.
-- Keyring backend for master-key is optional via `SSH_CLI_USE_KEYRING=1` after `secrets init --keyring`.
+- Keyring backend for the primary-key is optional via `--use-keyring` or `SSH_CLI_USE_KEYRING=1` after `secrets init --keyring`.
 
 
 ## Windows
@@ -66,11 +66,11 @@
 
 
 ## SCP portability
-- SCP is **regular files only** on every platform (no recursive directory transfer; no SFTP subsystem).
-- Failed or in-progress downloads use sibling path ending in **`.ssh-cli.partial`**, then rename into place (platform-agnostic atomic pattern).
+- SCP is regular files only on every platform (no recursive directory transfer; no SFTP subsystem).
+- Failed or in-progress downloads use sibling path ending in `.ssh-cli.partial`, then rename into place (platform-agnostic atomic pattern).
 - Upload streams in 32 KiB chunks on every OS (avoids full-file RAM load).
 - mtime/mode preserve follows OpenSSH-style remote `-p` / `T` line; on Unix local permissions APIs apply modes; on Windows permission bits may not match Unix octal semantics — do not assume full POSIX ACL fidelity.
-- Real-SSH matrix E10–E14 in `scripts/e2e_real_ssh.sh` is primarily validated on Linux hosts.
+- Real-SSH matrix E01–E16 (E10–E14 SCP) in `scripts/e2e_real_ssh.sh` is primarily validated on Linux hosts; prefer local `sshd` / throwaway VPS. Never run auth-failure storms on production hosts (fail2ban bans).
 
 
 ## Performance by Target
@@ -83,7 +83,8 @@
 - Linux hosts are the primary validation surface for agent subprocess runs.
 - macOS and Windows follow the same CLI contract and JSON schemas.
 - JSON contracts (`scp-transfer` event, `tunnel_listening`, auth flags for tunnel/health) are identical on every OS; see AGENTS.md and docs/schemas/.
+- Tunnel `--bind` defaults to `127.0.0.1` (loopback) on every platform; override only when intentionally exposing the listener.
 - Container agents must preserve exit codes and stdout/stderr separation.
 - Default tracing is error-level so agent stderr stays free of INFO prose unless `RUST_LOG` or `-v` is set.
 - Parse machine contracts from stdout only; treat stderr tracing as non-contract logs; JSON error envelopes use stderr when JSON mode is active.
-- Real SSH E2E helpers live in `scripts/e2e_real_ssh.sh` (anti-leak; local only; E01–E14).
+- Real SSH E2E helpers live in `scripts/e2e_real_ssh.sh` (anti-leak; local only; E01–E16; never production auth-failure storms / fail2ban policy).

@@ -122,6 +122,58 @@
       "should_trigger": true
     },
     {
+      "query": "vps export default body is TOML even on pipe non-TTY use --json only for event vps-export",
+      "should_trigger": true
+    },
+    {
+      "query": "import hosts from TOML EN keys PT aliases or JSON vps-export schema v3 with allow-incomplete",
+      "should_trigger": true
+    },
+    {
+      "query": "include-secrets must use --output or --i-understand-secrets-on-stdout never raw pipe",
+      "should_trigger": true
+    },
+    {
+      "query": "secrets init --json secrets-reencrypt and flags --allow-plaintext-secrets --secrets-key-file --use-keyring",
+      "should_trigger": true
+    },
+    {
+      "query": "tunnel --bind default 127.0.0.1 never expose 0.0.0.0 without security decision",
+      "should_trigger": true
+    },
+    {
+      "query": "scp remote missing exit 66 file not found path invalid import TOML exit 65 auth exit 77",
+      "should_trigger": true
+    },
+    {
+      "query": "CRUD json events vps-added vps-edited vps-removed vps-connected vps-import emit_success",
+      "should_trigger": true
+    },
+    {
+      "query": "empty remote command fails with message empty command and exit 64",
+      "should_trigger": true
+    },
+    {
+      "query": "timeout under 1000 ms emits stderr warning unit is milliseconds not seconds",
+      "should_trigger": true
+    },
+    {
+      "query": "password-like values on argv emit stderr warning prefer --*-stdin",
+      "should_trigger": true
+    },
+    {
+      "query": "secrets use primary-key term not master-key; keyring still reads legacy secrets-master-key alias only",
+      "should_trigger": true
+    },
+    {
+      "query": "vps doctor --json secrets_plaintext_opt_out is boolean not string",
+      "should_trigger": true
+    },
+    {
+      "query": "import hosts without added_at still works serde default now",
+      "should_trigger": true
+    },
+    {
       "query": "write a react component that fetches weather from a public api",
       "should_trigger": false
     },

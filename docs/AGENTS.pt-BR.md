@@ -4,7 +4,7 @@
 
 - Leia este documento em [inglês](AGENTS.md).
 - Combine com [../INTEGRATIONS.pt-BR.md](../INTEGRATIONS.pt-BR.md) e [../skills/ssh-cli-pt/SKILL.md](../skills/ssh-cli-pt/SKILL.md).
-- Linha de produto: **0.5.0** (inventário Fechado; russh 0.62.2; AUD-SCP + AUD-POST EXP/TUN/CLI/IO fechados).
+- Linha de produto: 0.5.1.
 
 
 ## Por quê
@@ -30,7 +30,7 @@
 - Cifragem at-rest por padrão (ChaCha20-Poly1305 + auto `secrets.key`); gerencie com `secrets status|init|reencrypt`.
 - Force known_hosts TOFU para dificultar MITM silencioso.
 - Desabilite elevação quando o workflow deve permanecer sem privilégio.
-- PROIBIDO: logar master-key, senhas de host ou segredos decifrados.
+- PROIBIDO: logar primary-key, senhas de host ou segredos decifrados.
 
 
 ## Agentes e orquestradores compatíveis
@@ -52,22 +52,32 @@
 - OBRIGATÓRIO: cadastrar hosts com `vps add` antes de trabalho remoto repetido.
 - OBRIGATÓRIO: fornecer senha ou chave; credencial vazia é rejeitada na gravação.
 - OBRIGATÓRIO: tratar senha vazia em list/show JSON como `null` (hosts só-chave); não vazia mascara `***`.
+- OBRIGATÓRIO: comando remoto vazio falha com mensagem técnica `empty command` (sempre em inglês) e exit de uso de domínio 64.
 - OBRIGATÓRIO: passar `--timeout-ms` em toda invocação de `tunnel`.
 - OBRIGATÓRIO: tratar `scp` como **somente arquivos regulares** (sem diretórios, sem `-r`, sem subsistema SFTP).
-- OBRIGATÓRIO: nunca depender do crates.io **0.3.9** para SCP; o wire estava quebrado — exija **0.5.0+**.
+- OBRIGATÓRIO: nunca depender do crates.io 0.3.9 para SCP; o wire estava quebrado — exija 0.5.1+.
 - OBRIGATÓRIO: parsear sucesso SCP com `docs/schemas/scp-transfer.schema.json` (`ok`, `event` = `"scp-transfer"`, `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`) no **stdout**.
-- OBRIGATÓRIO: em `tunnel --json`, aguardar um objeto stdout com `event: "tunnel_listening"` (`docs/schemas/tunnel-listening.schema.json`) antes de usar a porta local; o processo permanece vivo até timeout ou sinal; após `tunnel_listening`, o deadline pós-bind sai com exit **0** (TUN-002); timeout pré-bind permanece **74**.
-- PERMITIDO: passar em `tunnel` as flags de auth `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` (paridade com exec/scp, CLI-005).
-- PERMITIDO: passar `health-check --timeout <ms>` quando o timeout padrão do host for longo ou curto demais.
-- PERMITIDO: passar em `health-check` as flags de auth `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` (CLI-006).
+- OBRIGATÓRIO: arquivo local/remoto ausente no SCP sai com exit 66 e mensagem `file not found: <path>` (path canônico/normalizado; sem prefixos `SCP:` empilhados).
+- OBRIGATÓRIO: corpo padrão de `vps export` é TOML mesmo em pipe/non-TTY; envelope JSON de agente só com `vps export --json` → `event: "vps-export"` (JSON auto non-TTY **não** se aplica ao export).
 - OBRIGATÓRIO: tratar `vps export` redacted como sem segredos vivos; secret vazio serializa como `""` e nunca blob `sshcli-enc:` (EXP-001).
+- OBRIGATÓRIO: `--include-secrets` exige `-o`/`--output` ou `--i-understand-secrets-on-stdout`.
+- OBRIGATÓRIO: `vps import` aceita TOML (chaves EN + aliases PT no load) ou JSON `vps-export`; use `--allow-incomplete` para hosts redacted/skeleton.
+- OBRIGATÓRIO: `added_at` / `adicionado_em` são opcionais no import (serde usa o instante atual quando omitidos).
+- OBRIGATÓRIO: wire format schema v3 dual-read — serializa chaves EN; load ainda aceita aliases PT (`nome`/`porta`/`usuario`/`senha`/…).
+- OBRIGATÓRIO: preferir flags de secrets `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` a variáveis de ambiente; preferir o termo primary-key; o keyring ainda pode aceitar o alias legado `secrets-master-key` na leitura.
+- OBRIGATÓRIO: `secrets init --json` / `secrets reencrypt --json` emitem `secrets-init` / `secrets-reencrypt` (`docs/schemas/secrets-init.schema.json`, `docs/schemas/secrets-reencrypt.schema.json`); chave auto pode emitir `secrets-key-auto-created`. Catálogo: [docs/schemas/README.md](schemas/README.md).
+- OBRIGATÓRIO: em `tunnel --json`, aguardar um objeto stdout com `event: "tunnel_listening"` (`docs/schemas/tunnel-listening.schema.json`) antes de usar a porta local; o processo permanece vivo até timeout ou sinal; após `tunnel_listening`, o deadline pós-bind sai com exit 0 (TUN-002); timeout pré-bind permanece 74.
+- OBRIGATÓRIO: tunnel `--bind` tem padrão `127.0.0.1` (loopback).
+- PERMITIDO: passar em `tunnel` / `health-check` as flags de auth `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` (paridade com exec/scp, CLI-005/006).
+- PERMITIDO: passar `health-check --timeout <ms>` quando o timeout padrão do host for longo ou curto demais.
+- OBRIGATÓRIO: valores de timeout abaixo de 1000 ms e valores de senha em argv emitem warn em stderr — não parsear essas linhas como envelope JSON de erro.
 - OBRIGATÓRIO: preferir `--password-stdin` / `--key` a segredos em argv.
 - OBRIGATÓRIO: instalar com `cargo install ssh-cli --locked` (ou path com pins).
 - PROIBIDO: assumir conexão SSH longa entre runs de processo.
 - PROIBIDO: reintroduzir packaging de daemon de longa duração neste repositório.
 - PROIBIDO: habilitar ou emitir telemetria de produto.
 - PROIBIDO: retry cego em exit 64, 65, 66 ou 77.
-- PROIBIDO: imprimir ou armazenar material de master-key dos comandos `secrets`.
+- PROIBIDO: imprimir ou armazenar material de primary-key dos comandos `secrets`.
 - PROIBIDO: tratar árvores de diretório SCP ou `-r` recursivo como suportados.
 
 
@@ -81,24 +91,26 @@
 ### Operações legíveis por máquina
 - Listar hosts: `ssh-cli vps list --json` retorna array de objetos mascarados.
 - Mostrar host: `ssh-cli vps show <name> --json` retorna um objeto mascarado.
-- Doctor: `ssh-cli vps doctor --json` retorna camada, paths, schema, contagem de hosts, `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out`, telemetry false.
-- Secrets: `ssh-cli secrets status --json` retorna modo de cifragem sem material de chave.
+- Doctor: `ssh-cli vps doctor --json` retorna camada, paths, schema, contagem de hosts, `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out` (booleano JSON), telemetry false.
+- Secrets: `ssh-cli secrets status --json` retorna modo de cifragem sem material de chave; `secrets init --json` → `event: "secrets-init"`; `secrets reencrypt --json` → `event: "secrets-reencrypt"`.
+- Eventos de sucesso CRUD quando JSON está efetivo (`--json` / `--output-format json` / JSON auto non-TTY): `vps-added`, `vps-edited`, `vps-removed`, `vps-connected`, `vps-import` (e `secrets-key-auto-created` quando uma chave é auto-criada).
 - Família exec: `ssh-cli exec|sudo-exec|su-exec ... --json` retorna stdout, stderr, exit_code, flags de truncagem, duration_ms.
 - Health: `ssh-cli health-check [--timeout <ms>] [--password-stdin|--key|--key-passphrase[-stdin]] --json` retorna name, status, latency_ms.
-- SCP: `ssh-cli scp upload|download <vps> <local> <remote> --json` retorna sucesso de transferência no stdout (`scp-transfer.schema.json` com `event: "scp-transfer"`); falhas usam envelope de erro em stderr.
-- Fatos operacionais SCP: upload faz stream de 32 KiB; download grava `{path}.ssh-cli.partial` e renomeia; mtime/mode preservados nos dois sentidos.
-- Tunnel: `ssh-cli tunnel <vps> <porta_local> <host_remoto> <porta_remota> --timeout-ms <ms> [--password-stdin|--key|--key-passphrase[-stdin]] --json` emite `tunnel_listening` no stdout após o bind; deadline pós-bind → exit **0**; timeout pré-bind permanece **74**.
-- Export: `ssh-cli vps export` redacted limpa segredos; vazios como `""` (nunca `sshcli-enc:`).
+- SCP: `ssh-cli scp upload|download <vps> <local> <remote> --json` retorna sucesso de transferência no stdout (`scp-transfer.schema.json` com `event: "scp-transfer"`); falhas usam envelope de erro em stderr; arquivo ausente → exit 66 `file not found: <path>` (path canônico/normalizado).
+- Fatos operacionais SCP: exija 0.5.1+; upload faz stream de 32 KiB; download grava `{path}.ssh-cli.partial` e renomeia; mtime/mode preservados nos dois sentidos.
+- Tunnel: `ssh-cli tunnel <vps> <porta_local> <host_remoto> <porta_remota> --timeout-ms <ms> [--bind 127.0.0.1] [--password-stdin|--key|--key-passphrase[-stdin]] --json` emite `tunnel_listening` no stdout após o bind; `--bind` padrão `127.0.0.1`; deadline pós-bind → exit 0; timeout pré-bind permanece 74.
+- Export: corpo padrão de `ssh-cli vps export` é TOML (mesmo em pipes); vazios como `""` (nunca `sshcli-enc:`). Use `vps export --json` para envelope de agente `event: "vps-export"`. `--include-secrets` exige `-o` ou `--i-understand-secrets-on-stdout`.
+- Import: `ssh-cli vps import --file <path> [--allow-incomplete]` aceita TOML (serialize EN / aliases PT no load) ou JSON `vps-export`; `added_at` / `adicionado_em` opcionais (padrão: agora).
 - Campos de senha vazios serializam como JSON `null`; segredos não vazios mascaram como `***`.
-- Valide payloads contra schemas em `docs/schemas/`.
+- Valide payloads contra schemas em `docs/schemas/`; índice: [docs/schemas/README.md](schemas/README.md).
 
 
 ## Roteamento de exit codes
 - Exit 0 significa sucesso.
 - Exit 1 significa falha genérica de runtime; inspecione stderr.
-- Exit 64 significa erro de uso/argumento; corrija argv, não faça retry.
-- Exit 65 significa erro de parse/dados; corrija o payload.
-- Exit 66 significa VPS ou arquivo ausente; cadastre ou corrija o nome.
+- Exit 64 significa erro de uso/argumento (incluindo comando vazio); corrija argv, não faça retry.
+- Exit 65 (`TomlDe` / JSON / schema) significa erro de parse/dados; corrija o payload.
+- Exit 66 significa VPS ou arquivo ausente (`file not found: <path>` no SCP); cadastre ou corrija o nome/path.
 - Exit 73 significa falha de escrita de config; cheque permissões e disco.
 - Exit 74 significa falha de IO/conexão SSH; retry de rede pode ajudar.
 - Exit 77 significa falha de auth ou política de host-key; tente `--key` / `--password-stdin` / passphrase stdin; sem retry cego.

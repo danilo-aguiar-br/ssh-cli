@@ -385,7 +385,7 @@ fn secrets_init_force_reencrypts_hosts() {
         .args(["secrets", "init", "--force"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("primary-key ready").or(predicate::str::contains("primary-key pronta")));
+        .stdout(predicate::str::contains("primary-key ready").or(predicate::str::contains("primary-key pronta")).or(predicate::str::contains("secrets-init")));
 
     // Config remains readable (not stuck on wrong key).
     cmd(&tmp)

@@ -22,7 +22,7 @@ static COR_CACHE: OnceLock<ColorChoice> = OnceLock::new();
 pub fn initialize(no_color: bool) -> Result<()> {
     let choice = determine_color(no_color);
     let _ = COR_CACHE.set(choice);
-    tracing::debug!("configuração de cor do terminal: {:?}", choice);
+    tracing::debug!("terminal color configuration: {:?}", choice);
     Ok(())
 }
 

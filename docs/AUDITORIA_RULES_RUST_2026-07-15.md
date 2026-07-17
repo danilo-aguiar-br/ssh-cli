@@ -1,5 +1,7 @@
 # Auditoria Rules Rust (GraphRAG) — ssh-cli 0.4.2
 
+> **Disclaimer (histórico):** auditoria de 2026-07-15 na era **0.4.2**. Para a linha de produto atual, use `gaps.md` (**0.5.1**) e a documentação vigente (`docs/TESTING.md`, `docs/RELEASE_CHECKLIST.md`, etc.). **Não** use este arquivo como checklist de publish.
+
 **Data:** 2026-07-15  
 **Escopo:** todos os `src/**/*.rs`, `tests/**/*.rs`, `build.rs`, `Cargo.toml`  
 **Fontes de regra:** `docs_rules/rules_rust_codigo_ingles_internacionalizacao.md` + checklist crates.io  
@@ -93,7 +95,10 @@
 
 - [x] Auditoria completa + tools mandatórios  
 - [x] Reversão de migração bulk corrompida  
-- [x] PA-EN-01 errors module EN + thiserror EN (shipped in tree)\n- [x] build.rs + Cargo.toml comments EN\n- [x] call sites error variants EN\n- [ ] PA-EN-02…10 remaining identifiers/docs (see gaps.md)
+- [x] PA-EN-01 errors module EN + thiserror EN (shipped in tree)
+- [x] build.rs + Cargo.toml comments EN
+- [x] call sites error variants EN
+- [ ] PA-EN-02…10 remaining identifiers/docs (see gaps.md)
 
 ## Referências
 

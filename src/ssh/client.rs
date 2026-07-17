@@ -494,14 +494,15 @@ mod real {
         std::path::PathBuf::from(p)
     }
 
-    /// GAP-SSH-IO-010: classifica mensagem de err SCP em missing-file (66) vs channel (74).
+    /// GAP-SSH-IO-010 / GAP-AUD-025: classify SCP err → missing-file (66) vs channel (74).
     ///
-    /// OpenSSH emite tipicamente `scp: PATH: No such file or directory` no status `1`/`2`
-    /// ou em stderr. Permission denied / protocol errors permanecem `ChannelFailed`.
+    /// OpenSSH typically emits `scp: PATH: No such file or directory` on status `1`/`2`.
+    /// Missing-file messages are normalized to a clean path for the Display wrapper
+    /// `file not found: {path}` (no stacked `SCP:` / `scp:` prefixes).
     fn classify_scp_message(msg: &str) -> SshCliError {
         let lower = msg.to_ascii_lowercase();
         if lower.contains("no such file") || lower.contains("not found") {
-            SshCliError::FileNotFound(msg.to_string())
+            SshCliError::FileNotFound(normalize_scp_missing_path(msg))
         } else if msg.is_empty() {
             SshCliError::ChannelFailed("SCP rejected the transfer".to_string())
         } else if msg.starts_with("SCP:") || msg.starts_with("SCP ") {
@@ -509,6 +510,24 @@ mod real {
         } else {
             SshCliError::ChannelFailed(format!("SCP: {msg}"))
         }
+    }
+
+    /// Strips `SCP:` / `scp:` wrappers and trailing OS phrases → remote path or cleaned msg.
+    fn normalize_scp_missing_path(msg: &str) -> String {
+        let mut s = msg.trim().to_string();
+        for prefix in ["SCP: ", "SCP:", "scp: ", "scp:"] {
+            if let Some(rest) = s.strip_prefix(prefix) {
+                s = rest.trim().to_string();
+            }
+        }
+        // Pattern: `/path: No such file or directory` or `path: not found`
+        let lower = s.to_ascii_lowercase();
+        for needle in [": no such file or directory", ": not found"] {
+            if let Some(idx) = lower.find(needle) {
+                return s[..idx].trim().trim_matches('"').to_string();
+            }
+        }
+        s
     }
 
     /// Interpreta o primeiro byte de status SCP: `0`=OK, `1`/`2`=err (+ mensagem).
@@ -731,7 +750,7 @@ mod real {
                 }
 
                 if !autenticado {
-                    tracing::warn!(host = %host, username = %username, "autenticação SSH rejeitada");
+                    tracing::warn!(host = %host, username = %username, "SSH authentication rejected");
                     return Err(SshCliError::AuthenticationFailed);
                 }
 

@@ -65,6 +65,36 @@ pub fn print_success(message: &str) {
     println!("{message}");
 }
 
+/// Agent-first success emitter (GAP-AUD-003/008).
+///
+/// When `json` is true, writes a single stdout envelope:
+/// `{ "ok": true, "event": <event>, …fields }`.
+/// Otherwise prints the human `message` (respecting `--quiet`).
+///
+/// # Errors
+/// Returns I/O errors from writing stdout.
+pub fn emit_success(
+    event: &str,
+    fields: serde_json::Value,
+    human: &str,
+    json: bool,
+) -> io::Result<()> {
+    if json {
+        let mut v = match fields {
+            serde_json::Value::Object(map) => serde_json::Value::Object(map),
+            other => json!({ "data": other }),
+        };
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert("ok".into(), json!(true));
+            obj.insert("event".into(), json!(event));
+        }
+        print_json_value(&v)?;
+    } else {
+        print_success(human);
+    }
+    Ok(())
+}
+
 /// Human banner (tunnel etc.): Text+TTY+!quiet+!JSON errors only (GAP-SSH-IO-006).
 ///
 /// In pipes/agents, progress goes to `tracing` (stderr), never stdout.
@@ -491,7 +521,7 @@ mod tests {
         assert_eq!(json["timeout_ms"], 5000);
         assert_eq!(json["max_command_chars"], 1000);
         assert_eq!(json["max_output_chars"], 1000);
-        assert_eq!(json["schema_version"], 2);
+        assert_eq!(json["schema_version"], 3);
     }
 
     #[test]

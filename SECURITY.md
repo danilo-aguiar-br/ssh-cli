@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 0.5.x | Supported | Yes, **current line** |
 | 0.4.x | Supported | Critical / high when feasible; prefer upgrade to **0.5.x** |
-| 0.3.x | Limited | Critical only when feasible; crates.io **0.3.9** SCP wire was inoperant — upgrade to **0.5.0+** for transfers |
+| 0.3.x | Limited | Critical only when feasible; crates.io **0.3.9** SCP wire was inoperant — upgrade to **0.5.1+** for transfers |
 | 0.2.x | Limited | Critical fixes only when feasible |
 | 0.1.x | Unsupported | No patches |
 | < 0.1 | Unsupported | No patches |
@@ -59,12 +59,15 @@
 
 ## Best Practices for Users
 - Prefer private key authentication over password authentication when the host allows it.
-- Prefer `--password-stdin`, `--sudo-password-stdin`, and `--su-password-stdin` over argv secrets.
+- Prefer `--password-stdin`, `--sudo-password-stdin`, and `--su-password-stdin` over argv secrets (password-on-argv emits a stderr warning on **0.5.1+**).
+- Prefer stdin password flags for agent runs; avoid embedding live secrets in shell history.
 - **Default at-rest encryption** (ChaCha20-Poly1305): on first secret write, auto-creates `secrets.key` (0o600) next to `config.toml` unless you opt out.
-- Key resolution order: `SSH_CLI_SECRETS_KEY` → `SSH_CLI_SECRETS_KEY_FILE` → keyring (`SSH_CLI_USE_KEYRING=1`) → XDG `secrets.key`.
-- CLI: `ssh-cli secrets status|init|reencrypt` (never prints the master key).
-- Opt-out for tests only: `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
+- Prefer CLI flags over env for secrets control: `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` (env layers still work when flags are unset).
+- Key resolution order: CLI flags → `SSH_CLI_SECRETS_KEY` → `SSH_CLI_SECRETS_KEY_FILE` → keyring (`SSH_CLI_USE_KEYRING=1`) → XDG `secrets.key`.
+- CLI: `ssh-cli secrets status|init|reencrypt` (never prints the master key); `--json` emits `secrets-init` / `secrets-reencrypt` without key material.
+- Opt-out for tests only: `--allow-plaintext-secrets` or `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
 - **Never** log the master key, passwords, or decrypted secrets.
+- `--include-secrets` to pipe/non-TTY requires `-o`/`--output` or `--i-understand-secrets-on-stdout` (guard against accidental secret dump on stdout).
 - Keep `config.toml` mode `0600` and restrict backup locations.
 - Review TOFU host-key change errors before using `--replace-host-key`.
 - Never commit host registries that include live secrets.
@@ -74,6 +77,6 @@
 - Disable elevation with `--disable-sudo` when a workflow must not escalate.
 - Run one-shot commands only; never expect a long-lived SSH daemon from this CLI.
 - Install with `--locked` to avoid accidental crypto re-resolve drift.
-- Prefer current **0.5.0+** for the supply-chain floor (russh 0.62.2) and for a working SCP wire (crates.io **0.3.9** SCP was inoperant).
+- Prefer current **0.5.1+** for the supply-chain floor (russh 0.62.2) and for a working SCP wire (crates.io **0.3.9** SCP was inoperant).
 - Historical honesty: **0.4.1** fixed empty-secret redacted export (never `sshcli-enc:` of empty) and tunnel post-bind exit 0.
 - Default redacted `vps export` clears secrets; empty secrets must serialize as empty strings, never encrypted `sshcli-enc:` blobs of empty values (0.4.2 EXP-001).

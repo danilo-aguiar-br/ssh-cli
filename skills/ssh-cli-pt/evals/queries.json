@@ -122,6 +122,58 @@
       "should_trigger": true
     },
     {
+      "query": "vps export corpo padrão TOML mesmo em pipe non-TTY usar --json só para event vps-export",
+      "should_trigger": true
+    },
+    {
+      "query": "importar hosts TOML chaves EN aliases PT ou JSON vps-export schema v3 com allow-incomplete",
+      "should_trigger": true
+    },
+    {
+      "query": "include-secrets deve usar --output ou --i-understand-secrets-on-stdout nunca pipe cru",
+      "should_trigger": true
+    },
+    {
+      "query": "secrets init --json secrets-reencrypt e flags --allow-plaintext-secrets --secrets-key-file --use-keyring",
+      "should_trigger": true
+    },
+    {
+      "query": "tunnel --bind padrão 127.0.0.1 nunca expor 0.0.0.0 sem decisão de segurança",
+      "should_trigger": true
+    },
+    {
+      "query": "scp remoto ausente exit 66 file not found path import TOML inválido exit 65 auth exit 77",
+      "should_trigger": true
+    },
+    {
+      "query": "CRUD json eventos vps-added vps-edited vps-removed vps-connected vps-import emit_success",
+      "should_trigger": true
+    },
+    {
+      "query": "comando remoto vazio falha com mensagem empty command e exit 64",
+      "should_trigger": true
+    },
+    {
+      "query": "timeout abaixo de 1000 ms emite warning no stderr unidade é milliseconds não seconds",
+      "should_trigger": true
+    },
+    {
+      "query": "valores password-like em argv emitem warning no stderr preferir --*-stdin",
+      "should_trigger": true
+    },
+    {
+      "query": "secrets usam termo primary-key não master-key; keyring ainda lê alias legado secrets-master-key só na leitura",
+      "should_trigger": true
+    },
+    {
+      "query": "vps doctor --json secrets_plaintext_opt_out é boolean não string",
+      "should_trigger": true
+    },
+    {
+      "query": "importar hosts sem added_at ainda funciona serde default agora",
+      "should_trigger": true
+    },
+    {
       "query": "escrever um componente react que busca clima de uma api publica",
       "should_trigger": false
     },

@@ -1,5 +1,6 @@
 ---
 source: tests/snapshot_tests.rs
+assertion_line: 36
 expression: stdout
 ---
 ssh-cli: lightweight one-shot binary (spawn→run→exit). Multi-host XDG storage without .env. Password
@@ -48,6 +49,15 @@ Options:
 
       --replace-host-key
           Replaces a diverging host key in TOFU known_hosts
+
+      --allow-plaintext-secrets
+          Allow plaintext secrets at rest (no auto `secrets.key`). Prefer for tests only
+
+      --secrets-key-file <PATH>
+          Path to a 64-hex primary-key file (overrides env / XDG secrets.key for this one-shot)
+
+      --use-keyring
+          Prefer OS keyring for the primary key (deprecated env: SSH_CLI_USE_KEYRING)
 
   -h, --help
           Print help (see a summary with '-h')

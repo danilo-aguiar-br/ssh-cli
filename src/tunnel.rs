@@ -26,10 +26,11 @@ pub async fn run_tunnel(
     timeout_ms: u64,
     replace_host_key: bool,
     json: bool,
+    bind_addr: &str,
 ) -> Result<()> {
     if timeout_ms == 0 {
         return Err(SshCliError::InvalidArgument(
-            "tunnel exige --timeout-ms > 0 (one-shot limitado)".to_string(),
+            "tunnel requires --timeout-ms > 0 (bounded one-shot)".to_string(),
         )
         .into());
     }
@@ -66,7 +67,7 @@ pub async fn run_tunnel(
     // Banner with effective port is post-bind (TUN-003: port 0 is ephemeral).
     if !json {
         output::print_human_banner(
-            "Pressione Ctrl+C para encerrar o tunnel antes do deadline.",
+            "Press Ctrl+C to stop the tunnel before the deadline.",
         );
     }
 
@@ -87,6 +88,7 @@ pub async fn run_tunnel(
             json,
             client,
             Some(bound_flag),
+            bind_addr,
         )
         .await
     })
@@ -102,7 +104,7 @@ pub async fn run_tunnel(
             Ok(())
         }
         Err(_) => {
-            tracing::warn!(timeout_ms, "tunnel timeout antes do bind local");
+            tracing::warn!(timeout_ms, "tunnel timeout before local bind");
             Err(SshCliError::SshTimeout(timeout_ms).into())
         }
     }
@@ -119,17 +121,19 @@ pub async fn run_tunnel_with_client(
     json: bool,
     client: Box<dyn SshClientTrait>,
     bound_flag: Option<Arc<AtomicBool>>,
+    bind_addr: &str,
 ) -> Result<()> {
     let client: std::sync::Arc<dyn SshClientTrait> = std::sync::Arc::from(client);
 
-    let listener = TcpListener::bind(format!("127.0.0.1:{local_port}"))
-        .await
-        .map_err(|e| {
-            SshCliError::Generic(format!("failed to open local port {}: {}", local_port, e))
-        })?;
+    let bind_target = format!("{bind_addr}:{local_port}");
+    let listener = TcpListener::bind(&bind_target).await.map_err(|e| {
+        SshCliError::Generic(format!(
+            "failed to bind local address {bind_target}: {e}"
+        ))
+    })?;
 
     // GAP-SSH-TUN-003: port 0 (ephemeral) must report the OS-assigned real port.
-    // Agentes usam `local_port` do evento `tunnel_listening` para connect.
+    // Agents use `local_port` from the `tunnel_listening` event to connect.
     let effective_port = listener
         .local_addr()
         .map(|a| a.port())
@@ -139,7 +143,7 @@ pub async fn run_tunnel_with_client(
         flag.store(true, Ordering::SeqCst);
     }
 
-    tracing::info!(port = %effective_port, solicitada = %local_port, vps = %vps_name, "listener TCP local iniciado");
+    tracing::info!(port = %effective_port, requested = %local_port, vps = %vps_name, "local TCP listener started");
 
     // GAP-SSH-IO-008: agent receives structured confirmation that local bind is up.
     // GAP-SSH-TUN-003: always report `effective_port` (not the requested port when 0).
@@ -167,14 +171,14 @@ pub async fn run_tunnel_with_client(
         }
 
         tokio::select! {
-            resultado_accept = listener.accept() => {
-                match resultado_accept {
-                    Ok((soquete, addr)) => {
-                        tracing::debug!(endereco = %addr, "nova conexão local");
+            accept_result = listener.accept() => {
+                match accept_result {
+                    Ok((socket, addr)) => {
+                        tracing::debug!(address = %addr, "new local connection");
                         let host = remote_host.to_string();
                         let client_c = client.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = forward(soquete, client_c, &host, remote_port).await {
+                            if let Err(e) = forward(socket, client_c, &host, remote_port).await {
                                 tracing::warn!(err = %e, "tunnel forwarding failed");
                             }
                         });
@@ -186,7 +190,7 @@ pub async fn run_tunnel_with_client(
                 }
             }
             _ = tokio::time::sleep(Duration::from_millis(200)) => {
-                // polling de sinais
+                // signal polling
             }
         }
     }
@@ -236,12 +240,12 @@ mod tests {
         assert_eq!(0_u64, 0);
     }
 
-    /// GAP-SSH-TUN-003: bind em 127.0.0.1:0 deve expor port real ≠ 0.
+    /// GAP-SSH-TUN-003: bind on 127.0.0.1:0 must expose real port ≠ 0.
     #[tokio::test]
     async fn tunnel_ephemeral_bind_reports_real_port() {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
-            .expect("bind efêmero");
+            .expect("ephemeral bind");
         let port = listener.local_addr().expect("local_addr").port();
         assert_ne!(port, 0, "OS must assign port > 0 after bind :0");
         assert!(
@@ -256,11 +260,11 @@ mod tests {
         let src = include_str!("tunnel.rs");
         assert!(
             src.contains("local_addr()"),
-            "tunnel deve ler local_addr() pós-bind (TUN-003)"
+            "tunnel must read local_addr() after bind (TUN-003)"
         );
         assert!(
-            src.contains("porta_efetiva"),
-            "tunnel deve expor porta_efetiva no evento JSON"
+            src.contains("effective_port"),
+            "tunnel must expose effective_port for JSON event"
         );
     }
 

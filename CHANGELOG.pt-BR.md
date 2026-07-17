@@ -7,6 +7,39 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.5.1] - 2026-07-17
+
+### Corrigido
+- **Roundtrip export/import agent-first**: corpo default de `vps export` é **TOML** mesmo em non-TTY; JSON só com `--json`. Import aceita TOML (chaves EN+PT) e envelopes JSON `vps-export` (GAP-AUD-001/022).
+- **Wire dual-read**: deserializa EN + aliases PT legados; serializa chaves em inglês; schema **v3**; default `added_at` quando ausente (GAP-AUD-002/021). Substitui a nota de wire 0.5.0 (chaves PT só via `serde(rename)`).
+- **JSON de `secrets init` / `reencrypt`** (`event: secrets-init|secrets-reencrypt`) via `--json` ou `--output-format json` (GAP-AUD-003).
+- Erro de comando vazio é técnico em inglês (`empty command`) em qualquer locale (GAP-AUD-004).
+- Caminhos de sucesso CRUD/connect/import emitem JSON estruturado quando o formato é JSON (GAP-AUD-008).
+- Mensagem SCP remoto ausente normalizada para `file not found: <path>` (GAP-AUD-025); EC 66 mantido.
+- Erros de parse TOML no import mapeiam para sysexits **65** (`TomlDe`) (GAP-AUD-012).
+- Exit de `SshAuthentication` alinhado a **77** (GAP-AUD-020).
+- Timeouts `< 1000` ms emitem warning em stderr (GAP-AUD-009).
+- `--include-secrets` em pipe/non-TTY exige `--output` ou `--i-understand-secrets-on-stdout` (GAP-AUD-011).
+- Doctor `secrets_plaintext_opt_out` é JSON **bool** (GAP-AUD-013).
+- Hardcodes/tracing residuais em inglês técnico (GAP-AUD-005).
+
+### Adicionado
+- Flags CLI: `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` (camadas env depreciadas, ainda funcionam) (GAP-AUD-006).
+- Evento `secrets-key-auto-created` quando a primary-key é provisionada na primeira gravação (GAP-AUD-007).
+- Tunnel `--bind` (default `127.0.0.1`) (GAP-AUD-018).
+- Warning em stderr de password em argv (GAP-AUD-010).
+
+### Alterado
+- Versão **0.5.0 → 0.5.1**.
+- Tracing / identificadores residuais padronizados em inglês (GAP-AUD-005).
+- Aliases de tipo em português no módulo `erros` marcados como deprecated (GAP-AUD-017).
+
+### Notas
+- Sem publish crates.io/GitHub sem OK explícito do maintainer.
+- Contratos reais de transferência SCP de 0.5.0 §1.1 não devem regredir.
+
 ## [0.5.0] - 2026-07-15
 
 ### Corrigido
@@ -16,13 +49,12 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Nomes de VPS com whitespace interno rejeitados (GAP-AUD-VAL-001).
 
 ### Alterado
-- Semver **0.5.0** por renomeações de API em inglês. Wire TOML permanece PT via `serde(rename)`.
+- Semver **0.5.0** por renomeações de API em inglês. Wire TOML ainda usava chaves PT via `serde(rename)` nesta release (**supersedido em 0.5.1** por serialize EN + dual-read EN/PT, schema v3).
 - `secrets init` / `reencrypt` via `Message` i18n.
 
 ### Notas
 - Sem publish crates.io/GitHub sem OK explícito.
 
-## [Unreleased]
 ## [0.4.2] - 2026-07-15
 
 ### Corrigido
@@ -281,7 +313,8 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 Release inicial.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.0...v0.4.1

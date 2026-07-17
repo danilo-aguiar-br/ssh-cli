@@ -7,6 +7,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.5.1] - 2026-07-17
+
+### Fixed
+- **Import/export agent roundtrip**: `vps export` default body is **TOML** even on non-TTY; JSON only with `--json`. Import accepts TOML (EN+PT keys) and JSON `vps-export` envelopes (GAP-AUD-001/022).
+- **Wire dual-read**: deserialize EN + legacy PT aliases; serialize English keys; schema **v3**; default `added_at` when missing (GAP-AUD-002/021). Supersedes 0.5.0 wire note (PT keys via `serde(rename)` only).
+- **`secrets init` / `reencrypt` JSON** envelopes (`event: secrets-init|secrets-reencrypt`) via `--json` or `--output-format json` (GAP-AUD-003).
+- Empty command error is English technical (`empty command`) under any locale (GAP-AUD-004).
+- CRUD/connect/import success paths emit structured JSON when format is JSON (GAP-AUD-008).
+- SCP remote-missing message normalized to `file not found: <path>` (GAP-AUD-025); EC 66 retained.
+- Import TOML parse errors map to sysexits **65** (`TomlDe`) (GAP-AUD-012).
+- `SshAuthentication` exit code aligned to **77** (GAP-AUD-020).
+- Timeout values `< 1000` ms emit a stderr warning (GAP-AUD-009).
+- `--include-secrets` to pipe/non-TTY requires `--output` or `--i-understand-secrets-on-stdout` (GAP-AUD-011).
+- Doctor `secrets_plaintext_opt_out` is JSON **bool** (GAP-AUD-013).
+
+### Added
+- CLI flags: `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` (env layers deprecated, still work) (GAP-AUD-006).
+- Event `secrets-key-auto-created` when primary key is provisioned on first write (GAP-AUD-007).
+- Tunnel `--bind` (default `127.0.0.1`) (GAP-AUD-018).
+- Password-on-argv stderr warning (GAP-AUD-010).
+
+### Changed
+- Version **0.5.0 → 0.5.1**.
+- Tracing / residual identifiers standardized to English (GAP-AUD-005).
+- Portuguese type aliases in `erros` module marked deprecated (GAP-AUD-017).
+
+### Notes
+- No crates.io/GitHub publish without explicit maintainer OK.
+- SCP real transfer contracts from 0.5.0 §1.1 must not regress.
+
 ## [0.5.0] - 2026-07-15
 
 ### Fixed
@@ -16,13 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - VPS names with internal whitespace are rejected (GAP-AUD-VAL-001).
 
 ### Changed
-- Semver **0.5.0**: English renames of public/lib identifiers and residual API surface (`generate_completions`, `plaintext_allowed`, `ENC_PREFIX`, `verify_tofu`, etc.). Wire TOML keys remain Portuguese via `serde(rename)`.
+- Semver **0.5.0**: English renames of public/lib identifiers and residual API surface (`generate_completions`, `plaintext_allowed`, `ENC_PREFIX`, `verify_tofu`, etc.). Wire TOML keys were still Portuguese via `serde(rename)` in this release (**superseded in 0.5.1** by English serialize + dual-read EN/PT aliases, schema v3).
 - `secrets init` / `secrets reencrypt` success lines go through `Message` i18n.
 
 ### Notes
 - No crates.io/GitHub publish in this change set without explicit maintainer OK.
 
-## [Unreleased]
 ## [0.4.2] - 2026-07-15
 
 ### Fixed
@@ -285,7 +316,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.0...v0.4.1

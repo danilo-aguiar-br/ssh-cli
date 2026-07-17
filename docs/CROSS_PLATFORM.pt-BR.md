@@ -3,7 +3,7 @@
 > Fuja de cola SSH específica de SO com um binário Rust portátil.
 
 - Leia este documento em [inglês](CROSS_PLATFORM.md).
-- Linha de produto: **0.5.0**.
+- Linha de produto: 0.5.1.
 
 
 ## A dor que você já conhece
@@ -35,7 +35,7 @@
 - Mesmo path de install cargo que no Linux.
 - Limpe quarentena com `xattr -d com.apple.quarantine` quando o Gatekeeper bloquear o binário.
 - Espere config sob application support/project dirs macOS resolvidos por `directories` 6.
-- Backend de keyring para master-key é opcional via `SSH_CLI_USE_KEYRING=1` após `secrets init --keyring`.
+- Backend de keyring para a primary-key é opcional via `--use-keyring` ou `SSH_CLI_USE_KEYRING=1` após `secrets init --keyring`.
 
 
 ## Windows
@@ -66,11 +66,11 @@
 
 
 ## Portabilidade SCP
-- SCP é **somente arquivos regulares** em toda plataforma (sem transferência recursiva de diretório; sem subsistema SFTP).
-- Downloads com falha ou em andamento usam path irmão terminando em **`.ssh-cli.partial`**, depois rename no lugar (padrão atômico agnóstico de plataforma).
+- SCP é somente arquivos regulares em toda plataforma (sem transferência recursiva de diretório; sem subsistema SFTP).
+- Downloads com falha ou em andamento usam path irmão terminando em `.ssh-cli.partial`, depois rename no lugar (padrão atômico agnóstico de plataforma).
 - Upload faz stream em blocos de 32 KiB em todo SO (evita carregar o arquivo inteiro na RAM).
 - Preserve de mtime/mode segue estilo OpenSSH com remoto `-p` / linha `T`; em Unix APIs locais de permissão aplicam modes; no Windows bits de permissão podem não bater com octal Unix — não assuma fidelidade POSIX ACL completa.
-- Matriz real-SSH E10–E14 em `scripts/e2e_real_ssh.sh` é validada principalmente em hosts Linux.
+- Matriz real-SSH E01–E16 (E10–E14 SCP) em `scripts/e2e_real_ssh.sh` é validada principalmente em hosts Linux; prefira `sshd` local / VPS throwaway. Nunca execute tempestades de falha de autenticação em hosts de produção (banimentos fail2ban).
 
 
 ## Performance por alvo
@@ -82,8 +82,9 @@
 ## Agentes validados por plataforma
 - Hosts Linux são a superfície principal de validação para runs de subprocesso de agente.
 - macOS e Windows seguem o mesmo contrato CLI e JSON schemas.
+- Contratos JSON (`event` scp-transfer, `tunnel_listening`, flags de auth em tunnel/health) são idênticos em todo SO; veja AGENTS.pt-BR.md e docs/schemas/.
+- Tunnel `--bind` tem padrão `127.0.0.1` (loopback) em toda plataforma; sobrescreva só ao expor o listener de propósito.
 - Agentes em container devem preservar exit codes e separação stdout/stderr.
 - Tracing padrão é nível error para manter stderr do agente livre de prosa INFO salvo `RUST_LOG` ou `-v`.
 - Parseie contratos de máquina só do stdout; trate tracing em stderr como log fora de contrato; envelopes de erro JSON usam stderr quando o modo JSON está ativo.
-- Helpers de E2E SSH real ficam em `scripts/e2e_real_ssh.sh` (anti-leak; só local; E01–E14).
-- Contratos JSON (`event` scp-transfer, `tunnel_listening`, flags de auth em tunnel/health) são idênticos em todo SO; veja AGENTS.pt-BR.md e docs/schemas/.
+- Helpers de E2E SSH real ficam em `scripts/e2e_real_ssh.sh` (anti-leak; só local; E01–E16; nunca tempestades de auth em produção / política fail2ban).

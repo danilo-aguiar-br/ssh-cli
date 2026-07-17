@@ -66,6 +66,18 @@ pub struct CliArgs {
     #[arg(long, global = true)]
     pub replace_host_key: bool,
 
+    /// Allow plaintext secrets at rest (no auto `secrets.key`). Prefer for tests only.
+    #[arg(long, global = true)]
+    pub allow_plaintext_secrets: bool,
+
+    /// Path to a 64-hex primary-key file (overrides env / XDG secrets.key for this one-shot).
+    #[arg(long, global = true, value_name = "PATH")]
+    pub secrets_key_file: Option<PathBuf>,
+
+    /// Prefer OS keyring for the primary key (deprecated env: SSH_CLI_USE_KEYRING).
+    #[arg(long, global = true)]
+    pub use_keyring: bool,
+
     /// Subcommand to run.
     #[command(subcommand)]
     pub command: Command,
@@ -243,6 +255,9 @@ pub enum Command {
         /// Agent-first JSON output when the local listener is up (GAP-SSH-IO-008).
         #[arg(long)]
         json: bool,
+        /// Local bind address (default 127.0.0.1 loopback for security).
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: String,
     },
 
     /// Checks SSH connectivity to a VPS.
@@ -459,18 +474,21 @@ pub enum VpsAction {
         /// Include secrets in the export.
         #[arg(long)]
         include_secrets: bool,
-        /// Output file (stdout if omitted).
+        /// Output file (stdout if omitted). Written atomically with mode 0o600.
         #[arg(long, short)]
         output: Option<String>,
-        /// Exports agent-first JSON (default: TOML). Redacted unless `--include-secrets`.
-        /// GAP-SSH-UX-001.
+        /// Agent-first JSON envelope (`event: vps-export`). Default body is **TOML**
+        /// even on non-TTY pipes (GAP-AUD-001/022). Redacted unless `--include-secrets`.
         #[arg(long)]
         json: bool,
+        /// Acknowledge writing plaintext secrets to stdout (pipe/non-TTY). Prefer `--output`.
+        #[arg(long)]
+        i_understand_secrets_on_stdout: bool,
     },
 
-    /// Imports hosts from a TOML file.
+    /// Imports hosts from a TOML file or JSON `vps-export` envelope (EN + legacy PT keys).
     Import {
-        /// Source file.
+        /// Source file (TOML wire or JSON export envelope).
         #[arg(long)]
         file: PathBuf,
         /// Allow hosts without full auth (redacted export / skeleton) — GAP-SSH-IMP-001.
@@ -562,9 +580,16 @@ pub enum SecretsAction {
         /// Overwrites an existing key.
         #[arg(long)]
         force: bool,
+        /// JSON success envelope (`event: secrets-init`).
+        #[arg(long)]
+        json: bool,
     },
     /// Rewrites `config.toml` re-encrypting secrets with the current key.
-    Reencrypt,
+    Reencrypt {
+        /// JSON success envelope (`event: secrets-reencrypt`).
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Parses CLI arguments.
@@ -625,6 +650,19 @@ fn read_stdin_if(flag: bool, value: Option<String>) -> Result<Option<String>> {
     }
 }
 
+fn warn_if_password_argv(args: &CliArgs) {
+    // Best-effort: inspect Debug of command for password-like flags present.
+    let s = format!("{:?}", args.command);
+    let sensitive = ["password:", "key_passphrase:", "sudo_password:", "su_password:"];
+    // clap Debug of Option::Some("…") — coarse but covers argv secrets.
+    let has = sensitive.iter().any(|k| s.contains(k) && s.contains("Some("));
+    if has {
+        eprintln!(
+            "warning: a password-like value was passed on the command line (visible in process lists); prefer --*-stdin"
+        );
+    }
+}
+
 /// Resolves output format: explicit > `SSH_CLI_FORCE_TEXT` > JSON if non-TTY > Text.
 #[must_use]
 pub fn resolve_format(explicit: Option<OutputFormat>) -> OutputFormat {
@@ -647,6 +685,11 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
     let config_override = args.config_dir.clone();
     // Aligns `secrets.key` with `--config-dir` / isolated tests.
     crate::secrets::set_config_dir(config_override.clone());
+    crate::secrets::set_runtime_flags(
+        args.allow_plaintext_secrets,
+        args.secrets_key_file.clone(),
+        args.use_keyring,
+    );
     let formato = resolve_format(args.output_format);
     // GAP-SSH-IO-003 / IO-004: centralized I/O policy.
     crate::output::set_quiet(args.quiet);
@@ -654,11 +697,16 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
     let disable_sudo = args.disable_sudo;
     let replace_host_key = args.replace_host_key;
 
+    // GAP-AUD-010: warn when secrets appear on argv (visible in `ps`).
+    warn_if_password_argv(&args);
+
     match args.command {
         Command::Vps { action } => {
             crate::vps::run_vps_command(action, config_override, formato).await
         }
-        Command::Connect { name } => crate::vps::run_connect(&name, config_override).await,
+        Command::Connect { name } => {
+            crate::vps::run_connect(&name, config_override, formato).await
+        },
         Command::Exec {
             vps_name,
             command,
@@ -827,8 +875,9 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
             key_passphrase,
             key_passphrase_stdin,
             json,
+            bind,
         } => {
-            // GAP-SSH-IO-008: --json local ou --format json global.
+            // GAP-SSH-IO-008: --json local or global format.
             let json_efetivo = json || formato == OutputFormat::Json;
             if json_efetivo {
                 crate::output::set_json_errors(true);
@@ -848,6 +897,7 @@ pub async fn dispatch(args: CliArgs) -> Result<()> {
                 timeout_ms,
                 replace_host_key,
                 json_efetivo,
+                &bind,
             )
             .await
         }

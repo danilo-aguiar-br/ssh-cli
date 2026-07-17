@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! At-rest encryption of secrets in `config.toml` (GAP-009 / R-SECRETS-DEFAULT).
 //!
-//! Primary-key resolution order (32 bytes):
-//! 1. `SSH_CLI_SECRETS_KEY` — 64 hex chars
-//! 2. `SSH_CLI_SECRETS_KEY_FILE` — file with 64 hex chars
-//! 3. OS keyring (`service=ssh-cli`, `user=secrets-primary-key`) if `SSH_CLI_USE_KEYRING=1`
+//! Primary-key resolution order (32 bytes), 0.5.1:
+//! 1. CLI flags (`--secrets-key-file`, `--use-keyring`, `--allow-plaintext-secrets`)
+//! 2. Env (deprecated): `SSH_CLI_SECRETS_KEY`, `SSH_CLI_SECRETS_KEY_FILE`, `SSH_CLI_USE_KEYRING`
+//! 3. OS keyring when enabled (`service=ssh-cli`, `user=secrets-primary-key`; legacy read alias)
 //! 4. XDG `secrets.key` file (next to `config.toml`), auto-created on first write
 //!
-//! Opt-out (tests/debug): `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` — do not auto-create key;
-//! serialization stays plaintext if none of sources 1–3 is defined.
+//! Opt-out: `--allow-plaintext-secrets` or deprecated `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
 //!
 //! With a key: serialization writes `sshcli-enc:v1:<base64(nonce||ciphertext)>`.
 //!
@@ -18,6 +17,7 @@ use crate::erros::{SshCliError, SshCliResult};
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use zeroize::Zeroize;
 
@@ -31,11 +31,54 @@ pub const KEY_FILE_NAME: &str = "secrets.key";
 /// Config directory override (e.g. `--config-dir`) to align `secrets.key`.
 static DIR_CONFIG_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
+/// CLI runtime overrides (flags). Env remains as deprecated fallback.
+#[derive(Debug, Default, Clone)]
+struct RuntimeSecretsFlags {
+    allow_plaintext: bool,
+    secrets_key_file: Option<PathBuf>,
+    use_keyring: bool,
+}
+
+static RUNTIME_FLAGS: Mutex<RuntimeSecretsFlags> = Mutex::new(RuntimeSecretsFlags {
+    allow_plaintext: false,
+    secrets_key_file: None,
+    use_keyring: false,
+});
+
+/// Set when `secrets.key` is auto-created during this process (GAP-AUD-007).
+static AUTO_KEY_CREATED: AtomicBool = AtomicBool::new(false);
+
 /// Sets the config directory used to resolve `secrets.key` (one-shot; called from `dispatch`).
 pub fn set_config_dir(dir: Option<PathBuf>) {
     if let Ok(mut g) = DIR_CONFIG_OVERRIDE.lock() {
         *g = dir;
     }
+}
+
+/// Applies one-shot CLI flags for secrets resolution (GAP-AUD-006).
+pub fn set_runtime_flags(
+    allow_plaintext: bool,
+    secrets_key_file: Option<PathBuf>,
+    use_keyring: bool,
+) {
+    if let Ok(mut g) = RUNTIME_FLAGS.lock() {
+        g.allow_plaintext = allow_plaintext;
+        g.secrets_key_file = secrets_key_file;
+        g.use_keyring = use_keyring;
+    }
+    AUTO_KEY_CREATED.store(false, Ordering::SeqCst);
+}
+
+/// Returns true once if a key was auto-created since the last flag reset (consume).
+#[must_use]
+pub fn take_auto_key_created() -> bool {
+    AUTO_KEY_CREATED.swap(false, Ordering::SeqCst)
+}
+
+/// Returns true if a key was auto-created (non-consuming).
+#[must_use]
+pub fn auto_key_created() -> bool {
+    AUTO_KEY_CREATED.load(Ordering::SeqCst)
 }
 
 /// Primary-key source (without exposing material).
@@ -80,9 +123,14 @@ pub struct SecretsStatus {
     pub plaintext_opt_out: bool,
 }
 
-/// True if `SSH_CLI_ALLOW_PLAINTEXT_SECRETS` requests plaintext.
+/// True if plaintext opt-out is active (CLI flag first, then deprecated env).
 #[must_use]
 pub fn plaintext_allowed() -> bool {
+    if let Ok(g) = RUNTIME_FLAGS.lock() {
+        if g.allow_plaintext {
+            return true;
+        }
+    }
     std::env::var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
@@ -120,6 +168,22 @@ pub fn secrets_key_path() -> SshCliResult<PathBuf> {
 /// # Errors
 /// Returns an error if a configured key source exists but cannot be read or parsed.
 pub fn load_primary_key() -> SshCliResult<(Option<[u8; 32]>, KeySource)> {
+    // CLI flag: --secrets-key-file
+    if let Ok(g) = RUNTIME_FLAGS.lock() {
+        if let Some(ref path) = g.secrets_key_file {
+            let text = std::fs::read_to_string(path).map_err(|e| {
+                SshCliError::InvalidArgument(format!(
+                    "failed reading --secrets-key-file {}: {e}",
+                    path.display()
+                ))
+            })?;
+            let key = parse_hex_key(text.trim()).map_err(|e| {
+                SshCliError::InvalidArgument(format!("invalid --secrets-key-file: {e}"))
+            })?;
+            return Ok((Some(key), KeySource::ConfigFile));
+        }
+    }
+
     if let Ok(hex) = std::env::var("SSH_CLI_SECRETS_KEY") {
         let key = parse_hex_key(hex.trim()).map_err(|e| {
             SshCliError::InvalidArgument(format!("invalid SSH_CLI_SECRETS_KEY: {e}"))
@@ -137,10 +201,14 @@ pub fn load_primary_key() -> SshCliResult<(Option<[u8; 32]>, KeySource)> {
         return Ok((Some(key), KeySource::ConfigFile));
     }
 
-    if std::env::var("SSH_CLI_USE_KEYRING")
+    let use_keyring_flag = RUNTIME_FLAGS
+        .lock()
+        .map(|g| g.use_keyring)
+        .unwrap_or(false);
+    let use_keyring_env = std::env::var("SSH_CLI_USE_KEYRING")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
-    {
+        .unwrap_or(false);
+    if use_keyring_flag || use_keyring_env {
         match read_keyring() {
             Ok(Some(key)) => return Ok((Some(key), KeySource::Keyring)),
             Ok(None) => {}
@@ -178,6 +246,11 @@ pub fn ensure_key_for_write() -> SshCliResult<(Option<[u8; 32]>, KeySource)> {
     let path = secrets_key_path()?;
     let hex = generate_hex_key()?;
     write_key_file(&path, &hex, false)?;
+    AUTO_KEY_CREATED.store(true, Ordering::SeqCst);
+    tracing::info!(
+        path = %path.display(),
+        "secrets.key auto-created (event secrets-key-auto-created)"
+    );
     let key = parse_hex_key(&hex)
         .map_err(|e| SshCliError::Generic(format!("invalid generated key: {e}")))?;
     Ok((Some(key), KeySource::XdgFile))

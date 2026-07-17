@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Data model for `VpsRecord` (schema v2).
+//! Data model for `VpsRecord` (schema v3).
 //!
 //! Passwords use `SecretString` for automatic zeroize via `Drop`. On-disk TOML is
 //! plaintext (mode 0o600) or encrypted (`sshcli-enc:v1:`) when a primary key exists.
 //! `Debug` is customized to NEVER expose sensitive values.
 //!
-//! Schema v2: password **or** key auth, max_command/max_output duality,
-//! `disable_sudo`, and automatic migration from legacy `max_chars`.
+//! Schema v3: **English wire keys** on serialize (`name`, `port`, `username`, …).
+//! Deserialize accepts both EN and legacy Portuguese aliases (`nome`, `porta`, …).
+//! Schema v2: password **or** key auth, max_command/max_output duality, `disable_sudo`.
 
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 /// Current schema version of the `config.toml` file.
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 /// Default timeout in milliseconds (60s).
 pub const DEFAULT_TIMEOUT_MS: u64 = 60_000;
@@ -24,21 +25,24 @@ pub const DEFAULT_MAX_COMMAND_CHARS: usize = 1_000;
 pub const DEFAULT_MAX_OUTPUT_CHARS: usize = 100_000;
 
 /// VPS host record in the configuration file.
+///
+/// Wire format (serialize): English field names. Legacy Portuguese keys remain
+/// readable via `serde(alias = …)` (GAP-AUD-20260717-001/002/021).
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VpsRecord {
     /// Logical unique VPS name.
-    #[serde(rename = "nome")]
+    #[serde(alias = "nome")]
     pub name: String,
     /// Server hostname or IP.
     pub host: String,
     /// SSH port.
-    #[serde(rename = "porta")]
+    #[serde(alias = "porta")]
     pub port: u16,
     /// SSH username.
-    #[serde(rename = "usuario")]
+    #[serde(alias = "usuario")]
     pub username: String,
     /// SSH password (empty when key-only auth).
-    #[serde(default, rename = "senha", with = "secret_string_serde")]
+    #[serde(default, alias = "senha", with = "secret_string_serde")]
     pub password: SecretString,
     /// Absolute or expandable OpenSSH private key path.
     #[serde(default)]
@@ -47,6 +51,7 @@ pub struct VpsRecord {
     #[serde(default, with = "opcao_secret_string_serde")]
     pub key_passphrase: Option<SecretString>,
     /// Timeout in milliseconds.
+    #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
     /// Command character limit (input). `0` = unlimited at runtime.
     #[serde(default = "default_max_command_chars")]
@@ -55,18 +60,19 @@ pub struct VpsRecord {
     #[serde(default = "default_max_output_chars", alias = "max_chars")]
     pub max_output_chars: usize,
     /// Password for `sudo` (optional).
-    #[serde(default, rename = "senha_sudo", with = "opcao_secret_string_serde")]
+    #[serde(default, alias = "senha_sudo", with = "opcao_secret_string_serde")]
     pub sudo_password: Option<SecretString>,
     /// Password for `su -` (optional).
-    #[serde(default, rename = "senha_su", with = "opcao_secret_string_serde")]
+    #[serde(default, alias = "senha_su", with = "opcao_secret_string_serde")]
     pub su_password: Option<SecretString>,
     /// If true, `sudo-exec` and `su-exec` are rejected for this host.
     #[serde(default)]
     pub disable_sudo: bool,
     /// Schema version for this record.
+    #[serde(default = "default_schema_version")]
     pub schema_version: u32,
     /// RFC 3339 inclusion timestamp.
-    #[serde(rename = "adicionado_em")]
+    #[serde(default = "default_added_at", alias = "adicionado_em")]
     pub added_at: String,
 }
 
@@ -76,6 +82,18 @@ fn default_max_command_chars() -> usize {
 
 fn default_max_output_chars() -> usize {
     DEFAULT_MAX_OUTPUT_CHARS
+}
+
+fn default_timeout_ms() -> u64 {
+    DEFAULT_TIMEOUT_MS
+}
+
+fn default_schema_version() -> u32 {
+    CURRENT_SCHEMA_VERSION
+}
+
+fn default_added_at() -> String {
+    chrono::Utc::now().to_rfc3339()
 }
 
 impl std::fmt::Debug for VpsRecord {
@@ -95,7 +113,7 @@ impl std::fmt::Debug for VpsRecord {
             .field("max_command_chars", &self.max_command_chars)
             .field("max_output_chars", &self.max_output_chars)
             .field(
-                "senha_sudo",
+                "sudo_password",
                 &self.sudo_password.as_ref().map(|_| "<redacted>"),
             )
             .field("su_password", &self.su_password.as_ref().map(|_| "<redacted>"))
@@ -197,7 +215,7 @@ impl VpsRecord {
 
 /// Parses a limit string (`"none"`, `"0"`, or a number).
 ///
-/// `0`/`none` → `0` (ilimitado no runtime).
+/// `0`/`none` → `0` (unlimited at runtime).
 #[must_use]
 pub fn parse_char_limit(s: &str) -> usize {
     let t = s.trim();
@@ -212,11 +230,11 @@ pub fn parse_char_limit(s: &str) -> usize {
 ///
 /// `0` = unlimited (`usize::MAX` for comparison).
 #[must_use]
-pub fn effective_limit(configurado: usize) -> usize {
-    if configurado == 0 {
+pub fn effective_limit(configured: usize) -> usize {
+    if configured == 0 {
         usize::MAX
     } else {
-        configurado
+        configured
     }
 }
 
@@ -378,7 +396,7 @@ mod tests {
 
     #[test]
     fn migrates_legacy_max_chars() {
-        let legado = r#"
+        let legacy = r#"
 nome = "x"
 host = "h"
 porta = 22
@@ -389,9 +407,72 @@ max_chars = 4242
 schema_version = 1
 adicionado_em = "2020-01-01T00:00:00Z"
 "#;
-        let r: VpsRecord = toml::from_str(legado).expect("deserializar legado");
+        let r: VpsRecord = toml::from_str(legacy).expect("deserialize legacy PT wire");
         assert_eq!(r.max_output_chars, 4242);
         assert_eq!(r.max_command_chars, DEFAULT_MAX_COMMAND_CHARS);
+        assert_eq!(r.name, "x");
+        assert_eq!(r.port, 22);
+        assert_eq!(r.username, "u");
+    }
+
+    #[test]
+    fn deserializes_english_wire_keys() {
+        let en = r#"
+name = "prod"
+host = "h.example"
+port = 2222
+username = "admin"
+password = "secret"
+timeout_ms = 5000
+schema_version = 3
+"#;
+        let r: VpsRecord = toml::from_str(en).expect("deserialize EN wire");
+        assert_eq!(r.name, "prod");
+        assert_eq!(r.port, 2222);
+        assert_eq!(r.username, "admin");
+        assert!(!r.added_at.is_empty());
+    }
+
+    #[test]
+    fn serializes_english_wire_keys() {
+        let r = VpsRecord::new(
+            "prod".into(),
+            "h".into(),
+            22,
+            "u".into(),
+            SecretString::from("p".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        );
+        let s = toml::to_string(&r).expect("serialize");
+        assert!(s.contains("name ="), "expected EN key name: {s}");
+        assert!(s.contains("port ="), "expected EN key port: {s}");
+        assert!(s.contains("username ="), "expected EN key username: {s}");
+        assert!(s.contains("password ="), "expected EN key password: {s}");
+        assert!(s.contains("added_at ="), "expected EN key added_at: {s}");
+        assert!(!s.contains("nome ="), "must not write PT key nome: {s}");
+        assert!(!s.contains("porta ="), "must not write PT key porta: {s}");
+        assert!(!s.contains("adicionado_em ="), "must not write PT adicionado_em: {s}");
+    }
+
+    #[test]
+    fn deserializes_without_added_at() {
+        let bare = r#"
+nome = "x"
+host = "h"
+porta = 22
+usuario = "u"
+senha = "s"
+schema_version = 2
+"#;
+        let r: VpsRecord = toml::from_str(bare).expect("default added_at");
+        assert!(!r.added_at.is_empty());
     }
 
     #[test]

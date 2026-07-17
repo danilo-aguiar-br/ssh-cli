@@ -2,7 +2,7 @@
 
 > Complete discovery map for one-shot multi-host SSH automation
 
-ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start the binary, run one operation, and the process exits. Multi-host credentials live under XDG via directories::ProjectDirs. Authentication accepts password or OpenSSH private key. sudo uses secure `sh -c` packing. su-exec provides real elevation. known_hosts implements TOFU. config writes are atomic with flock. Secrets in config.toml are **encrypted by default** (ChaCha20-Poly1305; auto `secrets.key`). Install is gated with crypto pins for clean `cargo install --locked`. Product line **0.5.0** closes AUD-POST (export empty secret, tunnel deadline exit 0, tunnel/health auth parity, scp-transfer event) on top of 0.4.0 SCP wire; russh 0.62.2.
+ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start the binary, run one operation, and the process exits. Multi-host credentials live under XDG via directories::ProjectDirs. Authentication accepts password or OpenSSH private key. sudo uses secure `sh -c` packing. su-exec provides real elevation. known_hosts implements TOFU. config writes are atomic with flock. Secrets in config.toml are **encrypted by default** (ChaCha20-Poly1305; auto `secrets.key`). Install is gated with crypto pins for clean `cargo install --locked`. Product surface **0.5.1**: export/import agent roundtrip (TOML default / `--json` envelope), wire schema **v3** dual-read, secrets CLI flags, tunnel `--bind`, plus prior AUD-POST (export empty secret, tunnel deadline exit 0, tunnel/health auth parity, scp-transfer event) on 0.4.0 SCP wire; russh 0.62.2.
 
 - Portuguese discovery file: [llms.pt-BR.txt](llms.pt-BR.txt)
 - Short index: [llms.txt](llms.txt)
@@ -44,22 +44,26 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - [vps-list.schema.json](docs/schemas/vps-list.schema.json)
 - [vps-show.schema.json](docs/schemas/vps-show.schema.json)
 - [vps-doctor.schema.json](docs/schemas/vps-doctor.schema.json)
+- [vps-export.schema.json](docs/schemas/vps-export.schema.json) (`vps export --json`; `event: "vps-export"`)
 - [exec.schema.json](docs/schemas/exec.schema.json)
 - [sudo-exec.schema.json](docs/schemas/sudo-exec.schema.json)
 - [su-exec.schema.json](docs/schemas/su-exec.schema.json)
 - [health-check.schema.json](docs/schemas/health-check.schema.json)
 - [scp-transfer.schema.json](docs/schemas/scp-transfer.schema.json) (`scp upload|download --json`; regular files only)
 - [tunnel-listening.schema.json](docs/schemas/tunnel-listening.schema.json) (`tunnel --json` post-bind event)
+- [secrets-init.schema.json](docs/schemas/secrets-init.schema.json) (`secrets init --json`; `event: "secrets-init"`)
+- [secrets-reencrypt.schema.json](docs/schemas/secrets-reencrypt.schema.json) (`secrets reencrypt --json`; `event: "secrets-reencrypt"`)
 - [error-envelope.schema.json](docs/schemas/error-envelope.schema.json)
 
-## Commands (product surface 0.4.2)
+## Commands (product surface 0.5.1)
 - `vps add|list|show|edit|remove|path|doctor|export|import`
 - `connect`, `exec`, `sudo-exec`, `su-exec`
-- `scp upload|download` (**regular files only**; no `-r`/SFTP; avoid crates.io **0.3.9** broken SCP wire — use **0.5.0**): flags `--timeout|--password-stdin|--key|--key-passphrase[-stdin]|--json` → `scp-transfer` with required `event: "scp-transfer"`; download `.ssh-cli.partial` then rename; preserve mtime/mode; stream upload 32 KiB
-- `tunnel --timeout-ms` with auth `--password-stdin|--key|--key-passphrase[-stdin]`; `--json` → `tunnel_listening` after bind; post-bind deadline exits **0** after listening (pre-bind timeout still **74**)
+- `scp upload|download` (**regular files only**; no `-r`/SFTP; avoid crates.io **0.3.9** broken SCP wire — use **0.5.1+**): flags `--timeout|--password-stdin|--key|--key-passphrase[-stdin]|--json` → `scp-transfer` with required `event: "scp-transfer"`; download `.ssh-cli.partial` then rename; preserve mtime/mode; stream upload 32 KiB; missing remote → `file not found: <path>` exit **66**
+- `tunnel --timeout-ms` with optional `--bind` (default `127.0.0.1`); auth `--password-stdin|--key|--key-passphrase[-stdin]`; `--json` → `tunnel_listening` after bind; post-bind deadline exits **0** after listening (pre-bind timeout still **74**)
 - `health-check [--timeout]` with auth `--password-stdin|--key|--key-passphrase[-stdin]`
-- `vps export` redacted: empty password is `""`, never an `sshcli-enc:` blob of empty
-- `secrets status|init|reencrypt`
+- `vps export` **TOML by default** (TTY and pipe); JSON agent envelope only with `--json`; redacted: empty password is `""`, never an `sshcli-enc:` blob of empty; `--include-secrets` to pipe/non-TTY needs `-o`/`--output` or `--i-understand-secrets-on-stdout`
+- `vps import` accepts TOML (EN keys + PT aliases) **or** JSON `vps-export` envelopes; redacted skeletons need `--allow-incomplete`
+- `secrets status|init|reencrypt` with `--json` events `secrets-init` / `secrets-reencrypt`; auto-create emits `secrets-key-auto-created`; flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`
 - `completions`
 
 ## Defaults and Limits
@@ -67,23 +71,24 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - Default timeout is 60000 ms
 - Default max_command_chars is 1000
 - Default max_output_chars is 100000
-- Schema version for new hosts is 2
+- Schema version for new hosts is **3** (dual-read EN serialize + legacy PT aliases)
 - Default tracing filter is **error**; `RUST_LOG` overrides; `-v` enables debug
 - Empty password fields are JSON `null` on key-only hosts (`vps list` / `show`); non-empty secrets mask as `"***"`
 - `health-check` accepts `--timeout <ms>` plus auth flags above
-- Secrets at rest: encrypted by default (auto `secrets.key`); opt-out `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` for tests only
+- Secrets at rest: encrypted by default (auto `secrets.key`); prefer CLI flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` over env; opt-out for tests only
 - Redacted export: empty secrets serialize as empty strings, never `sshcli-enc:` ciphertext of empty
 - Telemetry is always false
-- Install: always prefer `--locked`; product line **0.5.0** uses russh 0.62.2
+- Install: always prefer `--locked`; product line **0.5.1** uses russh 0.62.2
 
 ## Operational Rules for Agents
 - Birth execute die after every product command
 - Prefer stored hosts over ad-hoc passwords in chat
 - Prefer key auth when available
 - Prefer `--password-stdin` and encrypted at-rest defaults
+- Prefer CLI secrets flags over env for agent runs
 - Validate command length before SSH using max_command_chars
 - Parse --json stdout only; default stderr is silent at tracing level error
-- Map exit codes before retry
+- Map exit codes before retry (auth **77**, bad TOML **65**, missing file **66**)
 - Never reintroduce long-lived daemon packaging into this project
 - Never enable telemetry
 - Never print master-key or live SSH passwords

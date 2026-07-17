@@ -12,10 +12,20 @@ Linha de produto atual: **0.5.x**.
 | --- | --- | --- |
 | 0.5.x | Suportada | Sim, **linha atual** |
 | 0.4.x | Suportada | Críticas/altas quando viável; prefira **0.5.x** |
-| 0.3.x | Limitada | Só críticas quando viável; no crates.io **0.3.9** o SCP era inoperante — atualize para **0.5.0+** |
+| 0.3.x | Limitada | Só críticas quando viável; no crates.io **0.3.9** o SCP era inoperante — atualize para **0.5.1+** |
 | 0.2.x | Limitada | Só críticas quando viável |
 | 0.1.x | Sem suporte | Sem patches |
 | < 0.1 | Sem suporte | Sem patches |
+
+## Reportar uma vulnerabilidade
+- Reporte problemas de segurança preferencialmente via GitHub Security Advisories no repositório público `ssh-cli` (canal privado preferido).
+- Use o e-mail daniloaguiarbr@proton.me apenas como fallback quando o reporte privado no GitHub estiver indisponível.
+- Nunca abra issue, pull request ou discussion pública no GitHub para relatos relacionados a segurança.
+- Inclua reprodução mínima, versões afetadas e comportamento esperado versus atual.
+- Inclua detalhes de ambiente como SO, arquitetura e versão do rustc.
+- Inclua estimativa de severidade CVSS 3.1 quando possível para acelerar a triagem.
+- Omita ou mascare credenciais vivas de todo anexo e trecho de log.
+
 
 ## SLA de resposta
 - A triagem de cada advisory começa em até 72 horas úteis após o envio.
@@ -51,12 +61,15 @@ Linha de produto atual: **0.5.x**.
 
 ## Boas práticas para usuários
 - Prefira autenticação por chave privada a senha quando o host permitir.
-- Prefira `--password-stdin`, `--sudo-password-stdin` e `--su-password-stdin` a segredos em argv.
+- Prefira `--password-stdin`, `--sudo-password-stdin` e `--su-password-stdin` a segredos em argv (password em argv emite warning em stderr em **0.5.1+**).
+- Prefira flags stdin de senha em runs de agentes; evite embutir segredos vivos no histórico do shell.
 - **Cifragem at-rest por padrão** (ChaCha20-Poly1305): na primeira gravação de segredo, cria `secrets.key` (0o600) ao lado do `config.toml`, salvo opt-out.
-- Ordem da chave: `SSH_CLI_SECRETS_KEY` → `SSH_CLI_SECRETS_KEY_FILE` → keyring (`SSH_CLI_USE_KEYRING=1`) → XDG `secrets.key`.
-- CLI: `ssh-cli secrets status|init|reencrypt` (nunca imprime a master-key).
-- Opt-out só para testes: `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
+- Prefira flags CLI ao env para controle de secrets: `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` (camadas env ainda funcionam quando as flags não estão setadas).
+- Ordem da chave: flags CLI → `SSH_CLI_SECRETS_KEY` → `SSH_CLI_SECRETS_KEY_FILE` → keyring (`SSH_CLI_USE_KEYRING=1`) → XDG `secrets.key`.
+- CLI: `ssh-cli secrets status|init|reencrypt` (nunca imprime a master-key); `--json` emite `secrets-init` / `secrets-reencrypt` sem material de chave.
+- Opt-out só para testes: `--allow-plaintext-secrets` ou `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
 - **Nunca** logue master-key, senhas ou segredos decifrados.
+- `--include-secrets` em pipe/non-TTY exige `-o`/`--output` ou `--i-understand-secrets-on-stdout` (guarda contra dump acidental de segredos no stdout).
 - `vps export` redacted limpa segredos; secret vazio serializa como `""` e **nunca** como blob `sshcli-enc:…` (EXP-001 / 0.4.2).
 - Mantenha `config.toml` com mode `0600` e restrinja locais de backup.
 - Revise erros de mudança de host key TOFU antes de usar `--replace-host-key`.
@@ -67,4 +80,5 @@ Linha de produto atual: **0.5.x**.
 - Desabilite elevação com `--disable-sudo` quando o workflow não deve escalar.
 - Rode apenas comandos one-shot; nunca espere um daemon SSH de longa duração desta CLI.
 - Instale com `--locked` para evitar drift de re-resolve crypto.
-- Prefira a linha atual **0.5.0+** para o piso de supply-chain (russh 0.62.2) e para SCP com wire funcional (crates.io **0.3.9** SCP era inoperante).
+- Prefira a linha atual **0.5.1+** para o piso de supply-chain (russh 0.62.2) e para SCP com wire funcional (crates.io **0.3.9** SCP era inoperante).
+- Honestidade histórica: **0.4.1** corrigiu export redacted de secret vazio (nunca `sshcli-enc:` de vazio) e exit 0 pós-bind do tunnel.

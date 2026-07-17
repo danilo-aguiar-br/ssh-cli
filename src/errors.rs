@@ -168,7 +168,8 @@ impl SshCliError {
             Self::TomlDe(_) => exit_codes::EX_DATAERR,
             Self::TomlSer(_) => exit_codes::EX_CANTCREAT,
             Self::SshConnection(_) => exit_codes::EX_IOERR,
-            Self::SshAuthentication(_) => exit_codes::EX_IOERR,
+            // GAP-AUD-020: authentication failures use EX_NOPERM (77); connect/IO stay 74.
+            Self::SshAuthentication(_) => exit_codes::EX_NOPERM,
             Self::ConnectionFailed(_) => exit_codes::EX_IOERR,
             Self::AuthenticationFailed => exit_codes::EX_NOPERM,
             Self::HostKeyChanged { .. } => exit_codes::EX_NOPERM,

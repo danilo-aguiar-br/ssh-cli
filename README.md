@@ -1,6 +1,6 @@
 # ssh-cli
 
-- Historical note: patch line **0.4.2** preceded **0.5.0** (EN/API rename + secrets force-init reencrypt).
+- Historical note: **0.4.2** closed TUN-003 / IO-010; **0.5.0** was the EN/API rename + secrets force-init reencrypt; current product line is **0.5.1** (export/import agent roundtrip, wire schema v3 dual-read, secrets CLI flags, tunnel `--bind`).
 
 [![crates.io](https://img.shields.io/crates/v/ssh-cli.svg)](https://crates.io/crates/ssh-cli)
 [![docs.rs](https://docs.rs/ssh-cli/badge.svg)](https://docs.rs/ssh-cli)
@@ -19,7 +19,7 @@
 - Follow first use in [docs/HOW_TO_USE.md](docs/HOW_TO_USE.md).
 - Copy recipes from [docs/COOKBOOK.md](docs/COOKBOOK.md).
 - Check platforms in [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md).
-- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.5.0**).
+- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.5.1**).
 - Run tests via [docs/TESTING.md](docs/TESTING.md).
 - Consume JSON contracts under [docs/schemas/README.md](docs/schemas/README.md).
 - Teach LLMs with [skills/ssh-cli-en/SKILL.md](skills/ssh-cli-en/SKILL.md).
@@ -54,11 +54,14 @@
 - Private key auth with optional passphrase
 - Dual limits `max_command_chars` and `max_output_chars`
 - Timeout with best-effort remote abort
-- Bounded tunnel via mandatory `--timeout-ms`
-- SCP upload and download of **regular files only** (no recursive directories / no SFTP subsystem; first solid wire fix in **0.4.0**; patch **0.5.0** — avoid crates.io 0.3.9 SCP)
+- Bounded tunnel via mandatory `--timeout-ms`; optional `--bind` (default `127.0.0.1`)
+- Wire **schema v3**: serialize English TOML keys; dual-read EN + legacy PT aliases on load
+- `vps export` body is **TOML by default** (TTY and pipe); agent JSON envelope only with `--json`; redacted by default; empty secrets stay `""`; `--include-secrets` to pipe/non-TTY needs `-o`/`--output` or `--i-understand-secrets-on-stdout`
+- `vps import` accepts TOML (EN keys + PT aliases) **or** JSON `vps-export` envelopes; redacted skeletons need `--allow-incomplete`
+- SCP upload and download of **regular files only** (no recursive directories / no SFTP subsystem; first solid wire fix in **0.4.0**; prefer **0.5.1+** — avoid crates.io 0.3.9 SCP)
 - SCP flag parity with exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (contract `docs/schemas/scp-transfer.schema.json`)
 - SCP download writes `{path}.ssh-cli.partial` then atomic rename; preserve remote mtime/mode bi-directional; upload streams 32 KiB chunks
-- SCP JSON success requires `event: "scp-transfer"` (0.4.1 IO-009)
+- SCP JSON success requires `event: "scp-transfer"` (0.4.1 IO-009); missing remote → `file not found: <path>` exit **66**
 - `tunnel --json` emits structured `tunnel_listening` after local bind
 - Tunnel post-bind deadline exits **0** after `tunnel_listening` (pre-bind timeout still **74**) (0.4.1 TUN-002)
 - Tunnel and health-check auth parity with exec/scp: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` as applicable (0.4.1 CLI-005/006)
@@ -66,8 +69,8 @@
 - Health-check latency probe with optional `--timeout`
 - Shell completions for bash zsh fish powershell
 - Secrets via stdin flags to avoid argv leaks
-- **Default at-rest encryption** (ChaCha20-Poly1305) with auto XDG `secrets.key`
-- Master-key UX: `secrets status|init|reencrypt`
+- **Default at-rest encryption** (ChaCha20-Poly1305) with auto XDG `secrets.key`; CLI flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` preferred over env
+- Master-key UX: `secrets status|init|reencrypt` with `--json` events `secrets-init` / `secrets-reencrypt`; auto-create emits `secrets-key-auto-created`
 - TOFU `known_hosts` and atomic config writes with flock
 - Key-only hosts: empty password serializes as JSON `null` (not `"***"`) in `vps list` / `show`
 - Default tracing filter is `error` (agent-first clean stderr); override with `RUST_LOG` or `-v` (debug)
@@ -93,7 +96,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Installation
 ### Choose the install path that matches your environment
-- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (**0.5.0+** on crates.io; avoid **0.3.9** for SCP).
+- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (**0.5.1+** on crates.io; avoid **0.3.9** for SCP).
 - Rebuild from a checkout: `cargo install --path . --locked`
 - Do **not** use install without `--locked` unless you verified the crypto pins resolve cleanly.
 - Force upgrade after a release: `cargo install ssh-cli --locked --force`
@@ -103,7 +106,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Usage
 ### Register hosts then execute one-shot commands
-- **Default at-rest encryption** (ChaCha20-Poly1305): auto `secrets.key` on first secret write; override via `SSH_CLI_SECRETS_KEY` / `_FILE` / keyring; manage with `ssh-cli secrets status|init|reencrypt`. Opt-out: `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` (tests only).
+- **Default at-rest encryption** (ChaCha20-Poly1305): auto `secrets.key` on first secret write; prefer CLI flags `--secrets-key-file`, `--use-keyring`, `--allow-plaintext-secrets` over env (`SSH_CLI_SECRETS_KEY` / `_FILE` / keyring still work); manage with `ssh-cli secrets status|init|reencrypt`. Opt-out for tests only.
 - Prefer `--password-stdin` / `--key` over argv secrets.
 - Add password hosts with `vps add --password` or `--password-stdin`.
 - Add key hosts with `vps add --key ~/.ssh/id_ed25519`.
@@ -112,7 +115,7 @@ ssh-cli exec prod "hostname" --json
 - Run remote shells with `exec <vps> "<cmd>"`.
 - Elevate with `sudo-exec` or `su-exec` when configured.
 - Diagnose XDG paths with `vps doctor --json`.
-- Export redacted inventory with `vps export`.
+- Export redacted inventory with `vps export` (TOML default; `--json` for agent envelope).
 
 
 ## Commands
@@ -127,16 +130,16 @@ ssh-cli exec prod "hostname" --json
 | `ssh-cli vps remove <name>` | Delete host |
 | `ssh-cli vps path` | Print `config.toml` path |
 | `ssh-cli vps doctor [--json]` | Show XDG layer schema and paths |
-| `ssh-cli vps export` | Export hosts (secrets redacted by default; empty secrets stay `""`, never fake `sshcli-enc:` ciphertext) |
-| `ssh-cli vps import --file` | Import hosts from TOML |
+| `ssh-cli vps export` | Export hosts as **TOML by default** (TTY and pipe); JSON agent envelope only with `--json`; secrets redacted by default; empty secrets stay `""` (never fake `sshcli-enc:`); `--include-secrets` to pipe/non-TTY requires `-o`/`--output` or `--i-understand-secrets-on-stdout` |
+| `ssh-cli vps import --file` | Import hosts from **TOML** (EN keys + PT aliases) **or** JSON `vps-export` envelope; redacted skeletons need `--allow-incomplete` |
 | `ssh-cli connect <name>` | Write sibling `active` file |
 | `ssh-cli exec <vps> <cmd>` | One-shot remote command |
 | `ssh-cli sudo-exec <vps> <cmd>` | One-shot sudo with safe packing |
 | `ssh-cli su-exec <vps> <cmd>` | One-shot `su -` elevation |
-| `ssh-cli scp upload|download` | Regular files only (no `-r`/SFTP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--json` → `scp-transfer` schema (required `event: "scp-transfer"`); preserve mtime/mode |
-| `ssh-cli tunnel ... --timeout-ms N [--json]` | Bounded local port forward; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`; `--json` emits `tunnel_listening` after bind; post-bind deadline exits **0** (pre-bind timeout still **74**) |
+| `ssh-cli scp upload|download` | Regular files only (no `-r`/SFTP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--json` → `scp-transfer` schema (required `event: "scp-transfer"`); preserve mtime/mode; missing remote → `file not found: <path>` exit **66** |
+| `ssh-cli tunnel ... --timeout-ms N [--bind ADDR] [--json]` | Bounded local port forward; `--bind` default `127.0.0.1`; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`; `--json` emits `tunnel_listening` after bind; post-bind deadline exits **0** (pre-bind timeout still **74**) |
 | `ssh-cli health-check [<vps>] [--timeout N]` | Connectivity probe; optional `--timeout` ms; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]` |
-| `ssh-cli secrets status|init|reencrypt` | Master-key and at-rest encryption (never prints key) |
+| `ssh-cli secrets status|init|reencrypt` | Master-key and at-rest encryption (never prints key); `--json` emits `secrets-init` / `secrets-reencrypt`; auto-create emits `secrets-key-auto-created`; flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` |
 | `ssh-cli completions <shell>` | Shell completion scripts |
 
 
@@ -155,7 +158,7 @@ ssh-cli exec prod "hostname" --json
 | `CLICOLOR_FORCE` | Force ANSI colors | `1` |
 | `RUST_LOG` | Tracing filter override (default level is `error`) | `debug` |
 
-- Prefer CLI flags over environment for production agent runs.
+- Prefer CLI flags over environment for production agent runs: `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` override the corresponding env vars when set.
 - Default tracing filter is `error` so agent stderr stays clean; set `RUST_LOG` only when debugging (or pass `-v` for debug).
 - Never put host passwords in environment variables; use registry + stdin.
 - Master-key env vars are for **encryption of secrets at rest**, not SSH passwords.
@@ -211,18 +214,21 @@ ssh-cli exec prod "hostname" --json
 
 ## Troubleshooting FAQ
 ### Fix common install and runtime failures
-- Install fails on crypto RC drift: rerun with `--locked` or use release **0.4.1+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
-- Auth fails on key-only hosts: set `--key` on `vps add` or pass `--key` / `--password-stdin` to `exec`.
-- Auth fails with passphrase keys: use `--key-passphrase-stdin`.
+- Install fails on crypto RC drift: rerun with `--locked` or use release **0.5.1+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
+- Auth fails on key-only hosts: set `--key` on `vps add` or pass `--key` / `--password-stdin` to `exec` (rejected auth exits **77**).
+- Auth fails with passphrase keys: use `--key-passphrase-stdin` (exit **77** on reject).
 - Host key changed: confirm legitimacy then rerun with `--replace-host-key`.
 - Command rejected as too long: raise `max_command_chars` or shorten the command.
-- Config has encrypted secrets but no key: run `ssh-cli secrets init` or restore `secrets.key` / env master-key.
+- Config has encrypted secrets but no key: run `ssh-cli secrets init` or restore `secrets.key` / env master-key / `--secrets-key-file`.
 - sudo-exec disabled: remove `--disable-sudo` and set `disable_sudo=false` on the host.
 - Unexpected stderr noise in JSON pipelines: default log level is already `error`; set `RUST_LOG` only to `debug` (or `-v`) when diagnosing.
-- SCP from crates.io **0.3.9** fails or writes 0-byte remotes: upgrade to **0.4.1+** (wire fix); only regular files, not directories.
+- SCP from crates.io **0.3.9** fails or writes 0-byte remotes: upgrade to **0.5.1+** (wire fix since 0.4.0); only regular files, not directories.
+- SCP remote missing: message is `file not found: <path>` and exit **66** (prefer **0.5.1+**; 0.4.2 IO-010).
 - SCP download fails mid-transfer: destination stays absent or previous file intact (partial uses `.ssh-cli.partial`).
-- Redacted `vps export` on **0.4.0** wrote fake `sshcli-enc:` blobs for empty secrets: upgrade to **0.4.1+** (empty secrets stay empty strings).
-- Tunnel emitted `ok: true` / `tunnel_listening` then process exit **74** when the post-bind deadline hit on **0.4.0**: upgrade to **0.4.1+** (post-bind deadline exits **0**; pre-bind timeout still **74**).
+- Redacted `vps export` on **0.4.0** wrote fake `sshcli-enc:` blobs for empty secrets: upgrade to **0.5.1+** (empty secrets stay empty strings since 0.4.1).
+- Tunnel emitted `ok: true` / `tunnel_listening` then process exit **74** when the post-bind deadline hit on **0.4.0**: upgrade to **0.5.1+** (post-bind deadline exits **0** since 0.4.1; pre-bind timeout still **74**).
+- Import bad TOML: parse errors map to exit **65** (`TomlDe` / data error).
+- Import redacted skeleton without secrets: pass `--allow-incomplete`.
 - macOS Gatekeeper blocks binary: run `xattr -d com.apple.quarantine /path/to/ssh-cli`.
 - Permission denied on config: ensure `chmod 600` on the XDG `config.toml` and `secrets.key`.
 

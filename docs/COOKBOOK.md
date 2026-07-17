@@ -3,7 +3,7 @@
 > Copy executable recipes that solve real multi-host SSH agent problems.
 
 - Read this document in [Portuguese (pt-BR)](COOKBOOK.pt-BR.md).
-- Product line: **0.5.0**.
+- Product line: 0.5.1.
 
 
 ## Latency Note
@@ -23,29 +23,49 @@
 - Install: `cargo install ssh-cli --locked`
 - Supply chain: russh 0.62.2; `cargo deny` with `yanked=deny`, `multiple-versions=warn`
 - SCP: regular files only (no `-r` / no directories / no SFTP); download partial suffix `.ssh-cli.partial`; success JSON requires `event: "scp-transfer"`
-- SCP wire: require **0.5.0+** (crates.io **0.3.9** advertised SCP but was inoperant)
-- Redacted export: empty secrets stay `""` (never `sshcli-enc:` blobs)
-- Tunnel post-bind: one-shot deadline exits **0** after `tunnel_listening` (TUN-002); pre-bind timeout remains **74**
-- Tunnel/health auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`
+- SCP wire: use 0.4.0+ (prefer product line 0.5.1); never 0.3.9 (crates.io 0.3.9 advertised SCP but was inoperant)
+- Redacted export: default body is TOML (even pipes); empty secrets stay `""` (never `sshcli-enc:` blobs); JSON only with `vps export --json`
+- Host wire: schema v3 (English serialize; dual-read legacy Portuguese aliases)
+- Tunnel post-bind: one-shot deadline exits 0 after `tunnel_listening` (TUN-002); pre-bind timeout remains 74
+- Tunnel `--bind` default: `127.0.0.1`
+- Tunnel/health auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` (0.4.1+)
+- Secrets flags (prefer over env): `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`
+- Timeout under 1000 ms: stderr warning (unit is milliseconds, not seconds)
+- Password on argv: stderr warning; prefer `--*-stdin`
+- CRUD/connect/import with `--json`: events `vps-added` / `vps-edited` / `vps-removed` / `vps-connected` / `vps-import`
+- First secret write may emit `secrets-key-auto-created` when the primary-key is provisioned
 
 
-## How To Initialize Master-Key Encryption
+## How To Initialize Primary-Key Encryption
 
 ```bash
 ssh-cli secrets init
 ssh-cli secrets status --json
 # never prints the key material
+# agent envelopes:
+ssh-cli secrets init --json
+# → event: "secrets-init" (docs/schemas/secrets-init.schema.json)
+ssh-cli secrets reencrypt --json
+# → event: "secrets-reencrypt" (docs/schemas/secrets-reencrypt.schema.json)
+# first secret write may auto-create secrets.key and emit:
+# → event: "secrets-key-auto-created"
+# flags preferred over env:
+# ssh-cli --secrets-key-file /path/to/key secrets status --json
+# ssh-cli --use-keyring secrets init --json
+# ssh-cli --allow-plaintext-secrets vps add ...   # tests only
 ```
 
 
 ## How To Register a Password Host (stdin, no argv leak)
 
 ```bash
+# prefer --password-stdin; password on argv also works but warns on stderr
 printf '%s' 'demo-password-not-real' | ssh-cli vps add \
   --name prod \
   --host prod.example.com \
   --user deploy \
   --password-stdin
+# with --json → event: "vps-added" (and possibly secrets-key-auto-created on first secret write)
 ```
 
 
@@ -53,6 +73,10 @@ printf '%s' 'demo-password-not-real' | ssh-cli vps add \
 
 ```bash
 ssh-cli vps add --name edge --host edge.example.com --user ubuntu --key ~/.ssh/id_ed25519
+# ssh-cli vps add ... --json → event: "vps-added"
+# ssh-cli vps edit edge --user ubuntu --json → event: "vps-edited"
+# ssh-cli vps remove edge --json → event: "vps-removed"
+# ssh-cli vps connect edge --json → event: "vps-connected"
 ```
 
 
@@ -100,7 +124,7 @@ ssh-cli exec prod "dmesg" --json
 ```bash
 ssh-cli vps add --name lab --host lab.example.com --user lab --key ~/.ssh/id_ed25519 --check
 ssh-cli health-check lab --json
-# optional auth overrides (parity with exec/scp since 0.4.2):
+# optional auth overrides (parity with exec/scp since 0.4.1+):
 # printf '%s' "$PASS" | ssh-cli health-check lab --json --password-stdin
 # ssh-cli health-check lab --json --key ~/.ssh/id_ed25519
 ```
@@ -109,10 +133,13 @@ ssh-cli health-check lab --json
 ## How To Probe With Custom Timeout
 
 ```bash
+# --timeout is milliseconds (not seconds); values under 1000 warn on stderr
 # override host timeout when the default is too long or too short for a quick probe
 ssh-cli health-check lab --timeout 15000 --json
 # optional: combine timeout with key or password-stdin
 # ssh-cli health-check lab --timeout 15000 --json --key ~/.ssh/id_ed25519
+# avoid accidental sub-second probes unless intentional:
+# ssh-cli health-check lab --timeout 500 --json   # works, but stderr warns (<1000 ms)
 ```
 
 
@@ -149,21 +176,43 @@ ssh-cli secrets reencrypt
 ## How To Export and Import Inventory Without Secrets
 
 ```bash
-# redacted export (EXP-001 / 0.4.2): empty secrets stay "" (never fake sshcli-enc: ciphertext of empty)
+# default export body is TOML even on pipe/non-TTY (not auto-JSON)
 ssh-cli vps export -o /tmp/hosts.redacted.toml
+# empty secrets stay "" (never fake sshcli-enc: ciphertext of empty; EXP-001)
+# agent envelope only with --json → event: "vps-export"
+ssh-cli vps export --json -o /tmp/hosts.redacted.json
+# import accepts TOML (EN keys or legacy PT aliases) or JSON vps-export
 ssh-cli --config-dir /tmp/ssh-cli-copy vps import --file /tmp/hosts.redacted.toml
+# redacted/skeleton hosts missing full auth:
+ssh-cli --config-dir /tmp/ssh-cli-copy vps import --file /tmp/hosts.redacted.toml \
+  --allow-incomplete
+```
+
+
+## How To Export With Secrets (guarded)
+
+```bash
+# --include-secrets requires -o/--output (mode 0o600) or explicit stdout ack
+ssh-cli vps export --include-secrets -o /tmp/hosts.secrets.toml
+# pipe without ack is refused (exit 64):
+# ssh-cli vps export --include-secrets | cat   # fails
+# only if you truly need stdout:
+# ssh-cli vps export --include-secrets --i-understand-secrets-on-stdout
 ```
 
 
 ## How To Open a Bounded Tunnel
 
 ```bash
+# --bind defaults to 127.0.0.1 (loopback)
 ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000
 # agents: wait for tunnel_listening before using the local port
 ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
 # stdout: {"ok":true,"event":"tunnel_listening","vps":"prod","local_port":18080,...}
 # schema: docs/schemas/tunnel-listening.schema.json
 # after tunnel_listening, post-bind one-shot deadline exits 0 (not 74; TUN-002); pre-bind timeout remains 74
+# optional bind override (only when intentional):
+# ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --bind 0.0.0.0
 # optional auth overrides (CLI-005 parity with exec/scp):
 printf '%s' "$PASS" | ssh-cli tunnel prod 18080 127.0.0.1 8080 \
   --timeout-ms 30000 --json --password-stdin
@@ -177,7 +226,7 @@ ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json \
 ```bash
 ssh-cli health-check prod --json
 ssh-cli health-check prod --timeout 5000 --json
-# auth parity 0.4.2 (CLI-006):
+# auth parity 0.4.1+ (CLI-006):
 printf '%s' "$PASS" | ssh-cli health-check prod --json --password-stdin
 ssh-cli health-check prod --json --key ~/.ssh/id_ed25519
 printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
@@ -188,7 +237,7 @@ printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
 ## How To Transfer a Release Artifact (regular file only)
 
 ```bash
-# Require 0.5.0+ — crates.io 0.3.9 SCP wire was broken (0-byte remote / timeout)
+# Use 0.4.0+ (prefer product line 0.5.1); never 0.3.9 — that SCP wire was broken
 # No directories / no -r / no SFTP
 ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
   --timeout 120000 --json
@@ -228,7 +277,8 @@ ssh-cli --disable-sudo exec prod "id"
 
 ```bash
 # prefer env SSH_CLI_E2E_*; --from-grok-config is maintainer-local ($HOME only)
-# official matrix E01–E14 (E10–E14: SCP upload/download/cmp/missing/preserve)
+# official matrix E01–E16 (E10–E14: SCP upload/download/cmp/missing/preserve)
 # prints only PASS/FAIL — never host/user/password
+# prefer local sshd / throwaway VPS; never auth-failure storms on production (fail2ban)
 bash scripts/e2e_real_ssh.sh --from-grok-config
 ```

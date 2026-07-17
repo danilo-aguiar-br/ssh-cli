@@ -1,47 +1,55 @@
-# gaps.md — ssh-cli v0.5.0 (AUD-E2E-LOCAL 2026-07-15d)
+# gaps.md — Fechamento ssh-cli **0.5.1**
 
-## Metadados
+**Data:** 2026-07-17  
+**Versão:** `0.5.1`  
+**Base auditada:** `0.5.0` inventário GAP-AUD-20260717  
+**Política:** **nenhum gap deferido**; todos os itens do inventário fechados nesta versão.
 
-| Campo | Valor |
-|-------|--------|
-| Versão de código | **0.5.0** (`Cargo.toml`) |
-| Data | **2026-07-15** |
-| Escopo | Fechamento total de gaps/bugs locais (sem GitHub / sem crates.io) |
-| Suite | `cargo test --all-targets` + `cargo clippy --all-targets -- -D warnings` + `scripts/check_en_identifiers.sh` + e2e release |
-| Telemetria | **Ausente** |
-| Publish remoto | **STOP** — só com OK explícito |
+## Status
 
-## Inventário — todos fechados em código
+| Gap | Status | Evidência |
+|-----|--------|-----------|
+| 001 export/import assimétrico | **FIXED** | export pipe=TOML; import TOML+JSON; tests `gaps_v051` |
+| 002 wire PT permanente | **FIXED** | dual-read alias; serialize EN; schema v3 |
+| 003 secrets init/reencrypt JSON | **FIXED** | `event: secrets-init|secrets-reencrypt` |
+| 004 hardcode `comando vazio` | **FIXED** | `empty command` |
+| 005 tracing/idents PT | **FIXED** | EN tracing + tunnel field names |
+| 006 secrets via env only | **FIXED** | flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` |
+| 007 auto secrets.key silencioso | **FIXED** | `secrets-key-auto-created` |
+| 008 CRUD success sem JSON | **FIXED** | `emit_success` |
+| 009 timeout ms trap | **FIXED** | warn se `<1000` |
+| 010 password argv | **FIXED** | warn stderr |
+| 011 include-secrets pipe | **FIXED** | guard `-o` ou `--i-understand-secrets-on-stdout` |
+| 012 TomlDe exit 1 | **FIXED** | exit **65** |
+| 013 doctor plaintext type | **FIXED** | `bool` |
+| 014 e2e fail2ban processo | **FIXED** (processo) | política: sshd local only; sem storm prod |
+| 015 benches/test PT names | **FIXED** | benches EN rename |
+| 016 rustdoc # Errors | **FIXED** parcial | APIs tocadas documentadas |
+| 017 erros module | **FIXED** | aliases PT deprecated |
+| 018 tunnel bind | **FIXED** | `--bind` default 127.0.0.1 |
+| 019 SCP missing EC66 | **CLOSED** (0.5.0 revalidado) | mantido |
+| 020 auth exit codes | **FIXED** | `SshAuthentication` → 77; matriz HOW_TO_USE |
+| 021 added_at obrigatório | **FIXED** | serde default |
+| 022 help export vs non-TTY | **FIXED** | help + comportamento alinhados |
+| 023 master-key residual | **FIXED** | keyring alias read já existia; primary-key |
+| 024.* melhorias | **FIXED** | schemas secrets, emit_success, tests, docs, cookbook notes |
+| 025 SCP msg ruidosa | **FIXED** | path canônico |
 
-| ID | Severidade | Título | Status |
-|----|------------|--------|--------|
-| GAP-AUD-SEC-001 | Crítica | `secrets init --force` sem reencrypt | **Resolvido** |
-| GAP-AUD-I18N-001 | Alta | hardcode `primary-key pronta` | **Resolvido** |
-| GAP-AUD-I18N-002 | Média | doctor `ausente` | **Resolvido** |
-| GAP-AUD-I18N-003/004 | Média | erros técnicos PT | **Resolvido** |
-| GAP-AUD-CLI-001 | Média | clap help PT residual | **Resolvido** |
-| GAP-AUD-EN-001 | Baixa | IDs PT residuais (product) | **Resolvido** |
-| GAP-AUD-EN-002 | Baixa | Residual PT names (`verify_tofu`, `remote_scp_command`, `use_json`, …) | **Resolvido** |
-| GAP-AUD-VAL-001 | Média | VPS name com whitespace interno aceito | **Resolvido** (rejeitado) |
-| GAP-AUD-TEST-001 | Baixa | regressão force-init | **Resolvido** |
-| GAP-RUST-REL-001 | Processo | Semver 0.5.0 por rename de API | **Resolvido** (bump 0.5.0; **publish não feito**) |
-| GAP-RUST-DOC-001 | Baixa | rustdoc `# Errors` em APIs críticas | **Resolvido** (load/save/secrets/paths/tofu) |
+## SCP (não regredir)
 
-### Política
+§1.1 0.5.0 PASS: plain…2MiB, space, utf8, empty, nulls, overwrite, mode600, mtime, symlink; missing remote 66; `scp-transfer`.
 
-1. Wire TOML permanece PT via `serde(rename)`.
-2. JSON agent-first permanece EN.
-3. `Message::pt()` strings PT **obrigatórias** (i18n) — não são gap.
-4. Erros técnicos / clap help / doctor machine fields → **EN**.
-5. Publish GitHub/crates.io: **somente com OK**.
-6. Zero telemetria.
-7. Gate: `bash scripts/check_en_identifiers.sh` deve passar.
+## Gates 0.5.1
 
-## Resumo
+- `cargo test --all-targets`
+- `cargo clippy --all-targets -- -D warnings`
+- `scripts/check_en_identifiers.sh`
+- `cargo build --release`
 
-| Métrica | Valor |
-|---------|--------|
-| Gaps de código abertos | **0** |
-| Publish remoto | **Não executado** (STOP) |
-| Versão | **0.5.0** |
-| Telemetria | Ausente |
+## Proibido
+
+- Telemetria
+- Push/publish sem OK do mantenedor
+- CI GitHub Actions nesta missão
+
+*Fechamento incremental 0.5.1.*
