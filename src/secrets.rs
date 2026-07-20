@@ -1,19 +1,30 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// G-SECDEV-05: pure module — no `unsafe` permitted (crate root allows only OS FFI / test env).
+#![forbid(unsafe_code)]
 //! At-rest encryption of secrets in `config.toml` (GAP-009 / R-SECRETS-DEFAULT).
 //!
 //! Primary-key resolution order (32 bytes), 0.5.1:
 //! 1. CLI flags (`--secrets-key-file`, `--use-keyring`, `--allow-plaintext-secrets`)
-//! 2. Env (deprecated): `SSH_CLI_SECRETS_KEY`, `SSH_CLI_SECRETS_KEY_FILE`, `SSH_CLI_USE_KEYRING`
-//! 3. OS keyring when enabled (`service=ssh-cli`, `user=secrets-primary-key`; legacy read alias)
-//! 4. XDG `secrets.key` file (next to `config.toml`), auto-created on first write
+//! 2. OS keyring when enabled (`service=ssh-cli`, `user=secrets-primary-key`; legacy read alias)
+//! 3. XDG `secrets.key` file (next to `config.toml`), auto-created on first write
 //!
-//! Opt-out: `--allow-plaintext-secrets` or deprecated `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`.
+//! **Env-as-store is forbidden (G-ERR-13 / G-UNSAFE):** if `SSH_CLI_SECRETS_KEY` or
+//! `SSH_CLI_SECRETS_KEY_FILE` is present, load **fails closed** with a clear error
+//! pointing to XDG `secrets.key` or `--secrets-key-file`.
+//!
+//! Plaintext at-rest opt-out: **only** CLI `--allow-plaintext-secrets` (no env store).
 //!
 //! With a key: serialization writes `sshcli-enc:v1:<base64(nonce||ciphertext)>`.
 //!
 //! **Never** log or return the key or plaintext in public errors.
 
-use crate::erros::{SshCliError, SshCliResult};
+use crate::constants::{
+    AEAD_NONCE_LEN_BYTES, AEAD_TAG_LEN_BYTES, APP_NAME,
+    ENV_SECRETS_KEY, ENV_SECRETS_KEY_FILE, KEYRING_SERVICE, KEYRING_USER_LEGACY,
+    KEYRING_USER_PRIMARY, PRIMARY_KEY_HEX_LEN, PRIMARY_KEY_LEN_BYTES,
+    SECRETS_KEY_FILE_NAME,
+};
+use crate::errors::{SshCliError, SshCliResult};
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use std::path::{Path, PathBuf};
@@ -24,11 +35,36 @@ use zeroize::Zeroize;
 /// Prefix for encrypted blobs in TOML.
 pub const ENC_PREFIX: &str = "sshcli-enc:v1:";
 
+/// File name of the primary key in the config directory (XDG sibling of `config.toml`).
+pub const KEY_FILE_NAME: &str = SECRETS_KEY_FILE_NAME;
 
-/// File name of the primary key in the config directory.
-pub const KEY_FILE_NAME: &str = "secrets.key";
+// Compile-time invariants (const/static rules).
+const _: () = assert!(!ENC_PREFIX.is_empty());
+const _: () = assert!(!KEY_FILE_NAME.is_empty());
+const _: () = assert!(PRIMARY_KEY_LEN_BYTES == 32);
+
+/// Locks a process-global `Mutex`, recovering from poison explicitly.
+///
+/// Poison means a previous holder panicked; the data is still usable for this
+/// one-shot CLI, so we take `into_inner()` rather than silently skipping updates.
+/// Recovery is **logged** (Rules Rust: never silence `PoisonError` without log).
+///
+/// Critical sections using this helper must stay short and **never** hold the
+/// guard across `.await` or blocking I/O (clone/copy under lock, then release).
+fn lock_global<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| {
+        tracing::warn!(
+            "secrets process-global mutex was poisoned; recovering via into_inner (one-shot CLI)"
+        );
+        poisoned.into_inner()
+    })
+}
 
 /// Config directory override (e.g. `--config-dir`) to align `secrets.key`.
+///
+/// Concurrent access: `std::sync::Mutex` (const ctor) — single composite state
+/// (`Option<PathBuf>`); not split into uncoordinated atomics. Poison recovered
+/// via [`lock_global`]. Never held across await.
 static DIR_CONFIG_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// CLI runtime overrides (flags). Env remains as deprecated fallback.
@@ -39,6 +75,10 @@ struct RuntimeSecretsFlags {
     use_keyring: bool,
 }
 
+/// Process-wide secrets CLI flags (set once after parse).
+///
+/// Single `Mutex` keeps the three fields consistent (Rules: do not protect a
+/// multi-field invariant with independent atomics). See [`lock_global`].
 static RUNTIME_FLAGS: Mutex<RuntimeSecretsFlags> = Mutex::new(RuntimeSecretsFlags {
     allow_plaintext: false,
     secrets_key_file: None,
@@ -46,13 +86,14 @@ static RUNTIME_FLAGS: Mutex<RuntimeSecretsFlags> = Mutex::new(RuntimeSecretsFlag
 });
 
 /// Set when `secrets.key` is auto-created during this process (GAP-AUD-007).
+///
+/// Concurrent access: independent status bit; `Ordering::Relaxed` (no dependent
+/// data fence — isolated flag, not paired with other memory).
 static AUTO_KEY_CREATED: AtomicBool = AtomicBool::new(false);
 
 /// Sets the config directory used to resolve `secrets.key` (one-shot; called from `dispatch`).
 pub fn set_config_dir(dir: Option<PathBuf>) {
-    if let Ok(mut g) = DIR_CONFIG_OVERRIDE.lock() {
-        *g = dir;
-    }
+    *lock_global(&DIR_CONFIG_OVERRIDE) = dir;
 }
 
 /// Applies one-shot CLI flags for secrets resolution (GAP-AUD-006).
@@ -61,24 +102,26 @@ pub fn set_runtime_flags(
     secrets_key_file: Option<PathBuf>,
     use_keyring: bool,
 ) {
-    if let Ok(mut g) = RUNTIME_FLAGS.lock() {
+    {
+        let mut g = lock_global(&RUNTIME_FLAGS);
         g.allow_plaintext = allow_plaintext;
         g.secrets_key_file = secrets_key_file;
         g.use_keyring = use_keyring;
     }
-    AUTO_KEY_CREATED.store(false, Ordering::SeqCst);
+    AUTO_KEY_CREATED.store(false, Ordering::Relaxed);
 }
 
 /// Returns true once if a key was auto-created since the last flag reset (consume).
 #[must_use]
 pub fn take_auto_key_created() -> bool {
-    AUTO_KEY_CREATED.swap(false, Ordering::SeqCst)
+    // RMW on an independent flag — Relaxed is enough (no data publish).
+    AUTO_KEY_CREATED.swap(false, Ordering::Relaxed)
 }
 
 /// Returns true if a key was auto-created (non-consuming).
 #[must_use]
 pub fn auto_key_created() -> bool {
-    AUTO_KEY_CREATED.load(Ordering::SeqCst)
+    AUTO_KEY_CREATED.load(Ordering::Relaxed)
 }
 
 /// Primary-key source (without exposing material).
@@ -86,9 +129,9 @@ pub fn auto_key_created() -> bool {
 pub enum KeySource {
     /// No key source available (plaintext at-rest with opt-out or before first write).
     Absent,
-    /// Environment variable `SSH_CLI_SECRETS_KEY`.
+    /// Reserved: env key material is **rejected** (fail-closed); never a success source.
     Env,
-    /// File from `SSH_CLI_SECRETS_KEY_FILE`.
+    /// File from CLI `--secrets-key-file`.
     ConfigFile,
     /// OS keyring.
     Keyring,
@@ -123,39 +166,22 @@ pub struct SecretsStatus {
     pub plaintext_opt_out: bool,
 }
 
-/// True if plaintext opt-out is active (CLI flag first, then deprecated env).
+/// True if plaintext opt-out is active (CLI flag only — G-ERR-13, no env store).
 #[must_use]
 pub fn plaintext_allowed() -> bool {
-    if let Ok(g) = RUNTIME_FLAGS.lock() {
-        if g.allow_plaintext {
-            return true;
-        }
-    }
-    std::env::var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
+    lock_global(&RUNTIME_FLAGS).allow_plaintext
 }
 
 
-/// Config directory used for `secrets.key` (override > SSH_CLI_HOME > XDG).
+/// Config directory used for `secrets.key` (CLI/test override > XDG).
+///
+/// # Errors
+/// [`SshCliError::XdgDirectory`] when XDG cannot be resolved and no override is set.
 pub fn secrets_config_dir() -> SshCliResult<PathBuf> {
-    if let Ok(g) = DIR_CONFIG_OVERRIDE.lock() {
-        if let Some(ref d) = *g {
-            return Ok(d.clone());
-        }
+    if let Some(d) = lock_global(&DIR_CONFIG_OVERRIDE).clone() {
+        return Ok(d);
     }
-    if let Ok(home) = std::env::var("SSH_CLI_HOME") {
-        if home.contains("..") {
-            return Err(SshCliError::InvalidArgument(
-                "SSH_CLI_HOME must not contain '..'".to_string(),
-            ));
-        }
-        return Ok(PathBuf::from(home));
-    }
-    let dirs = directories::ProjectDirs::from("", "", "ssh-cli").ok_or_else(|| {
-        SshCliError::Generic("could not resolve config directory".to_string())
-    })?;
-    Ok(dirs.config_dir().to_path_buf())
+    crate::paths::xdg_config_dir()
 }
 
 /// Canonical path of the local primary-key file.
@@ -167,48 +193,39 @@ pub fn secrets_key_path() -> SshCliResult<PathBuf> {
 ///
 /// # Errors
 /// Returns an error if a configured key source exists but cannot be read or parsed.
-pub fn load_primary_key() -> SshCliResult<(Option<[u8; 32]>, KeySource)> {
+pub fn load_primary_key() -> SshCliResult<(Option<[u8; PRIMARY_KEY_LEN_BYTES]>, KeySource)> {
     // CLI flag: --secrets-key-file
-    if let Ok(g) = RUNTIME_FLAGS.lock() {
-        if let Some(ref path) = g.secrets_key_file {
-            let text = std::fs::read_to_string(path).map_err(|e| {
-                SshCliError::InvalidArgument(format!(
-                    "failed reading --secrets-key-file {}: {e}",
-                    path.display()
-                ))
-            })?;
-            let key = parse_hex_key(text.trim()).map_err(|e| {
-                SshCliError::InvalidArgument(format!("invalid --secrets-key-file: {e}"))
-            })?;
-            return Ok((Some(key), KeySource::ConfigFile));
-        }
-    }
-
-    if let Ok(hex) = std::env::var("SSH_CLI_SECRETS_KEY") {
-        let key = parse_hex_key(hex.trim()).map_err(|e| {
-            SshCliError::InvalidArgument(format!("invalid SSH_CLI_SECRETS_KEY: {e}"))
-        })?;
-        return Ok((Some(key), KeySource::Env));
-    }
-
-    if let Ok(path) = std::env::var("SSH_CLI_SECRETS_KEY_FILE") {
-        let text = std::fs::read_to_string(&path).map_err(|e| {
-            SshCliError::InvalidArgument(format!("failed reading SSH_CLI_SECRETS_KEY_FILE: {e}"))
+    let secrets_key_file = lock_global(&RUNTIME_FLAGS).secrets_key_file.clone();
+    if let Some(path) = secrets_key_file {
+        let mut text = crate::paths::read_text_capped(
+            &path,
+            crate::paths::MAX_SECRETS_KEY_FILE_BYTES,
+        )
+        .map_err(|e| {
+            SshCliError::InvalidArgument(format!(
+                "failed reading --secrets-key-file {}: {e}",
+                path.display()
+            ))
         })?;
         let key = parse_hex_key(text.trim()).map_err(|e| {
-            SshCliError::InvalidArgument(format!("invalid SSH_CLI_SECRETS_KEY_FILE: {e}"))
-        })?;
-        return Ok((Some(key), KeySource::ConfigFile));
+            SshCliError::InvalidArgument(format!("invalid --secrets-key-file: {e}"))
+        });
+        text.zeroize();
+        return Ok((Some(key?), KeySource::ConfigFile));
     }
 
-    let use_keyring_flag = RUNTIME_FLAGS
-        .lock()
-        .map(|g| g.use_keyring)
-        .unwrap_or(false);
-    let use_keyring_env = std::env::var("SSH_CLI_USE_KEYRING")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    if use_keyring_flag || use_keyring_env {
+    // G-ERR-13: env-as-store for key material is forbidden (fail closed).
+    if std::env::var_os(ENV_SECRETS_KEY).is_some()
+        || std::env::var_os(ENV_SECRETS_KEY_FILE).is_some()
+    {
+        return Err(SshCliError::InvalidArgument(format!(
+            "{ENV_SECRETS_KEY} / {ENV_SECRETS_KEY_FILE} are not supported; use XDG `{KEY_FILE_NAME}` \
+             (`{APP_NAME} secrets init`) or --secrets-key-file"
+        )));
+    }
+
+    let use_keyring_flag = lock_global(&RUNTIME_FLAGS).use_keyring;
+    if use_keyring_flag {
         match read_keyring() {
             Ok(Some(key)) => return Ok((Some(key), KeySource::Keyring)),
             Ok(None) => {}
@@ -220,11 +237,17 @@ pub fn load_primary_key() -> SshCliResult<(Option<[u8; 32]>, KeySource)> {
 
     let path = secrets_key_path()?;
     if path.is_file() {
-        let text = std::fs::read_to_string(&path)
-            .map_err(|e| SshCliError::Generic(format!("failed reading {}: {e}", path.display())))?;
+        let mut text = crate::paths::read_text_capped(
+            &path,
+            crate::paths::MAX_SECRETS_KEY_FILE_BYTES,
+        )
+        .map_err(|e| {
+            SshCliError::Config(format!("failed reading {}: {e}", path.display()))
+        })?;
         let key = parse_hex_key(text.trim())
-            .map_err(|e| SshCliError::InvalidArgument(format!("invalid secrets.key: {e}")))?;
-        return Ok((Some(key), KeySource::XdgFile));
+            .map_err(|e| SshCliError::InvalidArgument(format!("invalid {KEY_FILE_NAME}: {e}")));
+        text.zeroize();
+        return Ok((Some(key?), KeySource::XdgFile));
     }
 
     Ok((None, KeySource::Absent))
@@ -235,7 +258,7 @@ pub fn load_primary_key() -> SshCliResult<(Option<[u8; 32]>, KeySource)> {
 ///
 /// # Errors
 /// Returns an error if auto-creating `secrets.key` fails when encryption is required.
-pub fn ensure_key_for_write() -> SshCliResult<(Option<[u8; 32]>, KeySource)> {
+pub fn ensure_key_for_write() -> SshCliResult<(Option<[u8; PRIMARY_KEY_LEN_BYTES]>, KeySource)> {
     let (existing, source) = load_primary_key()?;
     if existing.is_some() {
         return Ok((existing, source));
@@ -244,16 +267,17 @@ pub fn ensure_key_for_write() -> SshCliResult<(Option<[u8; 32]>, KeySource)> {
         return Ok((None, KeySource::Absent));
     }
     let path = secrets_key_path()?;
-    let hex = generate_hex_key()?;
+    let mut hex = generate_hex_key()?;
     write_key_file(&path, &hex, false)?;
-    AUTO_KEY_CREATED.store(true, Ordering::SeqCst);
+    AUTO_KEY_CREATED.store(true, Ordering::Relaxed);
     tracing::info!(
         path = %path.display(),
         "secrets.key auto-created (event secrets-key-auto-created)"
     );
     let key = parse_hex_key(&hex)
-        .map_err(|e| SshCliError::Generic(format!("invalid generated key: {e}")))?;
-    Ok((Some(key), KeySource::XdgFile))
+        .map_err(|e| SshCliError::Config(format!("invalid generated key: {e}")));
+    hex.zeroize();
+    Ok((Some(key?), KeySource::XdgFile))
 }
 
 /// Current status (without loading material into logs).
@@ -308,21 +332,20 @@ pub fn deserialize_secret(stored: &str) -> SshCliResult<String> {
     }
     let (key, _) = load_primary_key()?;
     let mut key = key.ok_or_else(|| {
-        SshCliError::InvalidArgument(
-            "config contains encrypted secrets; set SSH_CLI_SECRETS_KEY, SSH_CLI_SECRETS_KEY_FILE, SSH_CLI_USE_KEYRING=1, or secrets.key (ssh-cli secrets init)"
-                .to_string(),
-        )
+        SshCliError::InvalidArgument(format!(
+            "config contains encrypted secrets; run `{APP_NAME} secrets init` (XDG `{KEY_FILE_NAME}`) or pass `--secrets-key-file PATH` / `--use-keyring` (env key material is not supported)"
+        ))
     })?;
     let plain = decrypt_secret(&key, stored)?;
     key.zeroize();
     Ok(plain)
 }
 
-/// Generates 32 random bytes as 64 hex chars.
+/// Generates [`PRIMARY_KEY_LEN_BYTES`] random bytes as [`PRIMARY_KEY_HEX_LEN`] hex chars.
 pub fn generate_hex_key() -> SshCliResult<String> {
-    let mut bytes = [0u8; 32];
+    let mut bytes = [0u8; PRIMARY_KEY_LEN_BYTES];
     getrandom::getrandom(&mut bytes)
-        .map_err(|e| SshCliError::Generic(format!("RNG failed: {e}")))?;
+        .map_err(|e| SshCliError::Config(format!("RNG failed: {e}")))?;
     let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
     bytes.zeroize();
     Ok(hex)
@@ -362,30 +385,21 @@ pub fn write_key_file(path: &Path, hex64: &str, force: bool) -> SshCliResult<()>
     }
     let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
     let mut tmp = tempfile::NamedTempFile::new_in(parent_dir)
-        .map_err(|e| SshCliError::Generic(format!("tempfile secrets.key: {e}")))?;
+        .map_err(|e| SshCliError::Config(format!("tempfile secrets.key: {e}")))?;
     use std::io::Write;
     tmp.write_all(hex64.trim().as_bytes())
-        .map_err(|e| SshCliError::Generic(format!("write secrets.key: {e}")))?;
+        .map_err(|e| SshCliError::Config(format!("write secrets.key: {e}")))?;
     tmp.write_all(b"\n")
-        .map_err(|e| SshCliError::Generic(format!("write secrets.key: {e}")))?;
+        .map_err(|e| SshCliError::Config(format!("write secrets.key: {e}")))?;
     tmp.as_file()
         .sync_all()
-        .map_err(|e| SshCliError::Generic(format!("fsync secrets.key: {e}")))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        tmp.as_file()
-            .set_permissions(perms)
-            .map_err(|e| SshCliError::Generic(format!("chmod secrets.key: {e}")))?;
-    }
+        .map_err(|e| SshCliError::Config(format!("fsync secrets.key: {e}")))?;
+    crate::fs_perm::set_secret_file_mode(tmp.path())
+        .map_err(|e| SshCliError::Config(format!("chmod secrets.key: {e}")))?;
     tmp.persist(path)
-        .map_err(|e| SshCliError::Generic(format!("persist secrets.key: {e}")))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
+        .map_err(|e| SshCliError::Config(format!("persist secrets.key: {e}")))?;
+    // Best-effort re-apply after rename (matches prior ignore-on-error chmod).
+    let _ = crate::fs_perm::set_secret_file_mode(path);
     Ok(())
 }
 
@@ -394,26 +408,32 @@ pub fn write_key_file(path: &Path, hex64: &str, force: bool) -> SshCliResult<()>
 /// # Errors
 /// Returns an error if the key already exists without `--force`, RNG fails, or keyring/file I/O fails.
 pub fn init_primary_key(use_keyring: bool, force: bool) -> SshCliResult<SecretsStatus> {
-    let hex = generate_hex_key()?;
+    let mut hex = generate_hex_key()?;
     if use_keyring {
         if !force {
             match read_keyring() {
                 Ok(Some(_)) => {
+                    hex.zeroize();
                     return Err(SshCliError::InvalidArgument(
                         "keyring already has a primary-key; use --force".to_string(),
                     ));
                 }
                 Ok(None) => {}
-                Err(e) => return Err(e),
+                Err(e) => {
+                    hex.zeroize();
+                    return Err(e);
+                }
             }
         }
-        write_key_to_keyring(&hex)?;
-        drop(hex);
+        let result = write_key_to_keyring(&hex);
+        hex.zeroize();
+        result?;
         return secrets_status();
     }
     let path = secrets_key_path()?;
-    write_key_file(&path, &hex, force)?;
-    drop(hex);
+    let result = write_key_file(&path, &hex, force);
+    hex.zeroize();
+    result?;
     secrets_status()
 }
 
@@ -421,21 +441,23 @@ pub fn init_primary_key(use_keyring: bool, force: bool) -> SshCliResult<SecretsS
 pub fn write_key_to_keyring(hex64: &str) -> SshCliResult<()> {
     let _ = parse_hex_key(hex64)
         .map_err(|e| SshCliError::InvalidArgument(format!("invalid key: {e}")))?;
-    let entry = keyring::Entry::new("ssh-cli", "secrets-primary-key")
-        .map_err(|e| SshCliError::Generic(format!("keyring Entry::new failed: {e}")))?;
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER_PRIMARY)
+        .map_err(|e| SshCliError::Config(format!("keyring Entry::new failed: {e}")))?;
     entry
         .set_password(hex64.trim())
-        .map_err(|e| SshCliError::Generic(format!("keyring set failed: {e}")))?;
+        .map_err(|e| SshCliError::Config(format!("keyring set failed: {e}")))?;
     Ok(())
 }
 
-fn parse_hex_key(hex: &str) -> Result<[u8; 32], String> {
+fn parse_hex_key(hex: &str) -> Result<[u8; PRIMARY_KEY_LEN_BYTES], String> {
     let h = hex.trim();
-    if h.len() != 64 {
-        return Err("expected 64 hex characters (32 bytes)".to_string());
+    if h.len() != PRIMARY_KEY_HEX_LEN {
+        return Err(format!(
+            "expected {PRIMARY_KEY_HEX_LEN} hex characters ({PRIMARY_KEY_LEN_BYTES} bytes)"
+        ));
     }
-    let mut out = [0u8; 32];
-    for i in 0..32 {
+    let mut out = [0u8; PRIMARY_KEY_LEN_BYTES];
+    for i in 0..PRIMARY_KEY_LEN_BYTES {
         let byte =
             u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).map_err(|_| "invalid hex".to_string())?;
         out[i] = byte;
@@ -443,17 +465,17 @@ fn parse_hex_key(hex: &str) -> Result<[u8; 32], String> {
     Ok(out)
 }
 
-fn encrypt_secret(key: &[u8; 32], plaintext: &str) -> SshCliResult<String> {
+fn encrypt_secret(key: &[u8; PRIMARY_KEY_LEN_BYTES], plaintext: &str) -> SshCliResult<String> {
     let cipher = ChaCha20Poly1305::new_from_slice(key)
-        .map_err(|_| SshCliError::Generic("invalid AEAD key".to_string()))?;
-    let mut nonce_bytes = [0u8; 12];
+        .map_err(|_| SshCliError::crypto("aead_key"))?;
+    let mut nonce_bytes = [0u8; AEAD_NONCE_LEN_BYTES];
     getrandom::getrandom(&mut nonce_bytes)
-        .map_err(|e| SshCliError::Generic(format!("RNG failed: {e}")))?;
+        .map_err(|e| SshCliError::Config(format!("RNG failed: {e}")))?;
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher
         .encrypt(nonce, plaintext.as_bytes())
-        .map_err(|_| SshCliError::Generic("failed to encrypt secret".to_string()))?;
-    let mut packed = Vec::with_capacity(12 + ciphertext.len());
+        .map_err(|_| SshCliError::crypto("encrypt"))?;
+    let mut packed = Vec::with_capacity(AEAD_NONCE_LEN_BYTES + ciphertext.len());
     packed.extend_from_slice(&nonce_bytes);
     packed.extend_from_slice(&ciphertext);
     Ok(format!(
@@ -462,51 +484,61 @@ fn encrypt_secret(key: &[u8; 32], plaintext: &str) -> SshCliResult<String> {
     ))
 }
 
-fn decrypt_secret(key: &[u8; 32], blob: &str) -> SshCliResult<String> {
+fn decrypt_secret(key: &[u8; PRIMARY_KEY_LEN_BYTES], blob: &str) -> SshCliResult<String> {
     let b64 = blob
         .strip_prefix(ENC_PREFIX)
-        .ok_or_else(|| SshCliError::Generic("malformed encrypted blob".to_string()))?;
+        .ok_or_else(|| SshCliError::crypto("blob_parse"))?;
     let packed = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
-        .map_err(|_| SshCliError::Generic("invalid encrypted blob base64".to_string()))?;
-    if packed.len() < 12 + 16 {
-        return Err(SshCliError::Generic(
+        .map_err(|_| SshCliError::crypto("blob_b64"))?;
+    if packed.len() < AEAD_NONCE_LEN_BYTES + AEAD_TAG_LEN_BYTES {
+        return Err(SshCliError::Config(
             "encrypted blob too short".to_string(),
         ));
     }
-    let (nonce_bytes, ct) = packed.split_at(12);
+    let (nonce_bytes, ct) = packed.split_at(AEAD_NONCE_LEN_BYTES);
     let cipher = ChaCha20Poly1305::new_from_slice(key)
-        .map_err(|_| SshCliError::Generic("invalid AEAD key".to_string()))?;
+        .map_err(|_| SshCliError::crypto("aead_key"))?;
     let nonce = Nonce::from_slice(nonce_bytes);
     let plain = cipher.decrypt(nonce, ct).map_err(|_| {
-        SshCliError::Generic("failed to decrypt secret (wrong key?)".to_string())
+        SshCliError::crypto("decrypt")
     })?;
-    String::from_utf8(plain)
-        .map_err(|_| SshCliError::Generic("decrypted secret is not valid UTF-8".to_string()))
+    match String::from_utf8(plain) {
+        Ok(s) => Ok(s),
+        Err(e) => {
+            // from_utf8 failure keeps bytes in the error — scrub before drop.
+            let mut bad = e.into_bytes();
+            bad.zeroize();
+            Err(SshCliError::Config(
+                "decrypted secret is not valid UTF-8".to_string(),
+            ))
+        }
+    }
 }
 
-fn read_keyring() -> SshCliResult<Option<[u8; 32]>> {
+fn read_keyring() -> SshCliResult<Option<[u8; PRIMARY_KEY_LEN_BYTES]>> {
     // Prefer inclusive primary-key id; fall back to legacy master-key user for migration.
-    for user in ["secrets-primary-key", "secrets-master-key"] {
-        let entry = match keyring::Entry::new("ssh-cli", user) {
+    for user in [KEYRING_USER_PRIMARY, KEYRING_USER_LEGACY] {
+        let entry = match keyring::Entry::new(KEYRING_SERVICE, user) {
             Ok(e) => e,
             Err(e) => {
                 if user == "secrets-master-key" {
-                    return Err(SshCliError::Generic(format!("keyring Entry::new failed: {e}")));
+                    return Err(SshCliError::Config(format!("keyring Entry::new failed: {e}")));
                 }
                 continue;
             }
         };
         match entry.get_password() {
-            Ok(s) => {
+            Ok(mut s) => {
                 let key = parse_hex_key(&s).map_err(|e| {
                     SshCliError::InvalidArgument(format!("invalid keyring primary-key: {e}"))
-                })?;
-                return Ok(Some(key));
+                });
+                s.zeroize();
+                return Ok(Some(key?));
             }
             Err(keyring::Error::NoEntry) => continue,
             Err(e) => {
                 if user == "secrets-master-key" {
-                    return Err(SshCliError::Generic(format!("keyring get failed: {e}")));
+                    return Err(SshCliError::Config(format!("keyring get failed: {e}")));
                 }
                 continue;
             }
@@ -522,11 +554,11 @@ mod tests {
     use tempfile::TempDir;
 
     fn clear_key_env() {
-        std::env::remove_var("SSH_CLI_SECRETS_KEY");
-        std::env::remove_var("SSH_CLI_SECRETS_KEY_FILE");
-        std::env::remove_var("SSH_CLI_USE_KEYRING");
-        std::env::remove_var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS");
-        std::env::remove_var("SSH_CLI_HOME");
+        // Fail-closed path reads these keys; clear so serial tests start clean.
+        crate::test_util::env::remove_var(ENV_SECRETS_KEY);
+        crate::test_util::env::remove_var(ENV_SECRETS_KEY_FILE);
+        crate::test_util::env::remove_var(crate::constants::ENV_USE_KEYRING);
+        set_runtime_flags(false, None, false);
         set_config_dir(None);
     }
 
@@ -540,10 +572,9 @@ mod tests {
 
     #[test]
     #[serial]
-    fn roundtrip_with_env_key() {
+    fn roundtrip_with_xdg_key() {
         let _tmp = sandbox();
-        let hex = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
-        std::env::set_var("SSH_CLI_SECRETS_KEY", hex);
+        init_primary_key(false, false).expect("init key");
         let plain = "fake-test-password-not-real";
         let enc = serialize_secret(plain).unwrap();
         assert!(is_encrypted_blob(&enc));
@@ -557,7 +588,7 @@ mod tests {
     #[serial]
     fn opt_out_keeps_plaintext() {
         let _tmp = sandbox();
-        std::env::set_var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS", "1");
+        set_runtime_flags(true, None, false);
         let plain = "fake-plaintext-only-for-unit-test";
         let out = serialize_secret(plain).unwrap();
         assert_eq!(out, plain);
@@ -583,18 +614,18 @@ mod tests {
     #[serial]
     fn blob_without_key_fails() {
         let tmp = sandbox();
-        let hex = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
-        std::env::set_var("SSH_CLI_SECRETS_KEY", hex);
+        init_primary_key(false, false).expect("init");
         let enc = serialize_secret("fake-secret").unwrap();
-        // Remove env e qualquer secrets.key do sandbox
+        // Drop key material from sandbox; allow plaintext so deserialize path
+        // still requires a key for encrypted blobs.
         clear_key_env();
         set_config_dir(Some(tmp.path().to_path_buf()));
         let _ = std::fs::remove_file(tmp.path().join(KEY_FILE_NAME));
-        std::env::set_var("SSH_CLI_ALLOW_PLAINTEXT_SECRETS", "1");
+        set_runtime_flags(true, None, false);
         let err = deserialize_secret(&enc).unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("encrypted") || msg.contains("SSH_CLI") || msg.contains("secrets"),
+            msg.contains("encrypted") || msg.contains("secrets") || msg.contains("key"),
             "msg={msg}"
         );
         clear_key_env();
@@ -605,8 +636,7 @@ mod tests {
     fn empty_secret_never_encrypted_blob() {
         // GAP-SSH-EXP-001
         let _tmp = sandbox();
-        let hex = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
-        std::env::set_var("SSH_CLI_SECRETS_KEY", hex);
+        init_primary_key(false, false).expect("init");
         let out = serialize_secret("").unwrap();
         assert_eq!(out, "");
         assert!(!is_encrypted_blob(&out));
@@ -633,5 +663,17 @@ mod tests {
         assert_eq!(st.source, KeySource::XdgFile);
         assert!(st.key_file_path.is_file());
         clear_key_env();
+    }
+
+    #[test]
+    fn lock_global_recovers_from_poison_with_usable_data() {
+        let m = Mutex::new(42_u32);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _g = m.lock().unwrap();
+            panic!("intentional poison for lock_global test");
+        }));
+        assert!(m.is_poisoned());
+        let g = lock_global(&m);
+        assert_eq!(*g, 42);
     }
 }

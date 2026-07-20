@@ -82,9 +82,13 @@ fn gap_tun_003_schema_min_1() {
 
 #[test]
 fn gap_io_010_source_classificar() {
-    let src = std::fs::read_to_string(root().join("src/ssh/client.rs")).unwrap();
+    let src = std::fs::read_to_string(root().join("src/ssh/client_real_scp.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/client_real_core.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/scp_wire.rs")).unwrap();
     assert!(
-        src.contains("classificar_mensagem_scp") || src.contains("no such file"),
+        src.contains("classificar_mensagem_scp")
+            || src.contains("classify_scp_message")
+            || src.contains("no such file"),
         "SCP client must classify remote missing messages"
     );
     assert!(
@@ -251,7 +255,7 @@ fn gap_doc_product_line_042() {
 
 #[test]
 fn gap_telemetry_false_doctor_source() {
-    let src = std::fs::read_to_string(root().join("src/vps/mod.rs")).unwrap();
+    let src = std::fs::read_to_string(root().join("src/vps/doctor.rs")).unwrap();
     assert!(
         src.contains("\"telemetry\": false") || src.contains("telemetry\": false"),
         "doctor JSON must hardcode telemetry false"

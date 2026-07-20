@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/sftp-fs-op.schema.json",
+  "title": "sftp fs-op JSON",
+  "description": "Structured success payload for `ssh-cli sftp mkdir|rmdir|rm|rename|stat --json`.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["ok", "event", "op", "vps", "path", "duration_ms"],
+  "properties": {
+    "ok": { "type": "boolean", "const": true },
+    "event": { "type": "string", "const": "sftp-fs-op" },
+    "op": {
+      "type": "string",
+      "enum": ["mkdir", "rmdir", "rm", "rename", "stat"]
+    },
+    "vps": { "type": "string" },
+    "path": { "type": "string" },
+    "to": { "type": "string" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "kind": { "type": "string" },
+    "size": { "type": ["integer", "null"] },
+    "mode": { "type": ["integer", "null"] },
+    "mtime": { "type": ["integer", "null"] }
+  }
+}

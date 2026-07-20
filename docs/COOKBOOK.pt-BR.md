@@ -3,7 +3,7 @@
 > Copie receitas executáveis que resolvem problemas reais de SSH multi-host com agentes.
 
 - Leia este documento em [inglês](COOKBOOK.md).
-- Linha de produto: 0.5.1.
+- Linha de produto: 0.5.2.
 
 
 ## Nota de latência
@@ -16,24 +16,25 @@
 - Timeout padrão: 60000 ms
 - max_command_chars padrão: 1000
 - max_output_chars padrão: 100000
-- Tracing padrão: error (`-v` → debug; `RUST_LOG` sobrescreve)
+- Tracing padrão: error (`-v` → debug; `RUST_LOG` ambiente é ignorado)
 - Senha vazia em list/show JSON: `null` (hosts só-chave); não vazia mascara como `***`
 - Telemetria: desligada
 - Segredos at-rest: cifrados por padrão (auto `secrets.key`)
 - Instalação: `cargo install ssh-cli --locked`
 - Supply chain: russh 0.62.2; `cargo deny` com `yanked=deny`, `multiple-versions=warn`
-- SCP: somente arquivos regulares (sem `-r` / sem diretórios / sem SFTP); sufixo partial de download `.ssh-cli.partial`; JSON exige `event: "scp-transfer"`
-- Wire SCP: use 0.4.0+ (prefira a linha de produto 0.5.1); nunca 0.3.9 (crates.io 0.3.9 anunciava SCP mas era inoperante)
-- Export redacted: corpo padrão é TOML (mesmo em pipes); secrets vazios como `""` (nunca blob `sshcli-enc:`); JSON só com `vps export --json`
+- SCP: somente arquivos regulares (sem `-r` / sem diretórios). Árvores e FS remoto usam **`sftp`** (`upload|download --recursive`, `ls`, `mkdir`, …). Sufixo partial de download `.ssh-cli.partial`; JSON exige `event: "scp-transfer"`
+- Wire SCP: use 0.4.0+ (prefira a linha de produto 0.5.2); nunca 0.3.9 (crates.io 0.3.9 anunciava SCP mas era inoperante)
+- Export redacted: corpo padrão é TOML (mesmo em pipes); secrets vazios como `""`; secrets não vazios redacted → `***` (`FIXED_MASK`, nunca `""` para não vazios); nunca blob `sshcli-enc:` no caminho redacted; JSON só com `vps export --json`
 - Wire de hosts: schema v3 (serialização em inglês; dual-read de aliases legados em português)
 - Tunnel pós-bind: deadline one-shot sai com exit 0 após `tunnel_listening` (TUN-002); timeout pré-bind permanece 74
 - Tunnel `--bind` padrão: `127.0.0.1`
 - Auth tunnel/health: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin` (0.4.1+)
-- Flags de secrets (prefira ao env): `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`
+- Flags de secrets (só CLI/XDG; stores env de secrets rejeitados fail-closed): `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`
+- Validação ACME permanente (ex.: `invalidContact`) → exit **64** (não faça retry como 74)
 - Timeout abaixo de 1000 ms: aviso em stderr (unidade é milissegundos, não segundos)
 - Senha em argv: aviso em stderr; prefira `--*-stdin`
 - CRUD/connect/import com `--json`: eventos `vps-added` / `vps-edited` / `vps-removed` / `vps-connected` / `vps-import`
-- A primeira gravação de segredo pode emitir `secrets-key-auto-created` quando a primary-key é provisionada
+- A primeira gravação de segredo pode definir `secrets_key_auto_created: true` no mesmo documento `vps-added` quando a primary-key é provisionada
 
 
 ## Como inicializar cifragem com primary-key
@@ -48,12 +49,24 @@ ssh-cli secrets init --json
 ssh-cli secrets reencrypt --json
 # → event: "secrets-reencrypt" (docs/schemas/secrets-reencrypt.schema.json)
 # a primeira gravação de segredo pode auto-criar secrets.key e emitir:
-# → event: "secrets-key-auto-created"
-# flags preferidas ao env:
+# → event: "vps-added" com secrets_key_auto_created: true (um documento JSON)
+# só CLI/XDG (stores env de secrets rejeitados fail-closed):
 # ssh-cli --secrets-key-file /path/to/key secrets status --json
 # ssh-cli --use-keyring secrets init --json
 # ssh-cli --allow-plaintext-secrets vps add ...   # só testes
 ```
+
+
+## Como descobrir contratos (schema / doctor)
+
+```bash
+ssh-cli schema
+ssh-cli schema vps-list
+ssh-cli doctor --json
+```
+
+- Root `schema` lista contratos de agente; `schema <name>` imprime um documento de schema.
+- Root `doctor --json` (ou `vps doctor --json`) reporta paths, modo de secrets e runtime.
 
 
 ## Como cadastrar host com senha (stdin, sem vazar em argv)
@@ -65,7 +78,10 @@ printf '%s' 'demo-password-not-real' | ssh-cli vps add \
   --host prod.example.com \
   --user deploy \
   --password-stdin
-# com --json → event: "vps-added" (e possivelmente secrets-key-auto-created na 1ª gravação de segredo)
+# com --json → um documento event: "vps-added" (secrets_key_auto_created true/false)
+# alternativa agent auth:
+# ssh-cli vps add --name lab --host 203.0.113.10 --user ubuntu --use-agent
+# descoberta: ssh-cli schema | ssh-cli doctor --json
 ```
 
 
@@ -130,6 +146,30 @@ ssh-cli health-check lab --json
 ```
 
 
+## Como rodar trabalho de frota em todos os hosts registrados
+
+Prefira **um processo** com `--all` (SSH concorrente com bound) a N processos single-host. Limite o fan-out com `--max-concurrency` global (1..=64; fórmula auto quando omitido).
+
+```bash
+# sonda todos os hosts do inventário (JSON batch: health-check-batch)
+ssh-cli --max-concurrency 8 health-check --all --json
+
+# mesmo comando remoto em todos (exec-batch; também sudo-exec / su-exec --all)
+ssh-cli exec --all 'uptime' --json
+ssh-cli --max-concurrency 4 sudo-exec --all 'systemctl is-active nginx' --json
+
+# copia um arquivo local para o mesmo path remoto em todos (scp-batch)
+ssh-cli scp upload --all ./app.tgz /tmp/app.tgz --json
+
+# download: path local é prefixo → grava ./app.log.<vps>
+ssh-cli scp download --all /var/log/app.log ./app.log --json
+```
+
+- Schemas batch: `docs/schemas/health-check-batch.schema.json`, `exec-batch.schema.json`, `scp-batch.schema.json` (envelope inclui `max_concurrency`).
+- Inventário vazio + `--all` → exit de uso **64** (`no hosts registered for --all`).
+- Comandos single-host permanecem válidos quando o alvo é um nome.
+
+
 ## Como sondar com timeout customizado
 
 ```bash
@@ -149,7 +189,7 @@ ssh-cli health-check lab --timeout 15000 --json
 # tracing padrão é error: stderr de JSON/tunnel fica sem prosa INFO
 ssh-cli exec lab "true" --json
 # só ao diagnosticar:
-# RUST_LOG=debug ssh-cli exec lab "true" --json
+# ssh-cli -v exec lab "true" --json
 # ssh-cli -v exec lab "true" --json
 ```
 
@@ -179,6 +219,7 @@ ssh-cli secrets reencrypt
 # corpo padrão do export é TOML mesmo em pipe/non-TTY (não auto-JSON)
 ssh-cli vps export -o /tmp/hosts.mascarado.toml
 # secrets vazios serializam como "" — nunca ciphertext sshcli-enc: (EXP-001)
+# secrets não vazios redacted → "***" (FIXED_MASK; nunca "" para não vazios; G-E2E-10)
 # envelope de agente só com --json → event: "vps-export"
 ssh-cli vps export --json -o /tmp/hosts.mascarado.json
 # import aceita TOML (chaves EN ou aliases PT legados) ou JSON vps-export
@@ -237,8 +278,8 @@ printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
 ## Como transferir artefato de release (somente arquivo regular)
 
 ```bash
-# Use 0.4.0+ (prefira a linha de produto 0.5.1); nunca 0.3.9 — o wire SCP daquela release estava quebrado
-# Sem diretórios / sem -r / sem SFTP
+# Use 0.4.0+ (prefira a linha de produto 0.5.2); nunca 0.3.9 — o wire SCP daquela release estava quebrado
+# SCP: sem diretórios / sem -r (use `sftp --recursive` para árvores)
 ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
   --timeout 120000 --json
 # sucesso em stdout → docs/schemas/scp-transfer.schema.json
@@ -276,9 +317,20 @@ ssh-cli --disable-sudo exec prod "id"
 ## Como rodar E2E SSH real sem logar segredos
 
 ```bash
-# prefira env SSH_CLI_E2E_*; --from-grok-config é local do mantenedor ($HOME only)
-# matriz oficial E01–E16 (E10–E14: SCP upload/download/cmp/missing/preserve)
-# imprime só PASS/FAIL — nunca host/user/password
-# prefira sshd local / VPS throwaway; nunca tempestade de auth falha em produção (fail2ban)
-bash scripts/e2e_real_ssh.sh --from-grok-config
+# Preferido (XDG / --config-dir primeiro): config-dir isolado com hosts já cadastrados
+ssh-cli --config-dir /tmp/ssh-cli-e2e-lab vps add --name e2e --host … --user … --password-stdin
+bash scripts/e2e_real_ssh.sh --config-dir /tmp/ssh-cli-e2e-lab
+
+# Env só do harness (NÃO é store de runtime do produto) — nunca commite esses valores
+# export SSH_CLI_E2E_HOST=… SSH_CLI_E2E_USER=… SSH_CLI_E2E_PASSWORD=…
+# bash scripts/e2e_real_ssh.sh
+
+# Só mantenedor local: parse $HOME/.grok/config.toml ($HOME only; nunca copie para o repositório)
+# bash scripts/e2e_real_ssh.sh --from-grok-config
 ```
+
+- Binário padrão: `target/release/ssh-cli` (override só com harness `SSH_CLI_E2E_BIN`).
+- Sem host de lab / credenciais, o script sai **0** com **SKIP** (seguro offline; não trate SKIP como gate vermelho).
+- Matriz oficial **E01–E16**; **E10–E14** = SCP upload, download, integridade (`cmp`), remoto ausente, preserve mode+mtime.
+- O script imprime só rótulos PASS/FAIL/SKIP — nunca host, user ou password.
+- Prefira `sshd` local / VPS throwaway; nunca tempestade de auth falha em produção (fail2ban).

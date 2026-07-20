@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/sftp-transfer.schema.json",
+  "title": "sftp transfer JSON",
+  "description": "Structured success payload on stdout for `ssh-cli sftp upload|download --json`. Failures use error-envelope.schema.json on stderr.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ok",
+    "event",
+    "direction",
+    "vps",
+    "local",
+    "remote",
+    "bytes",
+    "duration_ms"
+  ],
+  "properties": {
+    "ok": { "type": "boolean", "const": true },
+    "event": {
+      "type": "string",
+      "const": "sftp-transfer",
+      "description": "Event discriminator for agent multiplex (G-SFTP-09)"
+    },
+    "direction": { "type": "string", "enum": ["upload", "download"] },
+    "vps": { "type": "string" },
+    "local": { "type": "string" },
+    "remote": { "type": "string" },
+    "bytes": { "type": "integer", "minimum": 0 },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "recursive": { "type": "boolean" }
+  }
+}

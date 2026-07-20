@@ -1,24 +1,119 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! ssh-cli internationalization system.
+// G-SECDEV-05: pure module — no `unsafe` permitted (crate root allows only OS FFI / test env).
+#![forbid(unsafe_code)]
+//! ssh-cli internationalization system (Rules Rust multi-idioma).
 //!
-//! Provides bilingual `Language` with `Message` as the single source of
-//! UI strings. Locale detection is delegated to the `locale` module.
+//! Provides bilingual [`Language`] with [`Message`] as the **single source** of
+//! human UI strings. Locale detection / BCP47 negotiation lives in [`crate::locale`].
 //!
-//! Language selection precedence:
-//! 1. CLI `--lang` flag
-//! 2. `SSH_CLI_LANG` environment variable
-//! 3. System locale via `sys_locale::get_locale()`
-//! 4. Fallback: `Language::English`
+//! ## Design (agent-first one-shot)
+//!
+//! - **MVP locales:** neutral `en` + `pt-BR` (100% key parity via exhaustive `match`).
+//! - **Not Fluent FTL at runtime:** size-sensitive CLI; compiler-enforced enum
+//!   translations are the embedded equivalent of `i18n-embed` for two locales.
+//! - **JSON / agent wire:** stable English field names and technical
+//!   [`crate::errors::SshCliError`] `Display` (not locale-dependent).
+//! - **Human UX** (success/status/cancel lines): always via [`Message`] / [`t`].
+//! - Optional top-20 locales: Cargo features `i18n-*` (stubs until translations land).
+//!
+//! ## Precedence (see [`crate::locale`])
+//!
+//! 1. CLI `--lang` → 2. persisted XDG `lang` (`locale set`) →
+//! 3. `sys_locale` → 4. `Language::English`.
+//!
+//! `SSH_CLI_LANG` is historical only — not read as a product store.
 
 use anyhow::Result;
+use unic_langid::LanguageIdentifier;
+
+/// Text direction for terminal rendering (LTR MVP; RTL reserved for `i18n-rtl`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum TextDirection {
+    /// Left-to-right (Latin, CJK horizontal, etc.).
+    Ltr,
+    /// Right-to-left (Arabic, Hebrew) — not active in default build.
+    Rtl,
+}
 
 /// Languages supported by the internationalization system.
+///
+/// Single source of truth for product locales in this binary. Do **not** use
+/// `bool` / raw `String` / integers for language in APIs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Language {
-    /// American English (en-US) — default language.
+    /// Neutral English (`en`) — default / agent-stable technical baseline.
     English,
-    /// Brazilian Portuguese (pt-BR).
+    /// Brazilian Portuguese (`pt-BR`) — mandatory MVP pair with `en`.
     Portuguese,
+}
+
+impl Language {
+    /// Locales compiled into the default binary (MVP: `en`, `pt-BR` only).
+    pub const AVAILABLE: &'static [Language] = &[Language::English, Language::Portuguese];
+
+    /// Canonical BCP47 tag for this product locale.
+    ///
+    /// English is neutral `en` (not `en-US` alone). Portuguese is always `pt-BR`.
+    #[must_use]
+    pub const fn bcp47(self) -> &'static str {
+        match self {
+            Self::English => "en",
+            Self::Portuguese => "pt-BR",
+        }
+    }
+
+    /// Structured BCP47 identifier (`unic-langid`).
+    ///
+    /// Built-in tags are compile-time constants (`en`, `pt-BR`). On parse
+    /// failure (should never happen), falls back to the default undetermined
+    /// identifier — **no panic** on product paths (G-SEC-07).
+    #[must_use]
+    pub fn language_identifier(self) -> LanguageIdentifier {
+        self.bcp47()
+            .parse()
+            .unwrap_or_else(|_| LanguageIdentifier::default())
+    }
+
+    /// Base fallback language for regionals (MVP: English).
+    #[must_use]
+    pub const fn fallback(self) -> Language {
+        match self {
+            Self::English => Self::English,
+            Self::Portuguese => Self::English,
+        }
+    }
+
+    /// Writing direction for this locale.
+    #[must_use]
+    pub const fn direction(self) -> TextDirection {
+        match self {
+            Self::English | Self::Portuguese => TextDirection::Ltr,
+        }
+    }
+
+    /// ISO 15924 script subtag (MVP Latin only).
+    #[must_use]
+    pub const fn script(self) -> &'static str {
+        match self {
+            Self::English | Self::Portuguese => "Latn",
+        }
+    }
+
+    /// Maps a negotiated [`LanguageIdentifier`] to a product [`Language`].
+    ///
+    /// Matches primary language subtag: `en*` → English, `pt*` → Portuguese.
+    /// Region-specific product choice for Portuguese is always `pt-BR` in MVP
+    /// (no `pt-PT` variant compiled without a feature).
+    #[must_use]
+    pub fn from_langid(id: &LanguageIdentifier) -> Option<Language> {
+        match id.language.as_str() {
+            "en" => Some(Self::English),
+            "pt" => Some(Self::Portuguese),
+            _ => None,
+        }
+    }
 }
 
 /// All system UI messages.
@@ -176,6 +271,32 @@ pub enum Message {
     ScpUploadFileOnly,
     /// Download refused: local path is already a directory.
     ScpDownloadLocalNotDirectory,
+    /// SFTP upload completed (G-SFTP).
+    SftpUploadCompleted {
+        /// Bytes transferred.
+        bytes: u64,
+        /// Duration in milliseconds.
+        ms: u64,
+    },
+    /// SFTP download completed (G-SFTP).
+    SftpDownloadCompleted {
+        /// Bytes transferred.
+        bytes: u64,
+        /// Duration in milliseconds.
+        ms: u64,
+    },
+    // Locale diagnostics / preference
+    /// Locale preference saved.
+    LocalePreferenceSaved {
+        /// BCP47 tag written.
+        lang: String,
+        /// Path of the preference file.
+        path: String,
+    },
+    /// Locale preference cleared.
+    LocalePreferenceCleared,
+    /// Header for `locale` show output.
+    LocaleStatusTitle,
 }
 
 impl Message {
@@ -190,12 +311,24 @@ impl Message {
     }
 }
 
-/// Initializes i18n by detecting the OS locale.
+/// Initializes i18n by resolving locale (5-layer precedence) and publishing
+/// once to the global [`crate::locale`] `OnceLock`.
 ///
-/// If `force_lang` is `Some(...)`, it overrides automatic detection.
-pub fn initialize_language(force_lang: Option<&str>) -> Result<()> {
-    let language = crate::locale::resolve_language(force_lang);
-    crate::locale::set_language(language);
+/// `force_lang` is the CLI `--lang` value (already clap-validated when present).
+/// `config_dir_override` is `--config-dir` for persisted preference lookup.
+pub fn initialize_language(
+    force_lang: Option<&str>,
+    config_dir_override: Option<&std::path::Path>,
+) -> Result<()> {
+    let resolution =
+        crate::locale::resolve_language_detailed(force_lang, config_dir_override);
+    tracing::debug!(
+        target: "ssh_cli::i18n",
+        language = resolution.language.bcp47(),
+        source = resolution.source.as_str(),
+        "locale resolved"
+    );
+    crate::locale::set_language(resolution.language);
     Ok(())
 }
 
@@ -215,11 +348,14 @@ pub fn current_language() -> Language {
 /// ```
 /// use ssh_cli::i18n::{t, initialize_language, Message};
 ///
-/// initialize_language(Some("en-US")).unwrap();
+/// initialize_language(Some("en"), None).unwrap();
 /// let text = t(Message::VpsRegistryEmpty);
 /// assert!(!text.is_empty());
 /// ```
+/// Takes [`Message`] by value: call sites construct ephemeral messages with
+/// owned payloads; consuming them is intentional (not a needless copy).
 #[must_use]
+#[allow(clippy::needless_pass_by_value)]
 pub fn t(msg: Message) -> String {
     msg.text(current_language())
 }
@@ -259,7 +395,8 @@ fn en(msg: &Message) -> String {
             remote_port,
             vps_name,
         } => format!(
-            "SSH tunnel active: localhost:{local_port} -> {remote_host}:{remote_port} via {vps_name}"
+            "SSH tunnel active: {}:{local_port} -> {remote_host}:{remote_port} via {vps_name}",
+            crate::constants::DEFAULT_TUNNEL_BIND_ADDR
         ),
         Message::TunnelPressCtrlC => "Press Ctrl+C to terminate.".to_string(),
         Message::HealthCheckOk { name } => format!("Health check passed for '{name}'."),
@@ -285,6 +422,17 @@ fn en(msg: &Message) -> String {
         Message::ScpDownloadLocalNotDirectory => {
             "download local path must be a file path, not an existing directory".to_string()
         }
+        Message::SftpUploadCompleted { bytes, ms } => {
+            format!("SFTP upload completed: {bytes} bytes in {ms}ms")
+        }
+        Message::SftpDownloadCompleted { bytes, ms } => {
+            format!("SFTP download completed: {bytes} bytes in {ms}ms")
+        }
+        Message::LocalePreferenceSaved { lang, path } => {
+            format!("language preference saved: {lang} ({path})")
+        }
+        Message::LocalePreferenceCleared => "language preference cleared.".to_string(),
+        Message::LocaleStatusTitle => "Locale status:".to_string(),
     }
 }
 
@@ -323,7 +471,8 @@ fn pt(msg: &Message) -> String {
             remote_port,
             vps_name,
         } => format!(
-            "Tunnel SSH: localhost:{local_port} -> {remote_host}:{remote_port} via {vps_name}"
+            "Tunnel SSH: {}:{local_port} -> {remote_host}:{remote_port} via {vps_name}",
+            crate::constants::DEFAULT_TUNNEL_BIND_ADDR
         ),
         Message::TunnelPressCtrlC => "Pressione Ctrl+C para encerrar.".to_string(),
         Message::HealthCheckOk { name } => format!("Health check bem-sucedido para '{name}'."),
@@ -349,227 +498,21 @@ fn pt(msg: &Message) -> String {
         Message::ScpDownloadLocalNotDirectory => {
             "caminho local de download deve ser arquivo, não diretório existente".to_string()
         }
+        Message::SftpUploadCompleted { bytes, ms } => {
+            format!("Upload SFTP concluído: {bytes} bytes em {ms}ms")
+        }
+        Message::SftpDownloadCompleted { bytes, ms } => {
+            format!("Download SFTP concluído: {bytes} bytes em {ms}ms")
+        }
+        Message::LocalePreferenceSaved { lang, path } => {
+            format!("preferência de idioma salva: {lang} ({path})")
+        }
+        Message::LocalePreferenceCleared => "preferência de idioma removida.".to_string(),
+        Message::LocaleStatusTitle => "Status do locale:".to_string(),
     }
 }
+
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn language_enum_is_copy() {
-        let a = Language::English;
-        let b = a;
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn message_is_not_copy_but_is_clone() {
-        let m = Message::VpsAdded {
-            name: "vps-01".to_string(),
-        };
-        let m2 = m.clone();
-        assert_eq!(m, m2);
-    }
-
-    #[test]
-    fn vps_registry_empty_en() {
-        assert_eq!(
-            Message::VpsRegistryEmpty.text(Language::English),
-            "No VPS registered."
-        );
-    }
-
-    #[test]
-    fn vps_registry_empty_pt() {
-        assert_eq!(
-            Message::VpsRegistryEmpty.text(Language::Portuguese),
-            "Nenhum VPS cadastrado."
-        );
-    }
-
-    #[test]
-    fn vps_added_includes_name_en() {
-        let msg = Message::VpsAdded {
-            name: "prod-01".to_string(),
-        };
-        assert_eq!(
-            msg.text(Language::English),
-            "VPS 'prod-01' added successfully."
-        );
-    }
-
-    #[test]
-    fn vps_added_includes_name_pt() {
-        let msg = Message::VpsAdded {
-            name: "prod-01".to_string(),
-        };
-        assert_eq!(
-            msg.text(Language::Portuguese),
-            "VPS 'prod-01' adicionada com sucesso."
-        );
-    }
-
-    #[test]
-    fn vps_removed_includes_name() {
-        let msg = Message::VpsRemoved {
-            name: "dev-01".to_string(),
-        };
-        assert!(msg.text(Language::English).contains("dev-01"));
-        assert!(msg.text(Language::Portuguese).contains("dev-01"));
-    }
-
-    #[test]
-    fn vps_duplicate_includes_name() {
-        let msg = Message::VpsDuplicate {
-            name: "staging".to_string(),
-        };
-        assert!(msg.text(Language::English).contains("staging"));
-        assert!(msg.text(Language::Portuguese).contains("staging"));
-    }
-
-    #[test]
-    fn vps_not_found_includes_name() {
-        let msg = Message::VpsNotFound {
-            name: "inexistente".to_string(),
-        };
-        assert!(msg.text(Language::English).contains("inexistente"));
-        assert!(msg.text(Language::Portuguese).contains("inexistente"));
-    }
-
-    #[test]
-    fn tunnel_active_includes_all_fields() {
-        let msg = Message::TunnelActive {
-            local_port: 8080,
-            remote_host: "1.2.3.4".to_string(),
-            remote_port: 22,
-            vps_name: "meu-servidor".to_string(),
-        };
-        let en = msg.text(Language::English);
-        assert!(en.contains("8080"));
-        assert!(en.contains("1.2.3.4"));
-        assert!(en.contains("22"));
-        assert!(en.contains("meu-servidor"));
-    }
-
-    #[test]
-    fn error_invalid_argument_includes_detail() {
-        let msg = Message::ErrorInvalidArgument {
-            detail: "port out of range".to_string(),
-        };
-        assert!(msg
-            .text(Language::English)
-            .contains("port out of range"));
-        assert!(msg
-            .text(Language::Portuguese)
-            .contains("port out of range"));
-    }
-
-    #[test]
-    fn health_check_ok_includes_name() {
-        let msg = Message::HealthCheckOk {
-            name: "prod-01".to_string(),
-        };
-        assert!(msg.text(Language::English).contains("prod-01"));
-        assert!(msg.text(Language::Portuguese).contains("prod-01"));
-    }
-
-    #[test]
-    fn all_unit_variants_en_nonempty() {
-        let unit_variants = [
-            Message::VpsRegistryEmpty,
-            Message::VpsListTitle,
-            Message::ConfigPathLabel,
-            Message::ConfigNoKeys,
-            Message::ErrorLoadConfig,
-            Message::ErrorSaveConfig,
-            Message::ErrorSshConnection,
-            Message::ErrorCommandFailed,
-            Message::TunnelPressCtrlC,
-            Message::HealthCheckNoVps,
-            Message::OperationCancelled,
-        ];
-        for v in &unit_variants {
-            let text = v.text(Language::English);
-            assert!(!text.is_empty(), "empty EN for {:?}", v);
-        }
-    }
-
-    #[test]
-    fn all_unit_variants_pt_nonempty() {
-        let unit_variants = [
-            Message::VpsRegistryEmpty,
-            Message::VpsListTitle,
-            Message::ConfigPathLabel,
-            Message::ConfigNoKeys,
-            Message::ErrorLoadConfig,
-            Message::ErrorSaveConfig,
-            Message::ErrorSshConnection,
-            Message::ErrorCommandFailed,
-            Message::TunnelPressCtrlC,
-            Message::HealthCheckNoVps,
-            Message::OperationCancelled,
-        ];
-        for v in &unit_variants {
-            let text = v.text(Language::Portuguese);
-            assert!(!text.is_empty(), "empty PT for {:?}", v);
-        }
-    }
-
-    #[test]
-    fn pt_translations_differ_from_en_for_units() {
-        let pairs = [
-            (Message::VpsRegistryEmpty, Message::VpsRegistryEmpty),
-            (Message::ErrorSshConnection, Message::ErrorSshConnection),
-            (Message::HealthCheckNoVps, Message::HealthCheckNoVps),
-            (Message::OperationCancelled, Message::OperationCancelled),
-        ];
-        for (a, b) in &pairs {
-            let en = a.text(Language::English);
-            let pt = b.text(Language::Portuguese);
-            assert_ne!(en, pt, "EN == PT for {:?}", a);
-        }
-    }
-
-    #[test]
-    fn health_check_failed_includes_name_and_detail() {
-        let msg = Message::HealthCheckFailed {
-            name: "prod-01".to_string(),
-            detail: "timeout".to_string(),
-        };
-        assert!(msg.text(Language::English).contains("prod-01"));
-        assert!(msg.text(Language::English).contains("timeout"));
-        assert!(msg.text(Language::Portuguese).contains("prod-01"));
-        assert!(msg.text(Language::Portuguese).contains("timeout"));
-    }
-
-    #[test]
-    fn health_check_latency_includes_name_and_ms() {
-        let msg = Message::HealthCheckLatency {
-            name: "relay-01".to_string(),
-            latency_ms: 42,
-        };
-        assert!(msg.text(Language::English).contains("relay-01"));
-        assert!(msg.text(Language::English).contains("42"));
-        assert!(msg.text(Language::Portuguese).contains("relay-01"));
-        assert!(msg.text(Language::Portuguese).contains("42"));
-    }
-
-    #[test]
-    fn initialize_language_without_force_no_panic() {
-        let result = initialize_language(None);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn initialize_language_with_pt_br_works() {
-        let result = initialize_language(Some("pt-BR"));
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn current_language_returns_valid_value() {
-        let language = current_language();
-        assert!(language == Language::English || language == Language::Portuguese);
-    }
-}
+#[path = "i18n_tests.rs"]
+mod tests;

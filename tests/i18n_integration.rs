@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Testes de integração do sistema de internacionalização.
-//!
-//! Testa as funções públicas do módulo i18n e locale.
+//! Integration tests for internationalization (locale + Message parity).
 
 use serial_test::serial;
-use ssh_cli::i18n::{current_language, initialize_language, Language, Message};
+use ssh_cli::i18n::{current_language, initialize_language, Language, Message, TextDirection};
+use ssh_cli::locale::{
+    negotiate_code, normalize_raw_locale, parse_language_identifier, parse_lang_cli_arg,
+    resolve_language_detailed, write_persisted_lang, LocaleSource,
+};
 
 #[test]
 #[serial]
 fn inicializar_idioma_nao_panic_com_locale_valido() {
     std::env::remove_var("SSH_CLI_LANG");
-    let result = initialize_language(Some("pt-BR"));
+    let result = initialize_language(Some("pt-BR"), None);
     assert!(
         result.is_ok(),
         "inicializar_idioma não deve falhar com locale válido"
@@ -20,8 +22,9 @@ fn inicializar_idioma_nao_panic_com_locale_valido() {
 #[test]
 #[serial]
 fn inicializar_idioma_nao_panic_com_locale_invalido() {
+    // Programmatic API still accepts invalid and falls through (clap rejects at CLI).
     std::env::remove_var("SSH_CLI_LANG");
-    let result = initialize_language(Some("xx-XX"));
+    let result = initialize_language(Some("xx-XX"), None);
     assert!(
         result.is_ok(),
         "inicializar_idioma não deve falhar com locale inválido"
@@ -32,7 +35,7 @@ fn inicializar_idioma_nao_panic_com_locale_invalido() {
 #[serial]
 fn inicializar_idioma_nao_panic_sem_forcar() {
     std::env::remove_var("SSH_CLI_LANG");
-    let result = initialize_language(None);
+    let result = initialize_language(None, None);
     assert!(result.is_ok(), "initialize_language must not fail");
 }
 
@@ -40,7 +43,7 @@ fn inicializar_idioma_nao_panic_sem_forcar() {
 #[serial]
 fn inicializar_idioma_com_env_var_valida_nao_panic() {
     std::env::set_var("SSH_CLI_LANG", "en-US");
-    let result = initialize_language(None);
+    let result = initialize_language(None, None);
     std::env::remove_var("SSH_CLI_LANG");
     assert!(
         result.is_ok(),
@@ -52,7 +55,7 @@ fn inicializar_idioma_com_env_var_valida_nao_panic() {
 #[serial]
 fn inicializar_idioma_com_env_var_invalida_nao_panic() {
     std::env::set_var("SSH_CLI_LANG", "xx-XX");
-    let result = initialize_language(None);
+    let result = initialize_language(None, None);
     std::env::remove_var("SSH_CLI_LANG");
     assert!(
         result.is_ok(),
@@ -63,7 +66,7 @@ fn inicializar_idioma_com_env_var_invalida_nao_panic() {
 #[test]
 #[serial]
 fn current_language_returns_valid_locale() {
-    initialize_language(None).expect("initialize_language must not fail");
+    initialize_language(None, None).expect("initialize_language must not fail");
     let language = current_language();
     assert!(
         language == Language::English || language == Language::Portuguese,
@@ -74,15 +77,14 @@ fn current_language_returns_valid_locale() {
 #[test]
 #[serial]
 fn inicializar_com_pt_br_define_portugues() {
-    // OnceLock já pode estar setado — o result deve ser válido de qualquer forma
-    let result = initialize_language(Some("pt-BR"));
+    let result = initialize_language(Some("pt-BR"), None);
     assert!(result.is_ok());
 }
 
 #[test]
 #[serial]
 fn inicializar_com_en_us_define_english() {
-    let result = initialize_language(Some("en-US"));
+    let result = initialize_language(Some("en-US"), None);
     assert!(result.is_ok());
 }
 
@@ -119,6 +121,11 @@ fn variantes_unitarias_nao_vazias_em_ambos_idiomas() {
         Message::TunnelPressCtrlC,
         Message::HealthCheckNoVps,
         Message::OperationCancelled,
+        Message::LocalePreferenceCleared,
+        Message::LocaleStatusTitle,
+        Message::ImportCompleted,
+        Message::ScpUploadFileOnly,
+        Message::ScpDownloadLocalNotDirectory,
     ];
     for variante in &unit_variants {
         assert!(
@@ -181,6 +188,13 @@ fn variantes_com_campos_incluem_dados_dinamicos() {
             },
             "relay-01",
         ),
+        (
+            Message::LocalePreferenceSaved {
+                lang: "pt-BR".to_string(),
+                path: "/tmp/lang".to_string(),
+            },
+            "pt-BR",
+        ),
     ];
     for (msg, esperado) in &casos {
         assert!(
@@ -207,11 +221,41 @@ fn tunnel_active_includes_port_host_and_vps() {
         vps_name: "relay-01".to_string(),
     };
     let en = msg.text(Language::English);
-    let pt = msg.clone().text(Language::Portuguese);
+    let pt = msg.text(Language::Portuguese);
     for text in &[en, pt] {
         assert!(text.contains("8080"), "deve conter porta_local");
         assert!(text.contains("10.0.0.1"), "deve conter host_remoto");
         assert!(text.contains("22"), "deve conter porta_remota");
         assert!(text.contains("relay-01"), "deve conter vps_nome");
     }
+}
+
+#[test]
+fn bcp47_normalize_and_negotiate() {
+    assert_eq!(normalize_raw_locale("pt_BR.UTF-8"), "pt-BR");
+    assert!(parse_language_identifier("C.UTF-8").is_none());
+    assert_eq!(negotiate_code("pt_BR.UTF-8"), Some(Language::Portuguese));
+    assert_eq!(negotiate_code("en-GB"), Some(Language::English));
+    assert_eq!(negotiate_code("fr-FR"), None);
+    assert!(parse_lang_cli_arg("pt-BR").is_ok());
+    assert!(parse_lang_cli_arg("zh-Hans-CN").is_err());
+}
+
+#[test]
+fn language_metadata_mvp() {
+    assert_eq!(Language::English.bcp47(), "en");
+    assert_eq!(Language::Portuguese.bcp47(), "pt-BR");
+    assert_eq!(Language::Portuguese.direction(), TextDirection::Ltr);
+    assert_eq!(Language::AVAILABLE.len(), 2);
+}
+
+#[test]
+#[serial]
+fn persisted_preference_layer_wins_without_flag() {
+    std::env::remove_var("SSH_CLI_LANG");
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_persisted_lang(Language::Portuguese, Some(dir.path())).expect("write");
+    let r = resolve_language_detailed(None, Some(dir.path()));
+    assert_eq!(r.language, Language::Portuguese);
+    assert_eq!(r.source, LocaleSource::Persisted);
 }

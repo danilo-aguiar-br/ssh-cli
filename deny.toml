@@ -28,19 +28,28 @@ allow = [
     "CC0-1.0",
     "MPL-2.0",
     "0BSD",
+    # webpki-roots (Mozilla CA bundle) — CDLA Permissive 2.0
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 
 [bans]
 # GAP-SSH-DENY-002 (0.4.0): duplicates (aead/chacha20/cipher/…) are transitive
 # from russh 0.62 + chacha20poly1305 0.10 dual stacks — warn only, not ignore CVE.
-# Fail only on wildcards and forbidden native TLS/OpenSSL stacks.
+# G-TLS-02: product crypto is aws-lc-rs only (SSH via russh + TLS via rustls).
+# Ban OpenSSL/native-tls stacks and dual crypto provider `ring`.
+# rustls is allowed (≥ 0.23.18, feature aws_lc_rs only) under feature `tls`.
 multiple-versions = "warn"
 wildcards = "deny"
 deny = [
     { name = "openssl-sys" },
+    { name = "openssl" },
     { name = "libssh2-sys" },
     { name = "native-tls" },
+    { name = "ring" },
+    { name = "ssh2" },
+    { name = "thrussh" },
+    { name = "libssh-rs" },
 ]
 
 [sources]

@@ -16,7 +16,9 @@
 
 ## Novas flags por versão
 ### Acompanhe o crescimento da superfície sem ler o código
-- `0.5.1` **export/import agent-first + wire v3**: corpo de `vps export` é **TOML por padrão** (TTY e pipe); envelope JSON de agente só com `--json`; `vps import` aceita TOML (chaves EN + aliases PT) **ou** envelopes JSON `vps-export`; dual-read serialize EN + aliases PT; host **schema v3**; flags CLI `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` (prefira ao env); eventos `secrets init|reencrypt --json` `secrets-init` / `secrets-reencrypt`; auto primary-key emite `secrets-key-auto-created`; caminhos de sucesso CRUD usam eventos JSON `emit_success`; `--include-secrets` em pipe/non-TTY exige `-o`/`--output` ou `--i-understand-secrets-on-stdout`; tunnel `--bind` (default `127.0.0.1`); import `TomlDe` → exit **65**; `SshAuthentication` → **77**; SCP missing `file not found: <path>` (exit **66**); warn de timeout se `<1000` ms; warn stderr de password em argv; doctor `secrets_plaintext_opt_out` é **bool**.
+- `0.5.2+` **SFTP (G-SFTP):** `ssh-cli sftp upload|download|ls|mkdir|rmdir|rm|stat|rename` via `russh-sftp` 2.3. Upload/download com `--recursive` (sem seguir symlink), multi-host `--all`/`--hosts`, eventos JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`. SCP continua só arquivo regular.
+- `0.5.2+` **fan-out multi-host (concorrência limitada):** `exec|sudo-exec|su-exec|scp|sftp|health-check --all` roda sessões SSH concorrentes limitadas por `--max-concurrency N` (1..=64; auto CPUs×4 vs RAM livre/2 / 16 MiB). Envelopes batch: `health-check-batch` / `exec-batch` / `scp-batch` / `sftp-batch` (`docs/schemas/*-batch.schema.json`, campo `max_concurrency`). Prefira um processo com `--all` a N spawns single-host para frota. Accepts de tunnel compartilham o mesmo gate.
+- `0.5.2` **E2E residual + export/import agent-first + wire v3**: root `schema`/`doctor`; um único `vps-added` + `secrets_key_auto_created`; `RUST_LOG` ambiente ignorado (só `-v`); ACME permanente 64; `vps add --use-agent`; export redacted `***` (`FIXED_MASK`); sem GH Actions de produto; mais corpo de `vps export` é **TOML por padrão** (TTY e pipe); envelope JSON de agente só com `--json`; `vps import` aceita TOML (chaves EN + aliases PT) **ou** envelopes JSON `vps-export`; dual-read serialize EN + aliases PT; host **schema v3**; flags CLI `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` (prefira ao env); eventos `secrets init|reencrypt --json` `secrets-init` / `secrets-reencrypt`; a 1ª gravação define `secrets_key_auto_created` no mesmo documento `vps-added`; caminhos de sucesso CRUD usam eventos JSON `emit_success`; `--include-secrets` em pipe/non-TTY exige `-o`/`--output` ou `--i-understand-secrets-on-stdout`; tunnel `--bind` (default `127.0.0.1`); import `TomlDe` → exit **65**; `SshAuthentication` → **77**; SCP missing `file not found: <path>` (exit **66**); warn de timeout se `<1000` ms; warn stderr de password em argv; doctor `secrets_plaintext_opt_out` é **bool**.
 - `0.4.2` tunnel porta efêmera `local_port=0` reporta porta atribuída pelo SO após bind (TUN-003); SCP remoto ausente → exit **66** (IO-010); envelope `vps export --json` com `event: "vps-export"`; e2e E15/E16; suite `gaps_v042`.
 - `0.4.1` AUD-POST + SCP **somente arquivos regulares** (herda wire 0.4.0; sem `-r` / sem SFTP): wire SCP sólido (evite crates.io **0.3.9** SCP quebrado); flags scp `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → `docs/schemas/scp-transfer.schema.json` com `event: "scp-transfer"` obrigatório (IO-009); download grava `{path}.ssh-cli.partial` e faz rename; preserve mtime/mode bi-dir; upload em stream 32 KiB; `tunnel --json` emite `tunnel_listening` após bind e deadline pós-bind sai **0** (TUN-002); export redacted não emite `sshcli-enc:` para secret vazio (EXP-001); paridade auth `tunnel` (CLI-005) e `health-check` (CLI-006); envelope JSON de erro scp em stderr com `--json`.
 - `0.4.0` wire SCP sólido (corrige crates.io **0.3.9**); transfers file-only; `tunnel --json` / `tunnel_listening`.
@@ -27,7 +29,7 @@
 - `0.3.5` adiciona caminhos de passphrase stdin, JSON auto em non-TTY, doctor `secrets_at_rest`, export atômico residual.
 - `0.3.4` adiciona `--key`, `--key-passphrase`, `--password-stdin`, `--sudo-password-stdin`, `--su-password-stdin`, `--timeout-ms` (tunnel), `--disable-sudo`, `--description`, `--replace-host-key`, `max_command_chars`, `max_output_chars`, `vps doctor`, `vps export`, `vps import`, `su-exec`.
 - `0.2.0` adiciona overrides runtime `--password`, `--sudo-password`, `--timeout` e aliases camelCase.
-- Prefira **0.5.1+** para roundtrip export/import, wire schema v3, SCP funcional + `tunnel --json` / `--bind`, automação SSH completa, cifragem default e supply-chain limpa.
+- Prefira **0.5.2+** para roundtrip export/import, wire schema v3, SCP funcional + `tunnel --json` / `--bind`, automação SSH completa, cifragem default e supply-chain limpa.
 
 
 ## Tabela resumo
@@ -51,14 +53,14 @@
 - Carregue [skills/ssh-cli-pt/SKILL.md](skills/ssh-cli-pt/SKILL.md) ou o pacote en.
 - Cadastre hosts uma vez com `vps add` (prefira `--password-stdin`) e chame `exec` por tarefa.
 - Prefira envelopes `--json` para resultados estruturados.
-- Faça parse só do stdout; stderr default fica silencioso no nível de tracing `error` (defina `RUST_LOG` só ao depurar).
+- Faça parse só do stdout; stderr default fica silencioso no nível de tracing `error` (passe `-v` ao depurar (`RUST_LOG` ambiente é ignorado)).
 - Use `ssh-cli secrets status` / `vps doctor --json` como preflight de cifragem e paths.
 
 
 ## Cursor
 - Adicione regra de projeto que prefere `ssh-cli` a processos Node SSH de longa duração.
 - Mantenha credenciais fora do chat usando hosts salvos e flags stdin.
-- Faça parse só do JSON em stdout; stderr default fica silencioso no nível de tracing `error` (ignore tracing salvo se definir `RUST_LOG`).
+- Faça parse só do JSON em stdout; stderr default fica silencioso no nível de tracing `error` (ignore tracing salvo se passar `-v`; `RUST_LOG` ambiente é ignorado).
 
 
 ## Windsurf
@@ -98,4 +100,4 @@
 
 ## Shell genérico
 - Instale completions com `ssh-cli completions <shell>`.
-- Exporte `SSH_CLI_HOME` apenas para sandboxes de teste isolados.
+- Use `--config-dir` apenas para sandboxes de teste isolados (o produto não lê `SSH_CLI_HOME`).

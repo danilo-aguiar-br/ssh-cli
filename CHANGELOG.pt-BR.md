@@ -1,5 +1,192 @@
 # Changelog
 
+- Leia este documento em [Inglês (en)](CHANGELOG.md).
+
+Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
+
+O formato é baseado em [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+e este projeto adere ao [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.5.2] - 2026-07-19
+
+### Adicionado
+- **`--json` global** (G-AUD-01): alias agent-friendly que força JSON (clap `from_global` nos subcomandos).
+- **`exec` / `sudo-exec` / `su-exec` com VPS ativo** (G-AUD-04): um posicional = COMMAND no host ativo de `connect`.
+- **Envelope JSON de `vps path`** (G-AUD-02): `event: vps-path` quando o formato é JSON.
+- **Módulo `fs_perm`** (G-AUD-24): fonte única para modos Unix de arquivos/dirs de segredo.
+- **Comandos root `schema` + `doctor`** (G-E2E-02/03): descoberta de contrato por agentes; `doctor` é alias de `vps doctor`.
+- **`vps add --use-agent` / `--agent-socket`** (G-E2E-19): triplo de auth no inventário (senha / chave / agent).
+
+### Corrigido
+- **Warning falso de password em argv** (G-AUD-08): inspeciona `Option` real, não strings `Debug`.
+- **TLS PEM ausente** (G-AUD-05): `FileNotFound` / classe permanente (não exit 74 retryable).
+- **`vps export` honra formato JSON global** (G-AUD-03).
+- **ACME account create exige `--contact mailto:…`** (G-AUD-06/28).
+- **Exclusão mútua de auth primária** na gravação (G-AUD-07): exatamente um de password / key / agent.
+- **Mensagens de secrets** não anunciam mais stores env (G-AUD-21).
+- **Filtro de log só via CLI** (G-AUD-22 / G-E2E-09): `RUST_LOG` ambiente é **ignorado**; use `-v`.
+- **Cap de concorrência** com fonte única (G-AUD-19/23): `constants::MAX_CONCURRENCY`.
+- **Skill description ≤1024** chars (G-AUD-15).
+- **ACME validação permanente** (G-E2E-01): `invalidContact` / tipos de problema 4xx → exit **64** não-retryable (`tls/acme_error_map.rs`).
+- **Um único JSON em `vps add` com auto-key** (G-E2E-04): campo `secrets_key_auto_created` embutido em `vps-added` (um documento; nunca dois eventos).
+- **Stamp de versão `-dirty` com `.commit_hash`** (G-E2E-06): proveniência honesta em trees dirty.
+- **Feature clap `env` removida** (G-E2E-08); help não ensina mais stores env (G-E2E-07).
+- **Máscara de export redacted** (G-E2E-10): `***` via `FIXED_MASK`, não string vazia.
+- **Harness E2E offline SKIP** + bin release default (G-E2E-05); identificadores de teste em EN (G-E2E-13).
+
+### Removido
+- **`.github/workflows`** (G-AUD-11 / G-E2E-11): só gates locais; sem CI/GH Actions de produto na tree.
+- **Shim PT `src/erros.rs`** (G-AUD-14).
+- **Leituras env de config de produto** `SSH_CLI_HOME` / `SSH_CLI_LANG` / `SSH_CLI_FORCE_TEXT` (G-AUD-12).
+
+### Alterado
+- Versão **0.5.1 → 0.5.2**.
+- Testes de integração alinhados a config só CLI/XDG (sem store env de secrets/formato).
+- Gate residual: `tests/gaps_v058_e2e_residual.rs` (G-E2E-01…15,17,19 FIXED; 16/18 MITIGATED).
+
+### G-SFTP residual harden R01–R15
+
+### Segurança
+- Validação de **basename de entry** + `ensure_local_under` em download recursivo/multi-file (servidor SFTP malicioso não escapa destino local).
+- **Cleanup de partial** em qualquer erro de download SFTP (paridade SCP).
+- **Root de upload tree** com `symlink_metadata` (no-follow).
+
+### Alterado
+- **Timeout wall-clock** (`under_timeout`) em multi-file e FS ops.
+- **`cli/scp_args.rs`** extraído (SRP).
+- Docs/skills: SCP = arquivos regulares; árvores/FS = **`sftp`**.
+
+### G-SFTP: subsistema SFTP
+
+### Adicionado
+- **`russh-sftp` 2.3** + `ssh-cli sftp` (upload/download/`--recursive`, ls/mkdir/rmdir/rm/stat/rename).
+- Schemas JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`.
+- Gate `tests/gaps_v057_sftp.rs`.
+- Agent em `ScpOptions`/`SftpOptions` (CLI/XDG).
+
+### Segurança
+- Stream 32 KiB (sem heap full-file); paths validados; recursive depth cap; symlink no-follow.
+
+### G-SSH: regras SSH / russh
+
+### Adicionado
+- **`client_handler` / `client_connect` / `key_material`:** TOFU tipado, cadeia de auth, perms de chave.
+- **Agent CLI/XDG:** `--use-agent`, `--agent-socket` (sem env como store).
+- **Gates:** `tests/gaps_v056_ssh.rs`.
+
+### Alterado
+- client_id genérico `SSH-2.0-ssh-cli`; rekey/window/TCP keepalive explícitos; deny ban ssh2/thrussh.
+
+### Segurança
+- `HostKeyChanged` tipado; fail-closed known_hosts; RSA ≥2048; password só se secret non-empty no inventário.
+
+### G-UNSAFE: unsafe code e FFI
+
+### Adicionado
+- **`test_util::env`:** encapsula `set_var`/`remove_var` com `// SAFETY:`.
+- **`vps/config_io.rs`:** split de path/load/save (SRP).
+- **Gates:** `tests/gaps_v055_unsafe_ffi.rs`.
+
+### Alterado
+- **`main`:** `register_handler` **antes** do Tokio multi_thread (G-UNSAFE-13).
+- SAFETY de SIGTERM expandido; docs Windows FFI; testes plaintext via `set_runtime_flags`.
+- Docs secrets/concurrency sem env-as-store; `forbid(unsafe_code)` em módulos puros.
+
+### Segurança
+- Allowlist de `unsafe` de produto: windows console + signals; env de teste encapsulado.
+
+### G-ERR: tratamento de erros
+
+### Adicionado
+- Variantes `Domain`/`Crypto`/`Config`; TLS/canal com `source`; `error_code` no envelope JSON; gates `gaps_v054`; split do client SSH.
+
+### Alterado
+- Display minúsculo; `paths` tipado; validate de VPS com `DomainError`; secrets sem env-as-store; concurrency sem env store.
+
+### G-DOM: tipos de domínio chrono/uuid/rust_decimal/url
+
+### Adicionado
+- **Quatro crates de domínio (coordenadas):** `chrono` 0.4.45, `uuid` 1.24 (v4+v7+serde), `rust_decimal` 1.42 (serde-with-str), `url` 2.5 (serde).
+- **`src/domain/` dividido (SRP):** time, ids, http_url, money, names, ports, limits, command, error.
+- **`Rfc3339Utc`:** timestamps VPS/ACME como `DateTime<Utc>` (wire RFC 3339).
+- **`HttpsUrl` / `AcmeOrderUrl`:** parse HTTPS para resume ACME no XDG.
+- **`BatchRunId` (v7):** campo `batch_run_id` nos JSON batch multi-host.
+- **`Money<C>`:** biblioteca decimal (sem superfície monetária no VPS).
+- **Gates:** `tests/gaps_v053_domain_types.rs` + proptest.
+
+### Alterado
+- Schemas batch exigem `batch_run_id`; import valida RFC 3339 em `added_at`.
+
+### Segurança
+- Sem `Local::now`; sem `serde-float`; URLs ACME só `https`.
+
+### G-TLS produto: rustls / SSH-over-TLS / mTLS / ACME
+
+### Adicionado
+- **Feature `tls` (padrão):** `rustls` ≥ 0.23.18 + `aws_lc_rs`, `tokio-rustls`, `webpki-roots`, `rustls-pki-types`, `instant-acme`.
+- **`CryptoProvider::install_default`** no `main` do binário (somente aws_lc_rs).
+- **SSH-over-TLS**, **mTLS** (XDG) e **ACME** DNS-01 em dois passos (agent-friendly).
+- Subcomando `ssh-cli tls …` e campos VPS `tls` / `tls_sni` / cert+key.
+
+### Alterado
+- `deny.toml` permite rustls de produto; ban mantém OpenSSL/native-tls/ring.
+- PEM via `rustls-pki-types` (sem `rustls-pemfile`).
+
+### G-TLS / política rustls — sessão anterior
+
+### Adicionado
+- **`src/ssh/connect.rs`:** helper único de Config + dial Happy Eyeballs (G-TLS-07/09).
+- **Suite residual** `tests/gaps_v052_tls_policy.rs` (G-TLS-03).
+- **SECURITY Política de transporte e crypto (G-TLS)** — SSH ≠ TLS; aws-lc-rs; rustls futuro só com ADR.
+
+### Alterado
+- **Compressão SSH só `none`** (G-TLS-04).
+- **russh:** remove feature `flate2` (G-TLS-05); mantém `aws-lc-rs`.
+- **`deny.toml`:** ban `openssl`, `ring`, `rustls` além de `openssl-sys` / `native-tls` / `libssh2-sys` (G-TLS-02).
+- README / CROSS_PLATFORM / RELEASE_CHECKLIST / llms: superfícies de política crypto (G-TLS-01/06/08/11/12).
+
+### Segurança
+- Sem stack TLS de produto; sem OpenSSL/`native-tls`/`ring`/`rustls` no grafo.
+- Sem OTEL de produto.
+
+### Sistema de Tipos
+
+### Adicionado
+- **Newtypes de domínio (G-TYPE-01…20):** `src/domain/` com `VpsName`, `SshHost`, `SshUser`, `SshPort(NonZeroU16)`, `TimeoutMs`, `HostTag`, `CharLimit`, `RemoteCommand`, `KeyPath`, `BindPort`.
+- **`ssh/session_io.rs`:** extração de helpers UTF-8 (G-TYPE-14).
+- Testes de layout zero-cost para `SshPort`.
+
+### Alterado
+- **`VpsRecord` / `ConnectionConfig`:** campos com prova de tipo; `try_new` no lugar de `new` infalível.
+- **`HostSelection`:** tipado com `VpsName` / `HostTag`.
+- **`ExecOptions` / `ScpOptions`:** `TimeoutMs` e `RemoteCommand`.
+- **CLI:** portas SSH com range 1..=65535; bind local ainda aceita 0.
+- **`validate_and_normalize` → `VpsName`**.
+- **Import JSON:** host/user vazios rejeitados na fronteira.
+
+### Segurança
+- Helper único `secret_nonempty`; sem OTEL de produto.
+
+### Notas de sessão (validação / serde)
+
+
+### Adicionado
+- **Pipeline de validação (G-SERDE-01…14):** `validator` 0.20 + `serde_with` 3 + `serde_path_to_error` + `serde_ignored`; módulo `src/validation.rs`.
+- **Tags no JSON agent (G-SERDE-06):** list/export/import com round-trip.
+- **Validação estrutural no load (G-SERDE-04).**
+- **Fuzz** `import_envelope` (G-SERDE-12).
+- **`ssh/connection.rs`** e **`cli/tests.rs`** (G-COMP-R).
+
+### Alterado
+- **deny_unknown_fields** no TOML crítico; import JSON Must-Ignore com warn.
+- **Arc\<ScpOptions\>** no fan-out multi-host SCP (G-MEM-SCP).
+- **Actions CI pinados por SHA** (G-PROC-PIN).
+
+### Segurança
+- Sem telemetria de produto. Secrets em `SecretString`.
+
 - Read this document in [English](CHANGELOG.md).
 
 Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
@@ -7,7 +194,66 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+### Prior closeout / process notes
+
+### Changed
+- **O1–O6 + processo (obrigatório):** `--fail-fast`; tags de host; multi-cmd `--step` na mesma sessão; SCP `--scp-file-concurrency`; Arc de options no fan-out; proptest/fuzz; CI miri/geiger/sbom; `scripts/release_attest.sh`. Zero telemetria de produto.
+- **Componentização profunda (G-COMP-05 / G-COMP-06a–d / G-CLOSE-09 / G-DRY-01 / G-EN-R01):** extraídos `vps/exec_ops.rs` (exec/sudo/su + DRY `finish_execution_output`); `ssh/scp_wire.rs`; `scp/{mod,batch}.rs`; `output/{mod,batch}.rs`; `cli/{mod,dispatch}.rs`; `commands/*` com reexports reais. Renomes EN residuais. OPEN de segurança de produto permanece 0; monólitos inventoriáveis fatiados.
+- **Componentização (G-COMP-02…04):** extraídos `vps/doctor.rs`, `vps/import_export.rs` e `vps/health.rs` do monólito `vps` (`mod.rs` ~2428 → ~1698 LOC); reexport de `HostHealthResult` / `run_health_check`.
+
+### Segurança
+- **Meta-auditoria de fechamento (G-CLOSE):** casts de doctor/concurrency/SCP via `TryFrom`; `forbid(unsafe_code)` nos módulos puros restantes; extração `vps/selection.rs` (SRP); reexecução context7 + docsrs-cli + duckduckgo para conformidade da skill.
+- **Auditoria de segurança de desenvolvimento (G-SECDEV):** secrets atravessam a fronteira CLI como `SecretString` (`read_secret_stdin` + overrides de exec/scp/tunnel/health); módulos puros com `#![forbid(unsafe_code)]`; deny de `clippy::mem_forget` + unsafe sem SAFETY / multi-op; mapa STRIDE + preferência CVSS v4 em `SECURITY.md` (+ pt-BR).
+- **Auditoria de segurança defensiva (G-SEC):** `deny(unsafe_op_in_unsafe_fn)`;
+  `overflow-checks` em release; comparação constant-time de fingerprint TOFU;
+  caminhos de produto sem `.unwrap`/`.expect`/`unreachable!` em parsers CLI,
+  admissão de concorrência e ramos single-host; porta de import via
+  `u16::try_from`; `SshCliError` `#[non_exhaustive]`; modelo de ameaça em
+  `SECURITY.md` (+ pt-BR); job CI `cargo deny check` (`deny.toml`).
+
+### Added
+- **Auditoria de retry (G-RETRY):** classificação tipada de erros (`ErrorClass` /
+  `ErrorLayer` / `RetryKind`, `is_retryable` / `is_permanent` / `suggestion`) em
+  `SshCliError`; `retry::RetryConfig` nomeado com backoff full-jitter e defaults
+  de agente (máx. 2 retries no exit 74); envelope JSON com `error_class`,
+  `retryable`, `suggestion` + schema. Auto-retry in-process de ops remotas não
+  idempotentes permanece **desligado** (agente reinvoca o processo).
+
+### Corrigido
+- **Auditoria de rede (G-NET):** dial SSH com DNS assíncrono + corrida multi-endereço
+  Happy Eyeballs (`net::dial_tcp` + `russh::client::connect_stream`); `TCP_NODELAY` e
+  keepalives SSH (`15s` / máx. `3`); carga de chave privada e TOFU de known_hosts em
+  `spawn_blocking`; accept do tunnel resiste a erros transitórios e aplica nodelay nos
+  forwards locais.
+
+
+### Alterado
+- **Auditoria de hardcode (G-HC):** módulo central `constants` (nomes XDG, env keys,
+  identidade do app, defaults de rede, timing de processo, AEAD/keyring); helper
+  único `paths::xdg_config_dir()`. Sem segredos/URLs de produto no binário; hosts
+  continuam no registry/CLI.
+
+### Corrigido
+- **Auditoria de processos externos (G-PROC):** probes `git` em `build.rs` com
+  `Stdio` explícito (null/piped); comandos remotos rejeitam NUL antes do packing
+  de exec SSH; fixtures de teste `ssh-keygen` usam argv direto + stdio explícito
+  e fazem skip se o binário estiver ausente.
+- Docs: política de fronteira de processo em CROSS_PLATFORM / AGENTS (sem spawn
+  local OpenSSH; MSRV ≥ 1.77.2 BatBadBut; packing remoto `sh -c` só no host alvo).
+
+### Adicionado
+- **Concorrência multi-host com bound (modus operandi):** `health-check|exec|sudo-exec|su-exec|scp --all` faz fan-out com `Semaphore` + `JoinSet` (cap de `--max-concurrency` / `SSH_CLI_MAX_CONCURRENCY` / fórmula auto CPUs×RAM, clamp 1..=64). JSON batch: `health-check-batch` / `exec-batch` / `scp-batch` (`docs/schemas/*-batch.schema.json`). Forwards de accept do tunnel usam o mesmo gate.
+- **Seleção seletiva `--hosts a,b,c`:** mesmo fan-out e JSON batch que `--all` (mesmo com um nome); unificado via `HostSelection` + `resolve_host_jobs`.
+- **SCP multi-arquivo (single-host, G-PAR-47):** uma **sessão SSH** e transfers seriais (auth uma vez).
+- **SCP multi-host × multi-arquivo (G-PAR-48):** `scp upload --all f1 f2 … REMOTE_DIR` — bound por sessão host; arquivos seriais na sessão.
+- **TOFU flock (G-PAR-49):** mutações de `known_hosts` com lock exclusivo + reload-merge.
+- **`vps doctor --probe-ssh [--hosts a,b]`:** um único root JSON `event: vps-doctor` com `local` + `ssh_probe` opcional (sem dual roots).
+- **`map_bounded` cancel:** para admissão em SIGINT/SIGTERM; `force_exit` aborta JoinSet; span `fan_out_unit` + `available_permits`.
+- Docs/skills de agente: frota multi-host + multi-arquivo / cartesiano SCP + envelope doctor.
+
+### Alterado
+- Path SCP (validação e pós-download) usa `tokio::fs` / `spawn_blocking` (não bloqueia workers sob fan-out).
+- `scripts/dist_multiarch.sh` suporta `PARALLEL_JOBS` (default 2) via `xargs -P`.
 
 ## [0.5.1] - 2026-07-17
 
@@ -313,7 +559,8 @@ e o versionamento segue [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 Release inicial.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.1...v0.4.2

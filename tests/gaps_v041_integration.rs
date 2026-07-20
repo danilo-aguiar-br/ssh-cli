@@ -141,9 +141,15 @@ fn gap_io_009_scp_event_schema() {
         body.contains("\"const\": \"scp-transfer\"") || body.contains("\"const\":\"scp-transfer\""),
         "schema event const must be scp-transfer"
     );
-    let out = std::fs::read_to_string(root().join("src/output.rs")).unwrap();
+    let out = std::fs::read_to_string(root().join("src/output/mod.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/output/json.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/json_wire/mod.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/json_wire/emit.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/json_wire/execution.rs")).unwrap();
     assert!(
-        out.contains("\"event\": \"scp-transfer\"") || out.contains("\"scp-transfer\""),
+        out.contains("\"event\": \"scp-transfer\"")
+            || out.contains("\"scp-transfer\"")
+            || out.contains("scp-transfer"),
         "print_transfer_json must emit event scp-transfer"
     );
 }
@@ -285,7 +291,7 @@ fn gap_cli_005_tunnel_source_passphrase() {
         src.contains("key_passphrase") || src.contains("apply_overrides") || src.contains("aplicar_overrides"),
         "tunnel must apply key_passphrase via overrides (CLI-005)"
     );
-    let cli = std::fs::read_to_string(root().join("src/cli.rs")).unwrap();
+    let cli = std::fs::read_to_string(root().join("src/cli/mod.rs")).unwrap();
     assert!(
         cli.contains("password_stdin") && cli.contains("key_passphrase_stdin"),
         "cli Tunnel must declare password_stdin and key_passphrase_stdin"
@@ -294,7 +300,8 @@ fn gap_cli_005_tunnel_source_passphrase() {
 
 #[test]
 fn gap_cli_006_health_source_key() {
-    let src = std::fs::read_to_string(root().join("src/vps/mod.rs")).unwrap();
+    let src = std::fs::read_to_string(root().join("src/vps/health.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/vps/mod.rs")).unwrap();
     assert!(
         src.contains("key_override") && src.contains("key_passphrase_override"),
         "run_health_check must accept key overrides (CLI-006)"

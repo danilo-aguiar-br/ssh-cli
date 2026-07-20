@@ -1,6 +1,6 @@
 [package]
 name = "ssh-cli"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 rust-version = "1.85.0"
 default-run = "ssh-cli"
@@ -26,12 +26,15 @@ exclude = [
     "docs_rules/",
     "docs_prd/",
     "/gaps.md",
-    "graphrag.sqlite",
-    "graphrag.sqlite-shm",
-    "graphrag.sqlite-wal",
-    ".enrich-queue.sqlite",
-    ".enrich-queue.sqlite-shm",
-    ".enrich-queue.sqlite-wal",
+    # GraphRAG / enrich-queue (qualquer pasta)
+    "**/graphrag.sqlite",
+    "**/graphrag.sqlite-shm",
+    "**/graphrag.sqlite-wal",
+    "**/graphrag.sqlite-journal",
+    "**/.enrich-queue.sqlite",
+    "**/.enrich-queue.sqlite-shm",
+    "**/.enrich-queue.sqlite-wal",
+    "**/.enrich-queue.sqlite-journal",
     "projeto_ssh-cli.md",
     ".github/",
     "tests/fixtures/",
@@ -58,20 +61,34 @@ path = "src/main.rs"
 tokio = { version = "1.40", features = ["rt-multi-thread", "io-util", "io-std", "time", "sync", "macros", "fs", "net"] }
 
 # CLI and configuration
-clap = { version = "4.5", features = ["derive", "env", "unicode", "wrap_help"] }
+clap = { version = "4.5", features = ["derive", "unicode", "wrap_help", "color", "suggestions"] }
 clap_complete = "4.5"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+clap_mangen = "0.2"
+human-panic = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# G-SERDE-01: pipeline 4-crates (rules_rust_serde_validacao_robusta)
+validator = { version = "0.20", features = ["derive"] }
+serde_with = { version = "3", features = ["macros"] }
+serde_path_to_error = "0.1"
+serde_ignored = "0.1"
 toml = "0.8"
 directories = "6"
 tempfile = "3.13"
 fs2 = "0.4"
+# G-SSH-05: SO_KEEPALIVE on dial sockets (also pulled transitively by tokio).
+socket2 = "0.6"
 
-# Internationalization
+# Internationalization (Rules Rust multi-idioma)
+# sys-locale: OS detection; unic-langid: BCP47; fluent-langneg: negotiate vs available
 sys-locale = "0.3"
+unic-langid = "0.9"
+fluent-langneg = "0.13"
 
 # Signals and terminal
-ctrlc = { version = "3.4", features = ["termination"] }
+# No `termination` feature: that also hooks SIGTERM and would collide with
+# signal-hook + collapse exit 143 → 130. SIGINT = ctrlc; SIGTERM = signal-hook.
+ctrlc = "3.4"
 termcolor = "1.4"
 unicode-normalization = "0.1"
 
@@ -87,25 +104,73 @@ base64 = "0.22"
 getrandom = "0.2"
 keyring = "3"
 
-# Logging and errors
+# Logging and errors (Rules Rust — tracing; no OTEL / no file rotation for CLI)
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+# Explicit features: fmt + env-filter + registry (reload) + tracing-log bridge.
+# No default-features pull of unused json/chrono/time (size-sensitive one-shot).
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "std",
+    "fmt",
+    "ansi",
+    "env-filter",
+    "registry",
+    "tracing-log",
+] }
+tracing-log = "0.2"
+tracing-error = "0.2"
+log = "0.4"
 thiserror = "2.0"
 anyhow = "1.0"
 
-# Utilities
-chrono = { version = "0.4", features = ["serde", "clock"] }
+# Utilities — domain types (G-DOM / rules_rust_tipos_de_dominio)
+# Floor: chrono ≥ 0.4.20 (RUSTSEC-2020-0159). Coordinated serde on chrono+uuid+url.
+# rust_decimal: serde-with-str only (never serde-float) for Money library types.
+chrono = { version = "0.4.45", features = ["serde", "clock"] }
+uuid = { version = "1.24", features = ["v4", "v7", "serde"] }
+rust_decimal = { version = "1.42", default-features = false, features = [
+    "std",
+    "serde-with-str",
+    "macros",
+] }
+url = { version = "2.5", features = ["serde"] }
 
 # Async traits to enable test mocks.
 async-trait = "0.1"
 
 # Real SSH via russh (GAP-SSH-DEP-002 / 0.3.8).
-# `default-features = false` evita puxar `rsa` 0.9.x (RUSTSEC-2023-0071 Marvin Attack).
-# `aws-lc-rs` (crypto backend) + `flate2` (compressão zlib).
+# `default-features = false` avoids pulling `rsa` 0.9.x (RUSTSEC-2023-0071 Marvin Attack).
+# `aws-lc-rs` only crypto backend (G-TLS: no OpenSSL / no ring dual provider).
+# G-TLS-05: no `flate2` — product prefers SSH compression `none` only (G-TLS-04).
 # Keys in . MSRV 1.85 (russh >= 0.55).
 # Security floor: russh >= 0.60.3 (RUSTSEC-2026-0153/0154 / CVE-2026-46673).
 # Target: 0.62.x (latest patched; no COMPAT RC pins — stable resolve on install).
-russh = { version = "0.62", default-features = false, features = ["aws-lc-rs", "flate2"], optional = true }
+russh = { version = "0.62", default-features = false, features = ["aws-lc-rs"], optional = true }
+# G-SFTP-01: SFTP v3 client subsystem (trustScore 6.9 — use only docs.rs-confirmed APIs).
+russh-sftp = { version = "2.3", optional = true }
+
+# ── TLS (SSH-over-TLS / mTLS / ACME) — rustls only, aws_lc_rs provider ────────
+# Floor: rustls ≥ 0.23.18 (Acceptor CVE window 0.23.13–0.23.17 banned).
+# No `ring` feature. No native-tls / openssl. install_default only in binary main.
+rustls = { version = "0.23.25", default-features = false, features = [
+    "std",
+    "tls12",
+    "logging",
+    "aws_lc_rs",
+    "prefer-post-quantum",
+], optional = true }
+tokio-rustls = { version = "0.26", default-features = false, features = [
+    "tls12",
+    "logging",
+    "aws_lc_rs",
+], optional = true }
+webpki-roots = { version = "1", optional = true }
+# PEM parse via rustls-pki-types (rustls-pemfile is unmaintained — RUSTSEC-2025-0134).
+rustls-pki-types = { version = "1.12", optional = true, features = ["std", "alloc"] }
+# ACME (Let's Encrypt) — aws-lc-rs only (no ring).
+instant-acme = { version = "0.8", default-features = false, features = [
+    "aws-lc-rs",
+    "hyper-rustls",
+], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
@@ -114,13 +179,28 @@ signal-hook = "0.3"
 windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
 
 [features]
-# Real SSH is ENABLED BY DEFAULT as of iteration 2.
-# For builds without russh (e.g. dependency diagnosis), use .
-default = ["ssh-real"]
+# Real SSH + TLS (SSH-over-TLS / mTLS / ACME) ENABLED BY DEFAULT.
+# For builds without russh/rustls (dependency diagnosis): `--no-default-features`.
+default = ["ssh-real", "tls"]
 # Enables real SSH stack via russh + aws-lc-rs.
-ssh-real = ["dep:russh"]
+ssh-real = ["dep:russh", "dep:russh-sftp"]
+# Enables rustls 0.23.x (aws_lc_rs), SSH-over-TLS, mTLS client certs, ACME.
+tls = [
+    "dep:rustls",
+    "dep:tokio-rustls",
+    "dep:webpki-roots",
+    "dep:rustls-pki-types",
+    "dep:instant-acme",
+]
 # Enables mimalloc as global allocator (useful for musl builds/performance).
 musl-allocator = ["dep:mimalloc"]
+# Optional i18n expansion (Rules Rust top-20). Default binary is en + pt-BR only.
+# Features are intentionally empty stubs until translated Message arms land —
+# enabling them must not ship incomplete locales.
+i18n-full = ["i18n-cjk", "i18n-rtl", "i18n-europe"]
+i18n-cjk = []
+i18n-rtl = []
+i18n-europe = []
 
 [dev-dependencies]
 assert_cmd = "2.0"
@@ -137,18 +217,79 @@ insta = { version = "1.39", features = ["json", "redactions"] }
 name = "ssh_operations"
 harness = false
 
+# ---------------------------------------------------------------------------
+# Release profiles (Rules Rust — eficiência / performance / latência)
+#
+# Default release is **size-min** (`opt-level = "z"`): ssh-cli is a distributed
+# one-shot agent CLI; download/footprint and cold start matter more than peak
+# CPU. Hot path is network RTT (SSH), not local compute — do not switch the
+# publish default to opt-level=3 without a measured binary-size trade-off.
+#
+# Latency-oriented rules ask for opt-level=3 + fat LTO + codegen-units=1 +
+# panic=abort: fat LTO / CGU=1 / abort already apply to **all** release-like
+# profiles below. opt-level=3 is available as `release-fast` / `release-lto`
+# for local A/B (not the publish default — size vs CPU trade-off documented).
+#
+# For local A/B speed measurement:
+#   `cargo build --profile release-fast`  or  `--profile release-lto`
+# For criterion: inherits size-min LTO/strip but uses opt-level=3 (see bench).
+# Never use target-cpu=native in published artifacts (compat).
+# ---------------------------------------------------------------------------
 [profile.release]
 opt-level = "z"
-lto = true
+lto = "fat"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+# G-SEC-06: defensive arithmetic on release paths (limits, sizes, ports, retries).
+# Hot path is SSH RTT, not tight integer loops — checks are cheap relative to I/O.
+overflow-checks = true
+
+# Speed-oriented local profile (not the crates.io/default binary).
+# Same LTO/strip/abort as release; opt-level=3 for CPU-bound microbenches.
+[profile.release-fast]
+inherits = "release"
+opt-level = 3
+
+# Alias name used by Rules Rust latency docs (`release-lto`); identical to
+# release-fast (fat LTO already inherited from release).
+[profile.release-lto]
+inherits = "release-fast"
+
+# Criterion harness: measure optimized code, not size-min codegen quirks.
+[profile.bench]
+inherits = "release"
+opt-level = 3
+debug = false
+# Keep LTO from release; incremental is off by default for release-like profiles.
+
+# Faster build scripts (proc-macro / build.rs) without bloating final binary.
+[profile.release.build-override]
+opt-level = 3
+codegen-units = 16
 
 [profile.dev]
 opt-level = 0
 debug = true
 panic = "unwind"
 
+# Optimize heavy dependencies (crypto/SSH) in dev for usable `cargo run` latency
+# without optimizing our own code (keeps debug semantics for product sources).
+[profile.dev.package."*"]
+opt-level = 2
+
 [package.metadata.docs.rs]
 all-features = true
+# Explicit targets: docs.rs (2026-05-01+) builds only default-target when `targets` is absent.
+default-target = "x86_64-unknown-linux-gnu"
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-unknown-linux-musl",
+]
 rustdoc-args = ["--cfg", "docsrs"]
+
+[badges]
+maintenance = { status = "actively-developed" }

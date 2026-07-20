@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/error-envelope.schema.json",
   "title": "Error semantics for agents",
-  "description": "Emitted on stderr when JSON errors mode is active (--json, global --output-format json, or effective JSON on scp/tunnel). Not a success payload.",
+  "description": "Emitted on stderr when JSON errors mode is active (--json, global --output-format json, or effective JSON on scp/tunnel). Not a success payload. Agents MUST use retryable/error_class before re-invoking (Rules Rust retry/backoff).",
   "type": "object",
   "additionalProperties": true,
   "properties": {
@@ -17,9 +17,25 @@
     "remote_exit_code": {
       "type": "integer",
       "description": "Optional remote shell exit when process exit is EX_GENERAL (1) after non-zero remote command"
+    },
+    "error_class": {
+      "type": "string",
+      "enum": ["transient", "permanent", "cancelled"],
+      "description": "High-level class: transient (agent may re-invoke with backoff), permanent (fix inputs), cancelled (signal/pipe)"
+    },
+    "retryable": {
+      "type": "boolean",
+      "description": "True only when the same argv may succeed after backoff (exit 74 transport/timeout). Never true for auth (77), usage (64), or remote command (1)"
+    },
+    "suggestion": {
+      "type": "string",
+      "description": "Optional short remediation hint for agents"
     }
   },
   "required": [
-    "exit_code"
+    "exit_code",
+    "message",
+    "error_class",
+    "retryable"
   ]
 }

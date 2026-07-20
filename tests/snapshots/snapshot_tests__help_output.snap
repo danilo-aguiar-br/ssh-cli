@@ -1,6 +1,5 @@
 ---
 source: tests/snapshot_tests.rs
-assertion_line: 36
 expression: stdout
 ---
 ssh-cli: lightweight one-shot binary (spawn→run→exit). Multi-host XDG storage without .env. Password
@@ -15,15 +14,30 @@ Commands:
   sudo-exec     Runs a command with `sudo` (safe `sh -c` packing)
   su-exec       Runs a command with one-shot `su -` elevation
   scp           SCP file transfer (upload/download)
+  sftp          SFTP subsystem transfer and remote filesystem ops (G-SFTP)
   tunnel        SSH tunnel with mandatory deadline (bounded one-shot)
-  health-check  Checks SSH connectivity to a VPS
+  health-check  Checks SSH connectivity to a VPS (or multi-host with `--all` / `--hosts`)
   secrets       Manages the primary key and at-rest secret encryption (one-shot)
   completions   Generates shell completions
+  commands      Emits the full command tree as JSON (agent discovery / rules `mycli commands`)
+  schema        Emits embedded JSON Schema catalog or one schema body (G-E2E-02)
+  doctor        Root alias for `vps doctor` (XDG / schema diagnostics; G-E2E-03)
+  locale        Diagnoses and manages UI language (locale resolution / XDG preference)
+  tls           TLS stack: provider status, mTLS identities, ACME certs (XDG; rustls only)
   help          Print this message or the help of the given subcommand(s)
 
 Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Global options:
       --lang <LOCALE>
-          Forces the CLI language (e.g. `pt-BR`, `en-US`)
+          Forces the CLI language (BCP47; must negotiate to `en` or `pt-BR`).
+          
+          Examples: `en`, `en-US`, `pt-BR`, `pt`. Invalid tags fail clap validation.
 
   -v, --verbose
           Increases log verbosity on stderr
@@ -44,6 +58,12 @@ Options:
           - text: Human-readable text (default)
           - json: Structured JSON
 
+      --json
+          Force JSON on stdout (agent; alias of `--output-format json`; G-AUD-01).
+          
+          Global — appears before or after subcommands. Subcommand fields use `from_global` so there
+          is a single `--json` long name (clap uniqueness).
+
       --disable-sudo
           Disables sudo-exec/su-exec for this invocation (alias --disableSudo)
 
@@ -54,13 +74,37 @@ Options:
           Allow plaintext secrets at rest (no auto `secrets.key`). Prefer for tests only
 
       --secrets-key-file <PATH>
-          Path to a 64-hex primary-key file (overrides env / XDG secrets.key for this one-shot)
+          Path to a 64-hex primary-key file (overrides XDG `secrets.key` for this one-shot)
 
       --use-keyring
-          Prefer OS keyring for the primary key (deprecated env: SSH_CLI_USE_KEYRING)
+          Prefer OS keyring for the primary key (CLI flag only; no product env store)
 
-  -h, --help
-          Print help (see a summary with '-h')
+      --timeout <MS>
+          Global default timeout in milliseconds for SSH ops (exec/scp/health-check). Local
+          `--timeout` on a subcommand wins. Tunnel still requires `--timeout-ms`
 
-  -V, --version
-          Print version
+      --max-concurrency <N>
+          Cap concurrent multi-host SSH sessions / tunnel forwards (1..=MAX_CONCURRENCY).
+          
+          Default: auto from CPUs × I/O oversubscribe vs free RAM (see `concurrency`). Applies to
+          `--all` fan-out and tunnel accepts (no env store; G-UNSAFE-14).
+
+      --fail-fast
+          Stop admitting new multi-host units after the first failure (G-O1).
+          
+          Default: continue all hosts (agent-friendly partial success). In-flight units still
+          finish; never-started hosts are omitted from batch results unless callers pad skipped
+          rows.
+
+      --scp-file-concurrency <N>
+          Max concurrent SCP file transfers on **one** SSH session (G-O4).
+          
+          Default: 1 (serial multi-file, session reuse). Values >1 open parallel SCP channels on the
+          same session (bounded). Env: not used; CLI only.
+
+Examples:
+  ssh-cli vps add --name prod --host h.example --user deploy --key ~/.ssh/id_ed25519
+  printf '%s' "$PASS" | ssh-cli exec prod 'hostname' --json --password-stdin
+  ssh-cli scp upload prod ./a.bin /tmp/a.bin --json
+  ssh-cli tunnel prod 8080 127.0.0.1 80 --timeout-ms 60000 --json
+  ssh-cli vps export -o /tmp/hosts.toml

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/sftp-list.schema.json",
+  "title": "sftp ls JSON",
+  "description": "Structured success payload for `ssh-cli sftp ls --json`.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["ok", "event", "vps", "path", "entries"],
+  "properties": {
+    "ok": { "type": "boolean", "const": true },
+    "event": { "type": "string", "const": "sftp-list" },
+    "vps": { "type": "string" },
+    "path": { "type": "string" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "path", "kind"],
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "kind": { "type": "string", "enum": ["file", "dir", "symlink", "other"] },
+          "size": { "type": ["integer", "null"] },
+          "mode": { "type": ["integer", "null"] }
+        }
+      }
+    }
+  }
+}

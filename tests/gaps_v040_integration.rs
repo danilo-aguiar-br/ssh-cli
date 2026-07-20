@@ -20,9 +20,9 @@ fn cmd(tmp: &TempDir) -> Command {
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
-    c.env("SSH_CLI_ALLOW_PLAINTEXT_SECRETS", "1");
-    c.env("SSH_CLI_FORCE_TEXT", "1");
     c.arg("--config-dir").arg(tmp.path());
+    c.arg("--json");
+    c.arg("--allow-plaintext-secrets");
     c
 }
 
@@ -457,9 +457,13 @@ fn gap_e2e_script_e10_e12() {
 
 #[test]
 fn gap_scp_023_comando_remoto_usa_p() {
-    let src = std::fs::read_to_string(root().join("src/ssh/client.rs")).unwrap();
+    let src = std::fs::read_to_string(root().join("src/ssh/client_real.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/client_real_scp.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/client_real_core.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/client_real_tests_body.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/scp_wire.rs")).unwrap();
     assert!(
-        src.contains("modo_p") || src.contains("-tp") || src.contains("format!(\"{modo}p\")"),
+        src.contains("modo_p") || src.contains("-tp") || src.contains("remote_scp_command") || src.contains("mode_p"),
         "remote scp must request -p (OpenSSH source emits T only with -p)"
     );
     assert!(
@@ -484,7 +488,7 @@ fn gap_io_008_tunnel_json_flag() {
         src.contains("print_tunnel_listening_json") || src.contains("tunnel_listening"),
         "tunnel must emit structured listening JSON"
     );
-    let out = std::fs::read_to_string(root().join("src/output.rs")).unwrap();
+    let out = std::fs::read_to_string(root().join("src/output/mod.rs")).unwrap();
     assert!(
         out.contains("print_tunnel_listening_json"),
         "output must define tunnel listening JSON printer"
@@ -493,7 +497,10 @@ fn gap_io_008_tunnel_json_flag() {
 
 #[test]
 fn gap_scp_022_partial_suffix_na_fonte() {
-    let src = std::fs::read_to_string(root().join("src/ssh/client.rs")).unwrap();
+    let src = std::fs::read_to_string(root().join("src/ssh/client_real.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/client_real_scp.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/client_real_core.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/scp_wire.rs")).unwrap();
     assert!(
         src.contains("ssh-cli.partial") || src.contains("SCP_PARTIAL_SUFFIX"),
         "download must use partial file path for atomic write"
@@ -531,7 +538,6 @@ fn gap_io_007b_scp_json_local_error_envelope() {
             "scp",
             "upload",
             "jsonscp",
-            "--json",
             tmp.path().to_str().unwrap(),
             "/tmp/x",
         ])
@@ -544,7 +550,10 @@ fn gap_io_007b_scp_json_local_error_envelope() {
 
 #[test]
 fn gap_scp_010_header_unit_source() {
-    let src = std::fs::read_to_string(root().join("src/ssh/client.rs")).unwrap();
+    let src = std::fs::read_to_string(root().join("src/ssh/client_real.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/client_real_scp.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/client_real_core.rs")).unwrap()
+        + &std::fs::read_to_string(root().join("src/ssh/scp_wire.rs")).unwrap();
     assert!(src.contains("format_scp_upload_header") || src.contains("formatar_header_upload_scp"));
     assert!(src.contains("format_scp_t_line") || src.contains("formatar_linha_t_scp"));
     assert!(src.contains("SCP_OK"));

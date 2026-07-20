@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/scp-batch.schema.json",
+  "title": "scp upload|download multi-host / multi-file JSON batch",
+  "description": "Used for --all/--hosts (one file or multi-file G-PAR-48) and single-host multi-file (G-PAR-37/47). max_concurrency is the session budget for multi-host; multi-file single-host still reports the process limit for agent parity. Multi-host×multi-file result name is often host:path.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["event", "batch_run_id", "direction", "max_concurrency", "results"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "const": "scp-batch"
+    },
+    "batch_run_id": {
+      "type": "string",
+      "description": "UUID v7 (hyphenated) correlating this multi-host run",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["upload", "download"]
+    },
+    "max_concurrency": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "ok"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "VPS name, file path label, or host:path for multi-host multi-file"
+          },
+          "ok": { "type": "boolean" },
+          "bytes": { "type": ["integer", "null"] },
+          "duration_ms": { "type": ["integer", "null"] },
+          "local": { "type": "string" },
+          "error": { "type": "string" }
+        }
+      }
+    }
+  }
+}

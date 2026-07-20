@@ -28,7 +28,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Never bump MSRV without an explicit issue discussion.
 
 ### Dependency pinning
-- Product line **0.5.1** uses **russh 0.62.2** (since 0.3.8) without the older COMPAT RC crypto pins; do not reintroduce dead RC pins without an issue.
+- Product line **0.5.2** uses **russh 0.62.2** (since 0.3.8) without the older COMPAT RC crypto pins; do not reintroduce dead RC pins without an issue.
 - Never run blind `cargo update` on the crypto graph.
 - Run `scripts/verify_install_resolve.sh` after any dependency change.
 
@@ -63,9 +63,9 @@ timeout 60 bash scripts/verify_install_resolve.sh
 - Read [docs/TESTING.md](docs/TESTING.md) for categories and profiles.
 - Prefer deterministic unit tests for packing and schema migration.
 - Use integration tests under `tests/` for CLI contracts.
-- Include gap regression suites when touching residual audit surface: `tests/gaps_v038_integration.rs`, `tests/gaps_v039_integration.rs`, `tests/gaps_v040_integration.rs`, `tests/gaps_v041_integration.rs`, `tests/gaps_v042_integration.rs` (TUN-003/IO-010), and `tests/gaps_v051_integration.rs` (0.5.1 export/import/wire/secrets).
-- For local real-SSH E2E, prefer env `SSH_CLI_E2E_*`, or maintainer-local `bash scripts/e2e_real_ssh.sh --from-grok-config` reading `$HOME/.grok/config.toml` only; official matrix is **E01–E16** (E10–E14 SCP; E15 tunnel port 0; E16 symlink); prefer **local sshd** / lab hosts and **no intentional auth storm** on production fail2ban targets; never log credentials; never commit Grok/MCP config or host inventories into this repo.
-- Unit/integration tests that need plaintext secrets must set `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` or pass `--allow-plaintext-secrets`.
+- Include gap regression suites when touching residual audit surface: `tests/gaps_v038_integration.rs` … `tests/gaps_v051_integration.rs` (export/import/wire/secrets), `tests/gaps_v057_sftp.rs`, and **`tests/gaps_v058_e2e_residual.rs`** (G-E2E residual: ACME permanent, single `vps-added`, root `schema`/`doctor`, clap no env, `-v` only, FIXED_MASK, `--use-agent`).
+- For local real-SSH E2E (G-E2E-05): prefer **`--config-dir`** with hosts already registered via `vps add`, or maintainer-local `bash scripts/e2e_real_ssh.sh --from-grok-config` reading `$HOME/.grok/config.toml` only. Harness-only `SSH_CLI_E2E_*` env is accepted by the script (not product runtime). Without a lab host the script exits **0** with **SKIP** (offline-safe). Default binary is `target/release/ssh-cli`. Official matrix **E01–E16** (E10–E14 SCP; E15 tunnel port 0; E16 symlink). Prefer **local sshd** / lab hosts; **no intentional auth storm** on production fail2ban targets; never log credentials; never commit Grok/MCP config or host inventories into this repo.
+- Unit/integration tests that need plaintext secrets must pass **`--allow-plaintext-secrets`** (CLI flag; not an env product store).
 - Never leave flaky remote-dependent tests without timeouts.
 
 
@@ -91,7 +91,7 @@ timeout 60 bash scripts/verify_install_resolve.sh
 ## Release Process
 - Bump SemVer in `Cargo.toml` and update both CHANGELOG languages.
 - Run full test suite, clippy `-D warnings`, `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps`, and install resolve gate.
-- Confirm root bilingual docs (README, SECURITY, INTEGRATIONS, llms*) match the **0.5.1** release surface: `secrets` + default encryption, secrets CLI flags, export TOML default / `--json` envelope, import TOML+JSON, wire schema v3 dual-read, `--include-secrets` guard, tunnel `--bind`, SCP file-only + 0.3.9 honesty, `scp-transfer` / `secrets-init` / `secrets-reencrypt` / `vps-export` schemas, post-bind exit 0, export empty-secret honesty, tunnel/health auth parity, and suites `gaps_v042` + `gaps_v051`.
+- Confirm root bilingual docs (README, SECURITY, INTEGRATIONS, llms*) match the **0.5.2** release surface: root `schema`/`doctor`, single-JSON `vps-added` + `secrets_key_auto_created`, ambient `RUST_LOG` ignored (`-v` only), ACME `invalidContact`→64, export redacted `***` (`FIXED_MASK`), `vps add --use-agent`, no product GH Actions, `secrets` + default encryption, wire schema v3 dual-read, SFTP surface, and suites `gaps_v042` + `gaps_v051` + **`gaps_v058`**. Local gates only (no cloud CI product workflows).
 - Package with `cargo package --locked` and dry-run publish when needed.
 - Tag `vX.Y.Z` only after publish gates pass and **explicit maintainer authorization**.
 - Prefer `cargo install ssh-cli --locked` in public install docs.

@@ -1,11 +1,12 @@
 # ssh-cli
 
-- Nota histórica: **0.4.2** fechou TUN-003 / IO-010; **0.5.0** foi o rename EN/API + reencrypt de secrets force-init; linha de produto atual é **0.5.1** (roundtrip export/import agent-first, wire schema v3 dual-read, flags CLI de secrets, tunnel `--bind`).
+- Nota histórica: **0.4.2** fechou TUN-003 / IO-010; **0.5.0** foi o rename EN/API + reencrypt de secrets force-init; linha de produto atual é **0.5.2** (roundtrip export/import agent-first, wire schema v3 dual-read, flags CLI de secrets, tunnel `--bind`).
 
-[![crates.io](https://img.shields.io/crates/v/ssh-cli.svg)](https://crates.io/crates/ssh-cli)
-[![docs.rs](https://docs.rs/ssh-cli/badge.svg)](https://docs.rs/ssh-cli)
-[![MSRV](https://img.shields.io/badge/MSRV-1.85.0-blue)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
-[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
+[![docs.rs](https://img.shields.io/docsrs/ssh-cli)](https://docs.rs/ssh-cli)
+[![crates.io](https://img.shields.io/crates/v/ssh-cli)](https://crates.io/crates/ssh-cli)
+[![License](https://img.shields.io/crates/l/ssh-cli)](LICENSE)
+[![MSRV](https://img.shields.io/badge/MSRV-1.85.0-orange)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-blue)](https://www.rust-lang.org)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
 > Dê a qualquer LLM poder SSH remoto em um binário one-shot seguro.
@@ -19,7 +20,7 @@
 - Siga o primeiro uso em [docs/HOW_TO_USE.pt-BR.md](docs/HOW_TO_USE.pt-BR.md).
 - Copie receitas de [docs/COOKBOOK.pt-BR.md](docs/COOKBOOK.pt-BR.md).
 - Confira plataformas em [docs/CROSS_PLATFORM.pt-BR.md](docs/CROSS_PLATFORM.pt-BR.md).
-- Migre de 0.3.3+ em [docs/MIGRATION.pt-BR.md](docs/MIGRATION.pt-BR.md) (linha alvo **0.5.1**).
+- Migre de 0.3.3+ em [docs/MIGRATION.pt-BR.md](docs/MIGRATION.pt-BR.md) (linha alvo **0.5.2**).
 - Execute testes via [docs/TESTING.pt-BR.md](docs/TESTING.pt-BR.md).
 - Consuma contratos JSON em [docs/schemas/README.md](docs/schemas/README.md).
 - Ensine LLMs com [skills/ssh-cli-pt/SKILL.md](skills/ssh-cli-pt/SKILL.md).
@@ -56,9 +57,10 @@
 - Timeout com abort remoto best-effort
 - Tunnel limitado via `--timeout-ms` obrigatório; `--bind` opcional (default `127.0.0.1`)
 - Wire **schema v3**: serializa chaves TOML em inglês; dual-read EN + aliases PT legados no load
-- `vps export` emite **TOML por padrão** (TTY e pipe); envelope JSON de agente só com `--json`; redacted por padrão; secrets vazios ficam `""`; `--include-secrets` em pipe/non-TTY exige `-o`/`--output` ou `--i-understand-secrets-on-stdout`
+- `vps export` emite **TOML por padrão** (TTY e pipe); envelope JSON de agente só com `--json`; redacted por padrão; secrets vazios ficam `""`; secrets não vazios redacted mascaram como `***` (`FIXED_MASK`); `--include-secrets` em pipe/non-TTY exige `-o`/`--output` ou `--i-understand-secrets-on-stdout`
 - `vps import` aceita TOML (chaves EN + aliases PT) **ou** envelopes JSON `vps-export`; skeletons redacted precisam de `--allow-incomplete`
-- SCP upload e download de **arquivos regulares apenas** (sem diretórios recursivos / sem SFTP; wire sólido em **0.4.0**; prefira **0.5.1+** — evite SCP do crates.io 0.3.9)
+- SCP upload e download de **arquivos regulares apenas** (sem `-r` no SCP; wire sólido em **0.4.0**; prefira **0.5.2+** — evite SCP do crates.io 0.3.9)
+- **SFTP** (`ssh-cli sftp`): upload/download (opcional `--recursive`, sem seguir symlink), `ls`/`mkdir`/`rmdir`/`rm`/`stat`/`rename`; eventos JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`
 - Paridade de flags scp com exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (contrato `docs/schemas/scp-transfer.schema.json`; JSON de sucesso exige `event: "scp-transfer"`)
 - Download SCP grava `{path}.ssh-cli.partial` e rename atômico; preserve mtime/mode bi-direcional; upload em stream de 32 KiB
 - JSON SCP de sucesso exige `event: "scp-transfer"` (0.4.1 IO-009); remoto ausente → `file not found: <path>` exit **66**
@@ -69,10 +71,10 @@
 - Completions para bash zsh fish powershell
 - Segredos via flags stdin para evitar leak em argv
 - **Cifragem at-rest por padrão** (ChaCha20-Poly1305) com auto `secrets.key` XDG; flags CLI `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` preferidas ao env
-- UX de master-key: `secrets status|init|reencrypt` com eventos `--json` `secrets-init` / `secrets-reencrypt`; auto-criação emite `secrets-key-auto-created`
+- UX de master-key: `secrets status|init|reencrypt` com eventos `--json` `secrets-init` / `secrets-reencrypt`; a 1ª gravação de segredo embute `secrets_key_auto_created: true` no mesmo JSON `vps-added` (um documento)
 - known_hosts TOFU e escrita atômica do config com flock
 - Hosts só-chave: senha vazia serializa como JSON `null` (não `"***"`) em `vps list` / `show`
-- Filtro de tracing default é `error` (stderr limpo para agentes); override com `RUST_LOG` ou `-v` (debug)
+- Filtro de tracing default é `error` (stderr limpo para agentes); use `-v` para debug (`RUST_LOG` ambiente é ignorado)
 - Install com russh 0.62.2 para `cargo install --locked` limpo
 
 
@@ -95,7 +97,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Instalação
 ### Escolha o caminho de install do seu ambiente
-- Prefira crates.io com lockfile: `cargo install ssh-cli --locked` (**0.5.1+** no crates.io; evite **0.3.9** para SCP).
+- Prefira crates.io com lockfile: `cargo install ssh-cli --locked` (**0.5.2+** no crates.io; evite **0.3.9** para SCP).
 - Rebuild a partir do checkout: `cargo install --path . --locked`
 - **Não** use install sem `--locked` salvo se validou o resolve crypto com os pins.
 - Force upgrade após release: `cargo install ssh-cli --locked --force`
@@ -103,9 +105,39 @@ ssh-cli exec prod "hostname" --json
 - Exija Rust MSRV 1.85.0 ou superior
 
 
+## Features
+### Flags de feature do Cargo
+| Feature | Padrão | Descrição |
+|---------|--------|-----------|
+| `ssh-real` | sim | SSH real via `russh` + `aws-lc-rs` (compressão só `none`) |
+| `tls` | sim | rustls ≥0.23.18 + `aws_lc_rs`: SSH-over-TLS, mTLS, ACME |
+| `musl-allocator` | não | `mimalloc` como global allocator (binário; útil em musl/Alpine) |
+
+- O caminho de install sempre ativa defaults (`ssh-real` + `tls`).
+- Desative SSH/TLS só para diagnóstico: `cargo build --no-default-features`.
+- docs.rs compila com `all-features = true` e `--cfg docsrs` (ver `Cargo.toml` `[package.metadata.docs.rs]`).
+
+### Política de crypto (G-TLS)
+- Padrão: **SSH-2** em TCP puro (`russh` + **aws-lc-rs**). Host keys **TOFU** sob XDG.
+- Opcional **SSH-over-TLS** (`vps add --tls`): handshake rustls + SSH no stream. `CryptoProvider` (`aws_lc_rs`) instalado uma vez no `main`.
+- **mTLS / ACME:** `ssh-cli tls mtls …` e `ssh-cli tls acme …` sob XDG `tls/` (sem env de armazenamento).
+- Sem OpenSSL / `native-tls` / dual `ring`. Compressão SSH só **`none`**.
+- Validação ACME / `invalidContact` / problemas 4xx → exit **64** não-retryable (G-E2E-01); rate limits permanecem exit **74** transitório.
+- Detalhes: [SECURITY.pt-BR.md](SECURITY.pt-BR.md).
+
+
+## Targets
+### Plataformas cobertas pelo metadata do docs.rs
+- `x86_64-unknown-linux-gnu` (default)
+- `x86_64-apple-darwin`, `aarch64-apple-darwin`
+- `x86_64-pc-windows-msvc`
+- `aarch64-unknown-linux-musl`
+- Veja [docs/CROSS_PLATFORM.pt-BR.md](docs/CROSS_PLATFORM.pt-BR.md) para notas de runtime.
+
+
 ## Uso
 ### Cadastre hosts e execute comandos one-shot
-- **Cifragem at-rest por padrão** (ChaCha20-Poly1305): auto `secrets.key` na primeira gravação; prefira flags CLI `--secrets-key-file`, `--use-keyring`, `--allow-plaintext-secrets` ao env (`SSH_CLI_SECRETS_KEY` / `_FILE` / keyring ainda funcionam); gerencie com `ssh-cli secrets status|init|reencrypt`. Opt-out só para testes.
+- **Cifragem at-rest por padrão** (ChaCha20-Poly1305): auto `secrets.key` na primeira gravação; prefira flags CLI `--secrets-key-file`, `--use-keyring`, `--allow-plaintext-secrets` (ou XDG `secrets.key`); gerencie com `ssh-cli secrets status|init|reencrypt`. `SSH_CLI_SECRETS_KEY` / `SSH_CLI_SECRETS_KEY_FILE` são **rejeitados fail-closed** (não são store). Opt-out só para testes via `--allow-plaintext-secrets`.
 - Prefira `--password-stdin` / `--key` a segredos em argv.
 - Adicione hosts com senha via `vps add --password` ou `--password-stdin`.
 - Adicione hosts com chave via `vps add --key ~/.ssh/id_ed25519`.
@@ -113,7 +145,8 @@ ssh-cli exec prod "hostname" --json
 - Marque o host ativo com `connect <name>`.
 - Rode shells remotos com `exec <vps> "<cmd>"`.
 - Eleve com `sudo-exec` ou `su-exec` quando configurado.
-- Diagnostique paths XDG com `vps doctor --json`.
+- Diagnostique paths XDG com `doctor --json` (ou `vps doctor --json`).
+- Descubra contratos com `ssh-cli schema` / `ssh-cli commands`.
 - Exporte inventário com segredos mascarados via `vps export` (TOML por padrão; `--json` para envelope de agente).
 
 
@@ -122,52 +155,67 @@ ssh-cli exec prod "hostname" --json
 
 | Comando | Propósito |
 |---|---|
-| `ssh-cli vps add` | Cadastra host (senha ou chave) |
+| `ssh-cli vps add` | Cadastra host (senha **ou** chave **ou** `--use-agent` / `--agent-socket`) |
 | `ssh-cli vps list [--json]` | Lista hosts com segredos mascarados |
 | `ssh-cli vps show <name> [--json]` | Mostra um host com segredos mascarados |
 | `ssh-cli vps edit <name>` | Altera campos do host |
 | `ssh-cli vps remove <name>` | Remove host |
 | `ssh-cli vps path` | Imprime caminho do `config.toml` |
 | `ssh-cli vps doctor [--json]` | Mostra camada XDG, schema e paths |
+| `ssh-cli doctor [--json]` | Alias root de `vps doctor` (G-E2E-03) |
+| `ssh-cli schema [NAME]` | Emite catálogo de JSON Schema embarcado ou um schema (G-E2E-02) |
+| `ssh-cli commands` | Emite a árvore completa de comandos em JSON (descoberta de agente) |
 | `ssh-cli vps export` | Exporta hosts em **TOML por padrão** (TTY e pipe); envelope JSON de agente só com `--json`; segredos mascarados por padrão; vazios como `""` (nunca blob `sshcli-enc:`); `--include-secrets` em pipe/non-TTY exige `-o`/`--output` ou `--i-understand-secrets-on-stdout` |
 | `ssh-cli vps import --file` | Importa hosts de **TOML** (chaves EN + aliases PT) **ou** envelope JSON `vps-export`; skeletons redacted precisam de `--allow-incomplete` |
 | `ssh-cli connect <name>` | Grava arquivo irmão `active` |
 | `ssh-cli exec <vps> <cmd>` | Comando remoto one-shot |
-| `ssh-cli sudo-exec <vps> <cmd>` | sudo one-shot com packing seguro |
-| `ssh-cli su-exec <vps> <cmd>` | Elevação `su -` one-shot |
-| `ssh-cli scp upload|download` | Somente arquivos regulares (sem `-r`/SFTP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--json` → schema `scp-transfer` com `event: "scp-transfer"`; preserve mtime/mode; remoto ausente → `file not found: <path>` exit **66** |
-| `ssh-cli tunnel ... --timeout-ms N [--bind ADDR] [--json]` | Port-forward local com deadline; `--bind` default `127.0.0.1`; `--json` emite `tunnel_listening` após bind; pós-bind exit **0**; auth: `--password-stdin`, `--key`, `--key-passphrase[-stdin]` |
-| `ssh-cli health-check [<vps>] [--timeout N]` | Sonda de conectividade (timeout opcional em ms); auth: `--password-stdin`, `--key`, `--key-passphrase[-stdin]` |
-| `ssh-cli secrets status|init|reencrypt` | Master-key e cifragem at-rest (nunca imprime a chave); `--json` emite `secrets-init` / `secrets-reencrypt`; auto-criação emite `secrets-key-auto-created`; flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` |
+| `ssh-cli exec --all '<cmd>'` | Comando remoto **concorrente com bound** em todos os hosts (`exec-batch` JSON) |
+| `ssh-cli sudo-exec <vps> <cmd>` / `--all` | sudo one-shot com packing seguro (frota com `--all`) |
+| `ssh-cli su-exec <vps> <cmd>` / `--all` | Elevação `su -` one-shot (frota com `--all`) |
+| `ssh-cli scp upload|download` | Somente arquivos regulares (sem `-r` no SCP); flags auth + `--use-agent` + `--json` → `scp-transfer`; remoto ausente → exit **66**; **`--all`** → `scp-batch` |
+| `ssh-cli sftp upload\|download\|ls\|mkdir\|rmdir\|rm\|stat\|rename` | Subsistema SFTP v3; `--recursive` (sem seguir symlink); JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch` |
+| `ssh-cli tunnel ... --timeout-ms N [--bind ADDR] [--json]` | Port-forward local com deadline; `--bind` default `127.0.0.1`; `--json` emite `tunnel_listening` após bind; pós-bind exit **0**; auth: `--password-stdin`, `--key`, `--key-passphrase[-stdin]`; accepts concorrentes limitados por `--max-concurrency` |
+| `ssh-cli health-check [<vps>] [--timeout N]` / `--all` | Sonda de conectividade (timeout opcional em ms); auth: `--password-stdin`, `--key`, `--key-passphrase[-stdin]`; **`--all`** → frota (`health-check-batch`) |
+| `ssh-cli --max-concurrency N …` | Cap global (1..=64) de fan-out multi-host e forwards de tunnel (fórmula auto CPUs×RAM quando omitido) |
+| `ssh-cli secrets status|init|reencrypt` | Master-key e cifragem at-rest (nunca imprime a chave); `--json` emite `secrets-init` / `secrets-reencrypt`; a 1ª gravação de segredo embute `secrets_key_auto_created: true` no mesmo JSON `vps-added` (um documento); flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` |
 | `ssh-cli completions <shell>` | Scripts de completion de shell |
 
 
-## Variáveis de ambiente
-### Overrides permitidos para testes e locales
+## Configuração (store de produto só via CLI)
+### Knobs de produto são flags e XDG — não stores `SSH_CLI_*` em env
 
-| Variável | Descrição | Exemplo |
+| Controle | Como | Exemplo |
 |---|---|---|
-| `SSH_CLI_HOME` | Sobrescreve diretório base de config | `/tmp/ssh-cli-test` |
-| `SSH_CLI_LANG` | Sobrescreve locale | `pt-BR` |
-| `SSH_CLI_SECRETS_KEY` | Master-key em 64 hex (cifra at-rest) | *(nunca logue)* |
-| `SSH_CLI_SECRETS_KEY_FILE` | Arquivo com master-key hex 64 | `~/.config/ssh-cli/secrets.key` |
-| `SSH_CLI_USE_KEYRING` | Usa keyring do SO para master-key | `1` |
-| `SSH_CLI_ALLOW_PLAINTEXT_SECRETS` | Opt-out da cifragem default (**só testes**) | `1` |
-| `NO_COLOR` | Desativa cores ANSI | `1` |
-| `CLICOLOR_FORCE` | Força cores ANSI | `1` |
-| `RUST_LOG` | Filtro de tracing (nível default é `error`) | `debug` |
+| Diretório de config | `--config-dir` (senão XDG/`directories`) | `ssh-cli --config-dir /tmp/ssh-cli-test vps list` |
+| Idioma | `--lang` ou `ssh-cli locale set <code>` (XDG `lang`) | `ssh-cli --lang pt-BR …` |
+| Formato de saída | `--json` / `--output-format json\|text` | `ssh-cli exec h uptime --json` |
+| Concorrência | `--max-concurrency N` (1..=64; fórmula auto quando omitido) | `ssh-cli --max-concurrency 8 exec --all id --json` |
+| Primary-key | `--secrets-key-file`, `--use-keyring`, ou XDG `secrets.key` | `ssh-cli --secrets-key-file ./k secrets status` |
+| Opt-out plaintext | `--allow-plaintext-secrets` (**só testes**) | `ssh-cli --allow-plaintext-secrets …` |
 
-- Prefira flags CLI a environment em runs de agentes em produção: `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` têm precedência sobre as env correspondentes quando definidas.
-- O filtro de tracing default é `error` para manter stderr limpo; defina `RUST_LOG` só ao depurar (ou passe `-v` para debug).
+### Secrets env fail-closed (não é store)
+| Variável | Comportamento |
+|---|---|
+| `SSH_CLI_SECRETS_KEY` / `SSH_CLI_SECRETS_KEY_FILE` | **Rejeitadas** se presentes — use XDG `secrets.key`, `--secrets-key-file` ou `--use-keyring` |
+
+### Fronteira OS / host (só detecção — não store de config de produto)
+| Variável | Papel |
+|---|---|
+| `HOME` | Home do SO para resolução XDG |
+| `TERM` / `NO_COLOR` / `CLICOLOR_FORCE` | Capacidade de terminal / cor |
+| `CI` / marcadores Flatpak | Detecção de runtime (`vps doctor` `runtime.*`) |
+| `RUST_LOG` | **Ignorado** pelo produto (não é store de config); use `-v` para debug |
+
+- O filtro de tracing default é `error` para manter stderr limpo; passe `-v` para debug (`RUST_LOG` ambiente é ignorado).
 - Nunca coloque senhas SSH em variáveis de ambiente; use inventário + stdin.
-- Variáveis de master-key cifraram **segredos no disco**, não substituem senha SSH.
+- O produto **não** lê `SSH_CLI_HOME`, `SSH_CLI_LANG`, `SSH_CLI_FORCE_TEXT` nem `SSH_CLI_MAX_CONCURRENCY` como stores de config.
 
 
 ## Padrões de integração
 ### Conecte agentes só com subprocessos one-shot
 - Invoque `ssh-cli` como subprocesso com argv explícito.
 - Prefira `--json` ou `--output-format json` para parsing de máquina.
-- Faça parse só do stdout; o nível de log default é `error`, então stderr fica silencioso em pipelines JSON — defina `RUST_LOG` só para debug quando precisar.
+- Faça parse só do stdout; o nível de log default é `error`, então stderr fica silencioso em pipelines JSON — passe `-v` ao diagnosticar (`RUST_LOG` ambiente é ignorado).
 - Mapeie exits não zero com semântica sysexits antes de retry.
 - Cadastre hosts uma vez via `vps add` e chame `exec` por tarefa.
 - Passe segredos com `--password-stdin` quando history de argv for arriscado.
@@ -191,7 +239,7 @@ ssh-cli exec prod "hostname" --json
 | `143` | SIGTERM |
 
 - Prefira `--json` ou JSON automático quando stdout não é TTY (`--output-format` sobrescreve).
-- Tracing default é `error`, então tratamento de exit e JSON em stdout ficam sem ruído INFO; use `RUST_LOG=debug` ou `-v` só ao diagnosticar.
+- Tracing default é `error`, então tratamento de exit e JSON em stdout ficam sem ruído INFO; use `-v` só ao diagnosticar (`RUST_LOG` ambiente é ignorado).
 - Faça retry só em IO/timeout transitório (`74`), nunca em auth (`77`) ou uso (`64`).
 
 
@@ -213,17 +261,17 @@ ssh-cli exec prod "hostname" --json
 
 ## FAQ de troubleshooting
 ### Corrija falhas comuns de install e runtime
-- Install falha em drift crypto RC: rode com `--locked` ou use a linha **0.5.1+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
+- Install falha em drift crypto RC: rode com `--locked` ou use a linha **0.5.2+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
 - Auth falha em hosts só-chave: defina `--key` em `vps add` ou passe `--key` / `--password-stdin` no `exec` (auth rejeitada sai com **77**).
 - Auth falha com chave com passphrase: use `--key-passphrase-stdin` (exit **77** na rejeição).
 - Host key mudou: confirme legitimidade e rode com `--replace-host-key`.
 - Comando rejeitado por tamanho: aumente `max_command_chars` ou encurte o comando.
 - Config com secrets cifrados sem chave: rode `ssh-cli secrets init` ou restaure `secrets.key` / env / `--secrets-key-file`.
 - sudo-exec desabilitado: remova `--disable-sudo` e defina `disable_sudo=false` no host.
-- Ruído inesperado em stderr em pipelines JSON: o nível default já é `error`; defina `RUST_LOG` só como `debug` (ou `-v`) ao diagnosticar.
-- SCP do crates.io **0.3.9** falha ou grava remoto 0 bytes: atualize para **0.5.1+** (fix de wire desde 0.4.0); só arquivos regulares, não diretórios.
-- SCP remoto ausente: mensagem `file not found: <path>` e exit **66** (prefira **0.5.1+**; IO-010 em 0.4.2).
-- Instalou **0.4.0** e `vps export` redacted mostra ciphertext `sshcli-enc:` para senha vazia, ou tunnel emite `ok:true` e depois exit **74**: atualize para **0.5.1+** (EXP-001 / TUN-002 desde 0.4.1).
+- Ruído inesperado em stderr em pipelines JSON: o nível default já é `error`; passe `-v` ao diagnosticar (`RUST_LOG` ambiente é ignorado).
+- SCP do crates.io **0.3.9** falha ou grava remoto 0 bytes: atualize para **0.5.2+** (fix de wire desde 0.4.0); só arquivos regulares, não diretórios.
+- SCP remoto ausente: mensagem `file not found: <path>` e exit **66** (prefira **0.5.2+**; IO-010 em 0.4.2).
+- Instalou **0.4.0** e `vps export` redacted mostra ciphertext `sshcli-enc:` para senha vazia, ou tunnel emite `ok:true` e depois exit **74**: atualize para **0.5.2+** (EXP-001 / TUN-002 desde 0.4.1).
 - Download SCP falha no meio: destino ausente ou arquivo anterior intacto (parcial usa `.ssh-cli.partial`).
 - Import com TOML inválido: erros de parse saem com exit **65** (`TomlDe` / erro de dados).
 - Import de skeleton redacted sem segredos: passe `--allow-incomplete`.

@@ -1,5 +1,17 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Benchmarks for ssh-cli operations.
+//! Benchmarks for ssh-cli **local** cold/warm CPU paths.
+//!
+//! Scope (Rules Rust — no blind optimization / latência):
+//! - These benches cover mask + path validation (pure CPU, no network).
+//! - They are **not** a substitute for SSH/SCP flamegraphs under real RTT.
+//! - Hot path of the product is I/O-bound (TCP/SSH); do not treat a 5% local
+//!   win as production readiness without integration measurement.
+//! - Do **not** report criterion means as product P99 latency — end-to-end
+//!   latency is network RTT; local benches only guard cold CPU regressions.
+//!
+//! Run: `cargo bench --bench ssh_operations`
+//! Compare size-min vs speed:
+//!   `cargo build --release` vs `--profile release-fast` / `--profile release-lto`.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ssh_cli::masking::mask;

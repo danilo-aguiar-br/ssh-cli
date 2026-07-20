@@ -3,12 +3,14 @@
 > Rode o perfil certo de testes do ssh-cli sem travar em redes remotas.
 
 - Leia este documento em [inglês](TESTING.md).
-- Linha de produto: **0.5.1** (suites históricas residuais incluem **0.4.1** AUD-POST / `gaps_v041`).
+- Linha de produto: **0.5.2** (suites históricas residuais incluem **0.4.1** AUD-POST / `gaps_v041`).
 
 
 ## Por que testes categorizados
 - Unit tests protegem packing, schema, secrets AEAD e lógica pura sem servidores SSH.
 - Integration tests protegem contratos da CLI, storage e snapshots.
+- Fixtures opcionais `ssh-keygen` (G-PROC-02) geram chaves OpenSSH reais para testes
+  de key-path; binário ausente faz skip — o produto em runtime nunca o spawna.
 - Testes live remotos são opcionais e devem sempre usar timeouts rígidos e nunca logar credenciais.
 - Gates de install resolve protegem o onboarding no crates.io (GAP-014).
 - Suites residuais de gaps travam I/O de agente, exit codes, supply chain, mascaramento, wire SCP e honestidade de docs.
@@ -24,7 +26,8 @@
 - Suite residual pós-0.3.9 / **0.4.0** em `tests/gaps_v040_integration.rs`
 - Suite AUD-POST em `tests/gaps_v041_integration.rs` (EXP-001 export empty, TUN-002 exit 0 pós-bind, CLI-005/006 paridade auth, IO-009 `event: scp-transfer`, REL-006, DOC-041 honesty)
 - Suite AUD-E2E em `tests/gaps_v042_integration.rs` (TUN-003, IO-010, UX-001, REL-007, ENV-001, DOC-042, SCP-024)
-- Suite **0.5.1** em `tests/gaps_v051_integration.rs` (export TOML padrão, JSON `vps-export`, dual-read schema v3, evento secrets-init, guarda include-secrets, CRUD `vps-added`, empty command, import exit 65)
+- Suite **0.5.2** em `tests/gaps_v051_integration.rs` (export TOML padrão, JSON `vps-export`, dual-read schema v3, evento secrets-init, guarda include-secrets, CRUD `vps-added`, empty command, import exit 65)
+- Suite residual G-E2E em `tests/gaps_v058_e2e_residual.rs` (root `schema` / `doctor`, um único `vps-added` com `secrets_key_auto_created`, `--use-agent`, purge de env help/clap, `RUST_LOG` ambiente ignorado, export FIXED_MASK `***`, ACME exit 64, etc.)
 - Storage integration em `tests/storage_integration.rs`
 - Snapshot tests em `tests/snapshot_tests.rs`
 - Superfície SCP em `tests/scp_integration.rs`
@@ -60,43 +63,50 @@ cargo test --locked --test gaps_v040_integration
 cargo test --locked --test gaps_v041_integration
 cargo test --locked --test gaps_v042_integration
 cargo test --locked --test gaps_v051_integration
+cargo test --locked --test gaps_v058_e2e_residual
 cargo test --locked --test storage_integration
 cargo test --locked --test snapshot_tests
 cargo test --locked packing
 cargo test --locked secrets::
 ```
 
-### E2E SSH real (nunca imprimir segredos)
+### E2E SSH real (nunca imprimir segredos) — G-E2E-05
 
 ```bash
-# Preferido em CI / máquinas compartilhadas: só env (nunca commite esses valores)
+# Preferido (XDG / CLI primeiro): config-dir isolado com hosts já cadastrados
+ssh-cli --config-dir /tmp/ssh-cli-e2e-lab vps add --name e2e --host … --user … --password-stdin
+bash scripts/e2e_real_ssh.sh --config-dir /tmp/ssh-cli-e2e-lab
+
+# Env harness-only (NÃO é store de runtime do produto) — nunca commite esses valores
 export SSH_CLI_E2E_HOST=… SSH_CLI_E2E_USER=… SSH_CLI_E2E_PASSWORD=…
 bash scripts/e2e_real_ssh.sh
 
-# Só do mantenedor local: parse de $HOME/.grok/config.toml (ssh-flowaiper MCP).
+# Só do mantenedor local: parse de $HOME/.grok/config.toml
 # Esse arquivo deve ficar em $HOME — nunca copie para este repositório.
 bash scripts/e2e_real_ssh.sh --from-grok-config
 ```
 
+- Binário default: `target/release/ssh-cli` (override só com harness `SSH_CLI_E2E_BIN`).
+- Sem host lab / credenciais, o script sai **0** com **SKIP** (offline-safe; não trate SKIP como gate vermelho).
 - Matriz oficial **E01–E16**; **E10–E14** = SCP upload, download, integridade (`cmp`), remoto ausente, preserve mode+mtime (SCP-023).
-- O script imprime só rótulos PASS/FAIL — nunca host, user ou password.
+- O script imprime só rótulos PASS/FAIL/SKIP — nunca host, user ou password.
+- Suite residual: `cargo test --locked --test gaps_v058_e2e_residual`.
 - **Política GAP-014 / fail2ban:** prefira `sshd` local ou VPS throwaway. **PROIBIDO:** tempestades de falha de autenticação em hosts de produção (ban do fail2ban). E2E em VPS de produção só com cuidado, whitelist de IP / `ignoreip`, e **sem** senhas erradas intencionais.
 
 
 ## Perfis de CI
 - Este repositório atualmente embarca sem workflows de GitHub Actions.
 - Mantenedores rodam o loop local do desenvolvedor antes de cada publish.
-- Gates de publish incluem package dry-run, verificação de install resolve, paridade bilíngue de docs, checagem de identificadores em inglês (`bash scripts/check_en_identifiers.sh`), suites residuais `gaps_v040` + `gaps_v041` + `gaps_v042` + **`gaps_v051`**, mais o loop canônico: `cargo test --locked --all-targets`, clippy `-D warnings` e `cargo build --release`.
+- Gates de publish incluem package dry-run, verificação de install resolve, paridade bilíngue de docs, checagem de identificadores em inglês (`bash scripts/check_en_identifiers.sh`), suites residuais `gaps_v040` + `gaps_v041` + `gaps_v042` + **`gaps_v051`** + **`gaps_v058`**, mais o loop canônico: `cargo test --locked --all-targets`, clippy `-D warnings` e `cargo build --release`.
 
 
 ## Variáveis de ambiente
-- `SSH_CLI_HOME` isola config durante testes.
-- `--config-dir` nas invocações da CLI é preferido para registries temporários.
-- `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` faz opt-out da cifragem padrão em testes que assertam TOML plaintext.
+- Use `--config-dir` nas invocações CLI para isolar config em testes (o produto não lê `SSH_CLI_HOME`).
+- `--allow-plaintext-secrets` faz opt-out da cifragem padrão em testes que assertam TOML plaintext.
 - Sem esse opt-out, a primeira gravação de segredo auto-cria `secrets.key` e cifra campos.
 - Nível de tracing padrão é error; não espere prosa INFO em stderr por omissão.
-- `RUST_LOG` sobrescreve o filtro padrão ao diagnosticar falhas.
-- `-v` ativa tracing debug sem definir `RUST_LOG`.
+- `RUST_LOG` ambiente é ignorado; use `-v` ao diagnosticar falhas.
+- `-v` ativa tracing debug (filtro de log só via CLI).
 - `NO_COLOR=1` estabiliza saída sensível a snapshot quando necessário.
 - Nunca coloque senhas de hosts live em env vars que os testes imprimem.
 
@@ -106,6 +116,6 @@ bash scripts/e2e_real_ssh.sh --from-grok-config
 - Falhas de resolve de crypto: recheque pins e rode de novo o script de install sem ignorar a política do lock.
 - Testes de timeout flaky: garanta que nenhum host remoto real seja necessário salvo configuração explícita.
 - Falhas de permissão: confirme que dirs temporários são graváveis e que asserts de mode batem com o SO.
-- Surpresas de fixture cifrada: defina `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1` ou forneça primary-key de teste via env.
-- Stderr quiet inesperado: o padrão é tracing error; defina `RUST_LOG` ou `-v` se precisar de linhas debug.
-- Falhas residuais de SCP / AUD-POST / 0.5.1: rode `cargo test --locked --test gaps_v040_integration`, `cargo test --locked --test gaps_v041_integration`, `cargo test --locked --test gaps_v042_integration` e `cargo test --locked --test gaps_v051_integration`; leia os blocos AUD-SCP, AUD-POST e 0.5.1 em `gaps.md`.
+- Surpresas de fixture cifrada: passe `--allow-plaintext-secrets` ou forneça primary-key de teste via `--secrets-key-file` / XDG `secrets.key`.
+- Stderr quiet inesperado: o padrão é tracing error; passe `-v` se precisar de linhas debug (`RUST_LOG` ambiente é ignorado).
+- Falhas residuais de SCP / AUD-POST / 0.5.2 / G-E2E: rode `cargo test --locked --test gaps_v040_integration`, `cargo test --locked --test gaps_v041_integration`, `cargo test --locked --test gaps_v042_integration`, `cargo test --locked --test gaps_v051_integration` e `cargo test --locked --test gaps_v058_e2e_residual`; leia os blocos AUD-SCP, AUD-POST, 0.5.2 e fecho G-E2E em `gaps.md`.

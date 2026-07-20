@@ -1,64 +1,98 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-doctor.schema.json",
-  "title": "vps doctor JSON",
+  "title": "vps doctor JSON (single root envelope, G-PAR-42)",
   "type": "object",
   "additionalProperties": true,
-  "required": [
-    "layer",
-    "config_path",
-    "exists",
-    "permissions",
-    "schema_version",
-    "hosts",
-    "known_hosts",
-    "active_file",
-    "telemetry"
-  ],
+  "required": ["event", "ok", "local", "ssh_probe"],
   "properties": {
-    "layer": {
-      "type": "string"
-    },
-    "config_path": {
-      "type": "string"
-    },
-    "exists": {
-      "type": "boolean"
-    },
-    "permissions": {
-      "type": "string"
-    },
-    "schema_version": {
-      "type": "integer"
-    },
-    "hosts": {
-      "type": "integer"
-    },
-    "known_hosts": {
-      "type": "string"
-    },
-    "active_file": {
-      "type": "string"
-    },
-    "secrets_at_rest": {
+    "event": {
       "type": "string",
-      "description": "encrypted or plaintext"
+      "const": "vps-doctor"
     },
-    "secrets_key_source": {
-      "type": "string",
-      "description": "none | env | file | keyring | xdg_file"
-    },
-    "secrets_key_file": {
-      "type": "string",
-      "description": "Path to secrets.key (may not exist yet)"
-    },
-    "secrets_plaintext_opt_out": {
+    "ok": {
       "type": "boolean",
-      "description": "True when SSH_CLI_ALLOW_PLAINTEXT_SECRETS opts out of default encryption"
+      "description": "false when ssh_probe reported any host failure"
     },
-    "telemetry": {
-      "type": "boolean",
-      "const": false
+    "local": {
+      "type": "object",
+      "description": "XDG/schema/secrets local diagnostics",
+      "additionalProperties": true,
+      "required": [
+        "layer",
+        "config_path",
+        "exists",
+        "permissions",
+        "schema_version",
+        "hosts",
+        "known_hosts",
+        "active_file",
+        "telemetry"
+      ],
+      "properties": {
+        "layer": { "type": "string" },
+        "config_path": { "type": "string" },
+        "exists": { "type": "boolean" },
+        "permissions": { "type": "string" },
+        "schema_version": { "type": "integer" },
+        "hosts": { "type": "integer" },
+        "known_hosts": { "type": "string" },
+        "active_file": { "type": "string" },
+        "secrets_at_rest": {
+          "type": "string",
+          "description": "encrypted or plaintext"
+        },
+        "secrets_key_source": {
+          "type": "string",
+          "description": "none | env | file | keyring | xdg_file"
+        },
+        "secrets_key_file": { "type": "string" },
+        "secrets_plaintext_opt_out": { "type": "boolean" },
+        "telemetry": { "type": "boolean", "const": false },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os", "arch", "is_wsl", "is_container", "is_ci", "is_termux"],
+          "properties": {
+            "os": { "type": "string" },
+            "arch": { "type": "string" },
+            "is_wsl": { "type": "boolean" },
+            "is_container": { "type": "boolean" },
+            "is_ci": { "type": "boolean" },
+            "is_termux": { "type": "boolean" },
+            "sandbox": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "ssh_probe": {
+      "description": "null when --probe-ssh omitted; else health-check-batch-like object (G-PAR-29/38)",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["event", "max_concurrency", "results"],
+          "properties": {
+            "event": { "type": "string", "const": "health-check-batch" },
+            "max_concurrency": { "type": "integer" },
+            "hosts": { "type": "integer" },
+            "failures": { "type": "integer" },
+            "results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "status"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "status": { "type": "string" },
+                  "latency_ms": { "type": ["integer", "null"] },
+                  "error": { "type": ["string", "null"] }
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

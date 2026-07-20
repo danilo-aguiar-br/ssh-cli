@@ -1,42 +1,49 @@
 #!/usr/bin/env bash
-# E2E real SSH for ssh-cli — anti-leak by design.
+# E2E real SSH for ssh-cli — anti-leak by design (G-AUD-10 / G-E2E-05 / v0.5.2).
 #
-# Sources credentials ONLY from:
-#   1) Env: SSH_CLI_E2E_HOST SSH_CLI_E2E_PORT SSH_CLI_E2E_USER SSH_CLI_E2E_PASSWORD
-#      optional: SSH_CLI_E2E_SUDO_PASSWORD
-#   2) Or --from-grok-config (parses $HOME/.grok/config.toml server ssh-flowaiper args)
+# Preferred credential sources (XDG / CLI — not product env store):
+#   1) --config-dir DIR with hosts already registered via `ssh-cli vps add`
+#   2) Lab file: $XDG_CONFIG_HOME/ssh-cli-e2e/lab.toml (host/user/key paths)
+#   3) Flags: --host --user --key [--port]
+#   4) Maintainer-only: --from-grok-config ($HOME/.grok/config.toml outside repo)
+#
+# Legacy SSH_CLI_E2E_* env vars are accepted ONLY by this harness (not product runtime).
+# If no lab host is configured, exit 0 with SKIP (do not fail offline runs).
+#
+# Default binary: target/release/ssh-cli.
 #
 # Hygiene (GAP-SSH-SEC-002):
 #   - Grok/MCP config MUST live under $HOME (default ~/.grok/config.toml), NEVER in this repo.
-#   - Prefer env vars in CI; --from-grok-config is maintainer-local only.
-#   - Never prints host/user/password. Prints only PASS/FAIL E0n.
+#   - Never prints host/user/password. Prints only PASS/FAIL/SKIP E0n.
 #   - Uses /tmp (outside workspace). Temp dir destroyed on exit.
 #   - Refuses grok config paths that resolve inside the repository root.
 #
 # GAP-SSH-ENV-001 (fail2ban / sshd ban policy):
 #   - PROIBIDO loops de autenticação falha em host de produção.
-#   - Auth-negative: no máximo 1 tentativa por execução, se algum dia for adicionado.
-#   - Preferir VPS throwaway em CI; em prod, manter fail2ban ignoreip / whitelist do IP do mantenedor.
 #   - Matrix oficial E01–E16 NÃO inclui mass wrong-password.
 set -euo pipefail
 set +x
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="${SSH_CLI_E2E_BIN:-$ROOT/target/debug/ssh-cli}"
+BIN="${SSH_CLI_E2E_BIN:-$ROOT/target/release/ssh-cli}"
 FROM_GROK=0
 SOFT_SUDO=0
 FAILS=0
+CONFIG_DIR=""
 
 pass() { echo "PASS $1"; }
 fail() { echo "FAIL $1"; FAILS=$((FAILS + 1)); }
 soft() { echo "SOFT $1 (skipped: $2)"; }
+skip_all() { echo "SKIP E2E real SSH: $1"; exit 0; }
 
 usage() {
   cat <<'EOF'
-Usage: e2e_real_ssh.sh [--from-grok-config] [--bin PATH]
-  Env: SSH_CLI_E2E_HOST PORT USER PASSWORD [SUDO_PASSWORD]
-  Prefer env in CI. --from-grok-config reads $HOME/.grok/config.toml only
-  (never a path inside this repository). Never prints secrets.
+Usage: e2e_real_ssh.sh [options]
+  --bin PATH              binary (default: target/release/ssh-cli)
+  --config-dir DIR        isolated XDG config dir with pre-registered hosts
+  --from-grok-config      read $HOME/.grok/config.toml only (never inside this repository)
+  Env (harness-only, not product store): SSH_CLI_E2E_HOST PORT USER PASSWORD [SUDO_PASSWORD]
+  Without a lab host, exits 0 with SKIP. Never prints secrets.
 EOF
 }
 
@@ -44,15 +51,16 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --from-grok-config) FROM_GROK=1; shift ;;
     --bin) BIN="$2"; shift 2 ;;
+    --config-dir) CONFIG_DIR="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
 if [[ ! -x "$BIN" ]]; then
-  echo "building ssh-cli debug..." >&2
-  (cd "$ROOT" && cargo build -q)
-  BIN="$ROOT/target/debug/ssh-cli"
+  echo "building ssh-cli release..." >&2
+  (cd "$ROOT" && cargo build --release -q)
+  BIN="$ROOT/target/release/ssh-cli"
 fi
 
 if [[ "$FROM_GROK" -eq 1 ]]; then
@@ -118,9 +126,10 @@ PY
   rm -f "$HELPER"
 fi
 
-: "${SSH_CLI_E2E_HOST:?set SSH_CLI_E2E_HOST or --from-grok-config}"
-: "${SSH_CLI_E2E_USER:?set SSH_CLI_E2E_USER}"
-: "${SSH_CLI_E2E_PASSWORD:?set SSH_CLI_E2E_PASSWORD}"
+# G-E2E-05: offline / no lab → SKIP exit 0 (not FAIL).
+if [[ -z "${SSH_CLI_E2E_HOST:-}" || -z "${SSH_CLI_E2E_USER:-}" || -z "${SSH_CLI_E2E_PASSWORD:-}" ]]; then
+  skip_all "no lab host (set harness SSH_CLI_E2E_* or --from-grok-config / --config-dir)"
+fi
 SSH_CLI_E2E_PORT="${SSH_CLI_E2E_PORT:-22}"
 
 TMP="$(mktemp -d /tmp/ssh-cli-e2e.XXXXXX)"

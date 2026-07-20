@@ -26,7 +26,7 @@ fn cmd(tmp: &TempDir) -> Command {
 
 #[test]
 #[serial]
-fn testa_help() {
+fn help_prints_usage() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .arg("--help")
@@ -39,7 +39,7 @@ fn testa_help() {
 
 #[test]
 #[serial]
-fn testa_version() {
+fn version_prints_semver() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .arg("--version")
@@ -50,7 +50,7 @@ fn testa_version() {
 
 #[test]
 #[serial]
-fn testa_vps_add_cria_registro() {
+fn vps_add_creates_record() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -74,7 +74,7 @@ fn testa_vps_add_cria_registro() {
 
 #[test]
 #[serial]
-fn testa_vps_add_duplicado_retorna_erro() {
+fn vps_add_duplicate_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -111,7 +111,7 @@ fn testa_vps_add_duplicado_retorna_erro() {
 
 #[test]
 #[serial]
-fn testa_vps_list_mascara_senhas() {
+fn vps_list_masks_passwords() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -142,7 +142,7 @@ fn testa_vps_list_mascara_senhas() {
 
 #[test]
 #[serial]
-fn testa_vps_list_json_funciona() {
+fn vps_list_json_works() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -170,7 +170,7 @@ fn testa_vps_list_json_funciona() {
 
 #[test]
 #[serial]
-fn testa_vps_remove_existente() {
+fn vps_remove_existing() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -197,7 +197,7 @@ fn testa_vps_remove_existente() {
 
 #[test]
 #[serial]
-fn testa_vps_remove_inexistente_retorna_erro() {
+fn vps_remove_missing_returns_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["vps", "remove", "nao-existe"])
@@ -207,7 +207,7 @@ fn testa_vps_remove_inexistente_retorna_erro() {
 
 #[test]
 #[serial]
-fn testa_vps_edit_atualiza_campos() {
+fn vps_edit_updates_fields() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -248,7 +248,7 @@ fn testa_vps_edit_atualiza_campos() {
 
 #[test]
 #[serial]
-fn testa_vps_show_retorna_dados_mascarados() {
+fn vps_show_returns_masked_data() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -277,7 +277,7 @@ fn testa_vps_show_retorna_dados_mascarados() {
 
 #[test]
 #[serial]
-fn testa_vps_show_json_mascara() {
+fn vps_show_json_masks() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -305,7 +305,7 @@ fn testa_vps_show_json_mascara() {
 
 #[test]
 #[serial]
-fn testa_vps_path_retorna_caminho() {
+fn vps_path_returns_path() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["vps", "path"])

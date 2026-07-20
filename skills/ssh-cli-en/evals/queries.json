@@ -2,7 +2,7 @@
   "skill_name": "ssh-cli",
   "queries": [
     {
-      "query": "add my production vps to the multi-host registry and run uname over ssh with json",
+      "query": "add my production vps to the multi-host registry with tags and run uname over ssh with json",
       "should_trigger": true
     },
     {
@@ -11,6 +11,10 @@
     },
     {
       "query": "need sudo-exec with safe packing to install packages on the staging host",
+      "should_trigger": true
+    },
+    {
+      "query": "su-exec one-shot to become root because sudo is disabled on this box",
       "should_trigger": true
     },
     {
@@ -26,43 +30,19 @@
       "should_trigger": true
     },
     {
-      "query": "refuse scp of a directory regular files only no -r no SFTP",
+      "query": "refuse scp of a directory regular files only no -r use sftp recursive for trees",
       "should_trigger": true
     },
     {
-      "query": "scp transfer failed under --json parse stderr error envelope exit_code message",
+      "query": "sftp upload recursive directory tree with --json event sftp-transfer no symlink follow",
       "should_trigger": true
     },
     {
-      "query": "scp --timeout for long file copy do not use --timeout-ms on scp",
+      "query": "sftp ls mkdir rmdir rm stat rename remote filesystem ops over ssh subsystem",
       "should_trigger": true
     },
     {
-      "query": "upload large artifact with scp streaming 32KiB chunks not full file in RAM",
-      "should_trigger": true
-    },
-    {
-      "query": "tunnel bind failure with --json read stderr error envelope not stdout success",
-      "should_trigger": true
-    },
-    {
-      "query": "secrets status failed after rotating master-key, how do i reencrypt config.toml",
-      "should_trigger": true
-    },
-    {
-      "query": "host key mismatch TOFU what flag replaces known_hosts after human approval",
-      "should_trigger": true
-    },
-    {
-      "query": "vps doctor shows wrong path, i need XDG config path and export redacted hosts",
-      "should_trigger": true
-    },
-    {
-      "query": "su-exec one-shot to become root because sudo is disabled on this box",
-      "should_trigger": true
-    },
-    {
-      "query": "password-stdin for vps add, dual max_command_chars max_output_chars for agent commands",
+      "query": "sftp rmdir empty remote directory then sftp mkdir for a new path",
       "should_trigger": true
     },
     {
@@ -70,67 +50,31 @@
       "should_trigger": true
     },
     {
-      "query": "vps list json password is null for key-only host and masked for password hosts",
+      "query": "run health-check --all --json with --max-concurrency 8 across the fleet registry",
       "should_trigger": true
     },
     {
-      "query": "ssh-cli stderr is noisy with INFO by default how do agents keep logs clean",
+      "query": "exec --all uptime on every host with bounded concurrency batch schema exec-batch",
       "should_trigger": true
     },
     {
-      "query": "use quiet mode and key-passphrase-stdin so argv never holds secrets",
+      "query": "exec --tags prod,web uptime selecting hosts by tag OR fleet filter",
       "should_trigger": true
     },
     {
-      "query": "parse stderr error envelope exit_code message remote_exit_code after failed exec",
+      "query": "multi-host fleet with --fail-fast stop admitting hosts after first failure",
       "should_trigger": true
     },
     {
-      "query": "vps add nonstandard ssh port 2222 with --check then connect active host",
+      "query": "run uname then df then free on the same SSH session with --step multi-step json step index",
       "should_trigger": true
     },
     {
-      "query": "scp download with password-stdin or key-passphrase-stdin without argv secrets",
+      "query": "authenticate via ssh-agent with --use-agent and --agent-socket for vps add and exec",
       "should_trigger": true
     },
     {
-      "query": "vps export redacted empty password must stay empty string never sshcli-enc blob",
-      "should_trigger": true
-    },
-    {
-      "query": "tunnel post-bind deadline after tunnel_listening must exit 0 not 74",
-      "should_trigger": true
-    },
-    {
-      "query": "tunnel with password-stdin and key-passphrase-stdin auth overrides",
-      "should_trigger": true
-    },
-    {
-      "query": "health-check with password-stdin key and key-passphrase-stdin overrides",
-      "should_trigger": true
-    },
-    {
-      "query": "health-check replace-host-key after human approval of host key mismatch",
-      "should_trigger": true
-    },
-    {
-      "query": "scp json success must include event scp-transfer discriminator",
-      "should_trigger": true
-    },
-    {
-      "query": "tunnel pre-bind timeout still exit 74 before listening",
-      "should_trigger": true
-    },
-    {
-      "query": "vps export default body is TOML even on pipe non-TTY use --json only for event vps-export",
-      "should_trigger": true
-    },
-    {
-      "query": "import hosts from TOML EN keys PT aliases or JSON vps-export schema v3 with allow-incomplete",
-      "should_trigger": true
-    },
-    {
-      "query": "include-secrets must use --output or --i-understand-secrets-on-stdout never raw pipe",
+      "query": "secrets status failed after rotating primary-key, how do i reencrypt config.toml",
       "should_trigger": true
     },
     {
@@ -138,15 +82,35 @@
       "should_trigger": true
     },
     {
-      "query": "tunnel --bind default 127.0.0.1 never expose 0.0.0.0 without security decision",
+      "query": "host key mismatch TOFU what flag replaces known_hosts after human approval",
       "should_trigger": true
     },
     {
-      "query": "scp remote missing exit 66 file not found path invalid import TOML exit 65 auth exit 77",
+      "query": "root doctor --json and vps doctor show XDG path schema and ssh_probe",
       "should_trigger": true
     },
     {
-      "query": "CRUD json events vps-added vps-edited vps-removed vps-connected vps-import emit_success",
+      "query": "discover full command tree with ssh-cli commands JSON for agent tooling",
+      "should_trigger": true
+    },
+    {
+      "query": "emit schema catalog and one schema body with ssh-cli schema and schema exec",
+      "should_trigger": true
+    },
+    {
+      "query": "set UI language with locale set pt-BR and show resolved locale winning layer",
+      "should_trigger": true
+    },
+    {
+      "query": "tls provider paths mtls import client cert and acme DNS-01 issue complete status",
+      "should_trigger": true
+    },
+    {
+      "query": "ACME invalidContact permanent validation failure must exit 64 never retry as 74",
+      "should_trigger": true
+    },
+    {
+      "query": "vps list json password is null for key-only host and FIXED_MASK *** for password hosts",
       "should_trigger": true
     },
     {
@@ -154,23 +118,71 @@
       "should_trigger": true
     },
     {
+      "query": "vps export redacted empty password must stay empty string never sshcli-enc blob",
+      "should_trigger": true
+    },
+    {
+      "query": "include-secrets must use --output or --i-understand-secrets-on-stdout never raw pipe",
+      "should_trigger": true
+    },
+    {
+      "query": "vps export default body is TOML even on pipe non-TTY use --json only for event vps-export",
+      "should_trigger": true
+    },
+    {
+      "query": "import hosts from TOML EN keys PT aliases or JSON vps-export with allow-incomplete",
+      "should_trigger": true
+    },
+    {
+      "query": "password-stdin for vps add, dual max_command_chars max_output_chars for agent commands",
+      "should_trigger": true
+    },
+    {
+      "query": "use quiet mode and key-passphrase-stdin so argv never holds secrets",
+      "should_trigger": true
+    },
+    {
+      "query": "parse stderr error envelope exit_code message remote_exit_code retryable error_class suggestion after failed exec",
+      "should_trigger": true
+    },
+    {
+      "query": "tunnel post-bind deadline after tunnel_listening must exit 0 not 74",
+      "should_trigger": true
+    },
+    {
+      "query": "tunnel pre-bind timeout still exit 74 before listening",
+      "should_trigger": true
+    },
+    {
+      "query": "scp remote missing exit 66 file not found path invalid import TOML exit 65 auth exit 77",
+      "should_trigger": true
+    },
+    {
       "query": "timeout under 1000 ms emits stderr warning unit is milliseconds not seconds",
       "should_trigger": true
     },
     {
-      "query": "password-like values on argv emit stderr warning prefer --*-stdin",
+      "query": "scp multi-file one session with --scp-file-concurrency parallel channels",
       "should_trigger": true
     },
     {
-      "query": "secrets use primary-key term not master-key; keyring still reads legacy secrets-master-key alias only",
+      "query": "enable SSH-over-TLS on host with --tls --tls-sni and mTLS client cert key flags",
       "should_trigger": true
     },
     {
-      "query": "vps doctor --json secrets_plaintext_opt_out is boolean not string",
+      "query": "first vps add auto secrets key puts secrets_key_auto_created on same vps-added json never second event",
       "should_trigger": true
     },
     {
-      "query": "import hosts without added_at still works serde default now",
+      "query": "doctor --probe-ssh --hosts web1,web2 single root event vps-doctor with local and ssh_probe",
+      "should_trigger": true
+    },
+    {
+      "query": "vps add nonstandard ssh port 2222 with --check then connect active host",
+      "should_trigger": true
+    },
+    {
+      "query": "ssh-cli stderr is noisy with INFO by default how do agents keep logs clean",
       "should_trigger": true
     },
     {

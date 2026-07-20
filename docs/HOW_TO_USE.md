@@ -4,7 +4,7 @@
 
 - Read this document in [Portuguese (pt-BR)](HOW_TO_USE.pt-BR.md).
 - Return to [README.md](../README.md) for the full command map.
-- Product line documented here: 0.5.1.
+- Product line documented here: 0.5.2.
 
 
 ## Prerequisites
@@ -12,8 +12,8 @@
 - Ensure network reachability to the target SSH host.
 - Hold either a password or an OpenSSH private key for that host.
 - Prefer a writable XDG config home for multi-host storage.
-- Install with `cargo install ssh-cli --locked` (0.5.1+ on crates.io; avoid 0.3.9 for SCP).
-- Do not rely on crates.io 0.3.9 for SCP: that release advertised transfer but the wire protocol was broken (0-byte remote files or timeouts). Use 0.5.1+.
+- Install with `cargo install ssh-cli --locked` (0.5.2+ on crates.io; avoid 0.3.9 for SCP).
+- Do not rely on crates.io 0.3.9 for SCP: that release advertised transfer but the wire protocol was broken (0-byte remote files or timeouts). Use 0.5.2+.
 
 
 ## First Command in 60 Seconds
@@ -29,7 +29,9 @@ ssh-cli exec demo "uname -a" --json
 
 - Confirm exit code 0 and inspect JSON fields `stdout`, `stderr`, `exit_code`, `duration_ms`.
 - An empty remote command string fails with technical message `empty command` (always English) and domain usage exit 64.
-- Run `ssh-cli secrets status --json` and `ssh-cli vps doctor --json` when paths or encryption mode are unclear.
+- Run `ssh-cli secrets status --json` and `ssh-cli doctor --json` (or `vps doctor --json`) when paths or encryption mode are unclear.
+- Discover contracts: `ssh-cli schema` / `ssh-cli commands`.
+- Register agent-auth hosts with `vps add --use-agent` (optional `--agent-socket`).
 - Prefer `--password-stdin` over `--password` when registering password hosts.
 
 
@@ -41,7 +43,7 @@ ssh-cli exec demo "uname -a" --json
 - Mark active host with `ssh-cli connect demo`.
 - Run privileged work with `ssh-cli sudo-exec demo "systemctl status nginx" --json` (safe `sh -c` packing).
 - Elevate with `ssh-cli su-exec` when `su` password is stored on the host record.
-- Transfer **regular files only** (no directories, no `-r`, no SFTP) with `ssh-cli scp upload demo ./app.tgz /tmp/app.tgz`.
+- Transfer **regular files** with `ssh-cli scp upload demo ./app.tgz /tmp/app.tgz` (no directories / no `-r`). For directory trees use `ssh-cli sftp upload --recursive demo ./dir /tmp/dir`.
 - Download with `ssh-cli scp download demo /var/log/app.log ./app.log`.
 - Prefer agent JSON: `ssh-cli scp upload demo ./app.tgz /tmp/app.tgz --json` (schema `docs/schemas/scp-transfer.schema.json`; required `event: "scp-transfer"`).
 - SCP flags match exec parity: `--timeout` (connect + transfer), `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json`.
@@ -50,8 +52,8 @@ ssh-cli exec demo "uname -a" --json
 - Upload streams in 32 KiB chunks (does not load the whole file into RAM).
 - mtime/mode are preserved both directions automatically (remote `scp -tp` / `-fp`; no extra user flag).
 - Manage primary-key with `ssh-cli secrets status|init|reencrypt` (never prints the key). Keyring may still accept the legacy `secrets-master-key` alias on read.
-- `secrets init --json` / `secrets reencrypt --json` emit success events (`secrets-init`, `secrets-reencrypt`; schemas `docs/schemas/secrets-init.schema.json`, `docs/schemas/secrets-reencrypt.schema.json`); auto key creation may emit `secrets-key-auto-created`. See [docs/schemas/README.md](schemas/README.md).
-- CRUD success JSON events when JSON is effective: `vps-added`, `vps-edited`, `vps-removed`, `vps-connected`, `vps-import` (plus `secrets-key-auto-created` when a key is auto-created). Catalog: [docs/schemas/README.md](schemas/README.md).
+- `secrets init --json` / `secrets reencrypt --json` emit success events (`secrets-init`, `secrets-reencrypt`; schemas `docs/schemas/secrets-init.schema.json`, `docs/schemas/secrets-reencrypt.schema.json`); first secret write may set field `secrets_key_auto_created: true` on the same `vps-added` JSON document (never a second stdout event). See [docs/schemas/README.md](schemas/README.md).
+- CRUD success JSON events when JSON is effective: `vps-added`, `vps-edited`, `vps-removed`, `vps-connected`, `vps-import` (with field `secrets_key_auto_created` when a key is auto-created — one document). Catalog: [docs/schemas/README.md](schemas/README.md).
 
 
 ## Daemon
@@ -62,12 +64,18 @@ ssh-cli exec demo "uname -a" --json
 
 
 ## Advanced Patterns
+### Fleet multi-host (bounded concurrency)
+- Prefer `exec|sudo-exec|su-exec|scp|health-check --all` when the registry has more than one host — one process, concurrent sessions gated by `--max-concurrency N` (auto CPUs×RAM when omitted, clamp 1..=64).
+- Parse batch JSON via `docs/schemas/*-batch.schema.json` (`health-check-batch`, `exec-batch`, `scp-batch`); envelope includes `max_concurrency`.
+- Example: `ssh-cli --max-concurrency 8 health-check --all --json` then `ssh-cli exec --all 'hostname' --json`.
+- Do **not** spawn one CLI process per host for fleet work when `--all` is available.
+
 ### Safer agent automation
 - Feed secrets through stdin flags (`--password-stdin`, `--sudo-password-stdin`, `--su-password-stdin`, `--key-passphrase-stdin`) instead of argv.
 - Attach shell comments with `--description` for audit-friendly remote history.
 - Disable elevation for untrusted tasks with `--disable-sudo`.
 - Replace a legitimate host key only after human confirmation using `--replace-host-key` (TOFU).
-- Export redacted inventory with `ssh-cli vps export -o hosts.toml` (default body is TOML, including non-TTY/pipe; empty secrets stay `""`; never writes fake empty `sshcli-enc:` ciphertext) (EXP-001). Help text matches this TOML-default behavior.
+- Export redacted inventory with `ssh-cli vps export -o hosts.toml` (default body is TOML, including non-TTY/pipe; non-empty secrets mask as `***` (`FIXED_MASK`); empty secrets stay `""`; never writes fake empty `sshcli-enc:` ciphertext) (EXP-001 / G-E2E-10). List/show empty password is JSON `null` — a different path from export. Help text matches this TOML-default behavior.
 - Agent JSON export only with `ssh-cli vps export --json` → envelope `event: "vps-export"` (auto JSON non-TTY does **not** apply to `vps export`).
 - `--include-secrets` requires `-o`/`--output` or `--i-understand-secrets-on-stdout` (pipe/stdout without ack is refused, exit 64).
 - Import hosts with `ssh-cli vps import --file hosts.toml` (TOML EN keys or legacy PT aliases) or a JSON `vps-export` envelope; use `--allow-incomplete` for redacted/skeleton hosts missing full auth.
@@ -85,19 +93,19 @@ ssh-cli exec demo "uname -a" --json
 - Resolve config path with `ssh-cli vps path`.
 - Expect atomic writes to `config.toml` mode 0600 (tempfile + fsync + flock).
 - Expect sibling files `active`, `known_hosts`, and `secrets.key` beside the config.
-- Override directory only for tests with `--config-dir` or `SSH_CLI_HOME`.
+- Override directory only for tests with `--config-dir`.
 - Store timeout, max_command_chars, max_output_chars, sudo and su secrets per host.
 - Default at-rest encryption (ChaCha20-Poly1305): secrets become `sshcli-enc:v1:…` blobs.
-- Prefer CLI flags over env for primary-key control: `--allow-plaintext-secrets`, `--secrets-key-file <PATH>`, `--use-keyring` (global). Keyring may still accept legacy `secrets-master-key` alias on read.
-- Primary-key resolution still accepts env fallbacks (`SSH_CLI_SECRETS_KEY`, `SSH_CLI_SECRETS_KEY_FILE`, `SSH_CLI_USE_KEYRING=1`) then XDG `secrets.key`; flags are preferred.
-- Tests-only plaintext opt-out: `--allow-plaintext-secrets` (or deprecated `SSH_CLI_ALLOW_PLAINTEXT_SECRETS=1`).
+- Primary-key control is CLI/XDG only: `--secrets-key-file <PATH>`, `--use-keyring`, or XDG `secrets.key`. Keyring may still accept legacy `secrets-master-key` alias on read.
+- `SSH_CLI_SECRETS_KEY` / `SSH_CLI_SECRETS_KEY_FILE` are **rejected fail-closed** (not a store).
+- Tests-only plaintext opt-out: `--allow-plaintext-secrets` only (no env store).
 - `vps doctor --json` reports paths, schema, host count, `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, and `secrets_plaintext_opt_out` (JSON boolean).
 
 
 ## Subcommands Not Covered Above
 - `health-check [--timeout <ms>]` probes connectivity and prints latency (`vps add --check` after register); override timeout when the host default is too long or short.
 - Health-check auth parity (0.4.1+ / CLI-006): `--password-stdin` / `--key` / `--key-passphrase` / `--key-passphrase-stdin`.
-- Default tracing level is error so JSON and tunnel stderr stay clean; use `RUST_LOG` or `-v` (debug) when diagnosing.
+- Default tracing level is error so JSON and tunnel stderr stay clean; use `-v` (debug) when diagnosing (ambient `RUST_LOG` is ignored).
 - `tunnel` requires local port, remote host, remote port, and `--timeout-ms`.
 - Tunnel `--bind` defaults to `127.0.0.1` (loopback); override only when you intentionally expose the listener.
 - Optional `tunnel --json` emits structured `event: "tunnel_listening"` on stdout after the local bind (`docs/schemas/tunnel-listening.schema.json`); after the agent receives the event, the post-bind deadline ends with exit 0 (TUN-002); pre-bind timeout still 74.
@@ -114,7 +122,7 @@ ssh-cli exec demo "uname -a" --json
 | 0 | Success |
 | 1 | General runtime failure (e.g. remote non-zero exit with `remote_exit_code` in JSON envelope) |
 | 2 | Clap usage (invalid flags) |
-| 64 (`EX_USAGE`) | Invalid argument / domain usage (includes empty command, refused `--include-secrets` without `-o` or ack) |
+| 64 (`EX_USAGE`) | Invalid argument / domain usage (includes empty command, refused `--include-secrets` without `-o` or ack, ACME permanent validation e.g. `invalidContact`) |
 | 65 (`EX_DATAERR`) | Invalid TOML/JSON input data (`TomlDe` / JSON parse / schema incompatibility) |
 | 66 (`EX_NOINPUT`) | VPS not found, no active VPS, or missing file (`file not found: <path>` on SCP) |
 | 73 (`EX_CANTCREAT`) | Config write / create failure |
@@ -123,7 +131,7 @@ ssh-cli exec demo "uname -a" --json
 | 130 | SIGINT |
 | 143 | SIGTERM |
 
-Product line: 0.5.1.
+Product line: 0.5.2.
 
 
 ## Integration With AI Agents

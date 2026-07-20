@@ -1,5 +1,5 @@
 ---
 source: tests/snapshot_tests.rs
-expression: saida
+expression: output
 ---
-VPS 'nao-existe' not found in registry
+{"exit_code":66,"error_code":"vps_not_found","message":"vps 'nao-existe' not found in registry","error_class":"permanent","retryable":false,"suggestion":"fix CLI arguments, registry state, or schema; do not retry unchanged"}

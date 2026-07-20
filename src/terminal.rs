@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// G-SECDEV-05: pure module — no `unsafe` permitted (crate root allows only OS FFI / test env).
+#![forbid(unsafe_code)]
 //! Colored output configuration and interactive terminal detection.
 //!
 //! Manages color choice via `termcolor` honoring precedence:
-//! 1. Flag `--no-color` da CLI (maior prioridade).
+//! 1. CLI flag `--no-color` (highest priority).
 //! 2. `NO_COLOR` environment variable (see <https://no-color.org>).
 //! 3. `CLICOLOR_FORCE=1` environment variable (force colors even without TTY).
 //! 4. TTY detection (colors only if stdout is an interactive terminal).
@@ -13,7 +15,10 @@ use std::sync::OnceLock;
 use termcolor::ColorChoice;
 
 /// Color choice cache (set once at initialization).
-static COR_CACHE: OnceLock<ColorChoice> = OnceLock::new();
+///
+/// Concurrent access: `OnceLock` — written once from `initialize` after parse;
+/// readers clone via `Copy`. Safe across threads (`ColorChoice: Sync`).
+static COLOR_CACHE: OnceLock<ColorChoice> = OnceLock::new();
 
 /// Initializes terminal color configuration.
 ///
@@ -21,7 +26,7 @@ static COR_CACHE: OnceLock<ColorChoice> = OnceLock::new();
 /// The `no_color` parameter matches the CLI `--no-color` flag.
 pub fn initialize(no_color: bool) -> Result<()> {
     let choice = determine_color(no_color);
-    let _ = COR_CACHE.set(choice);
+    let _ = COLOR_CACHE.set(choice);
     tracing::debug!("terminal color configuration: {:?}", choice);
     Ok(())
 }
@@ -29,10 +34,10 @@ pub fn initialize(no_color: bool) -> Result<()> {
 /// Returns the configured color choice.
 ///
 /// If [`initialize`] was not called, returns [`ColorChoice::Never`] as
-/// fallback seguro.
+/// safe fallback.
 #[must_use]
 pub fn color_choice() -> ColorChoice {
-    *COR_CACHE.get().unwrap_or(&ColorChoice::Never)
+    *COLOR_CACHE.get().unwrap_or(&ColorChoice::Never)
 }
 
 /// Returns `true` if the process is running in an interactive terminal (TTY).
@@ -53,7 +58,7 @@ pub fn is_interactive() -> bool {
 
 /// Determines color choice based on precedence rules.
 fn determine_color(no_color_cli: bool) -> ColorChoice {
-    // 1. Flag --no-color da CLI (maior prioridade)
+    // 1. CLI flag --no-color (highest priority)
     if no_color_cli {
         return ColorChoice::Never;
     }
@@ -87,47 +92,49 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn no_color_env_returns_never() {
         // Saves and restores environment variable state
-        let anterior = std::env::var("NO_COLOR").ok();
-        let anterior_force = std::env::var("CLICOLOR_FORCE").ok();
+        let previous = std::env::var("NO_COLOR").ok();
+        let previous_force = std::env::var("CLICOLOR_FORCE").ok();
 
-        std::env::set_var("NO_COLOR", "1");
-        std::env::remove_var("CLICOLOR_FORCE");
+        crate::test_util::env::set_var("NO_COLOR", "1");
+        crate::test_util::env::remove_var("CLICOLOR_FORCE");
 
         let choice = determine_color(false);
         assert!(matches!(choice, ColorChoice::Never));
 
         // Restaura
-        match anterior {
-            Some(v) => std::env::set_var("NO_COLOR", v),
-            None => std::env::remove_var("NO_COLOR"),
+        match previous {
+            Some(v) => crate::test_util::env::set_var("NO_COLOR", v),
+            None => crate::test_util::env::remove_var("NO_COLOR"),
         }
-        match anterior_force {
-            Some(v) => std::env::set_var("CLICOLOR_FORCE", v),
-            None => std::env::remove_var("CLICOLOR_FORCE"),
+        match previous_force {
+            Some(v) => crate::test_util::env::set_var("CLICOLOR_FORCE", v),
+            None => crate::test_util::env::remove_var("CLICOLOR_FORCE"),
         }
     }
 
     #[test]
+    #[serial_test::serial]
     fn clicolor_force_returns_always() {
-        let anterior = std::env::var("NO_COLOR").ok();
-        let anterior_force = std::env::var("CLICOLOR_FORCE").ok();
+        let previous = std::env::var("NO_COLOR").ok();
+        let previous_force = std::env::var("CLICOLOR_FORCE").ok();
 
-        std::env::remove_var("NO_COLOR");
-        std::env::set_var("CLICOLOR_FORCE", "1");
+        crate::test_util::env::remove_var("NO_COLOR");
+        crate::test_util::env::set_var("CLICOLOR_FORCE", "1");
 
         let choice = determine_color(false);
         assert!(matches!(choice, ColorChoice::Always));
 
         // Restaura
-        match anterior {
-            Some(v) => std::env::set_var("NO_COLOR", v),
-            None => std::env::remove_var("NO_COLOR"),
+        match previous {
+            Some(v) => crate::test_util::env::set_var("NO_COLOR", v),
+            None => crate::test_util::env::remove_var("NO_COLOR"),
         }
-        match anterior_force {
-            Some(v) => std::env::set_var("CLICOLOR_FORCE", v),
-            None => std::env::remove_var("CLICOLOR_FORCE"),
+        match previous_force {
+            Some(v) => crate::test_util::env::set_var("CLICOLOR_FORCE", v),
+            None => crate::test_util::env::remove_var("CLICOLOR_FORCE"),
         }
     }
 

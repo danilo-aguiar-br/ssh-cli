@@ -24,7 +24,7 @@ fn cmd(tmp: &TempDir) -> Command {
 
 #[test]
 #[serial]
-fn scp_help_exibe_usage() {
+fn scp_help_shows_usage() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["scp", "--help"])
@@ -37,13 +37,13 @@ fn scp_help_exibe_usage() {
 
 #[test]
 #[serial]
-fn scp_upload_help_exibe_parametros() {
+fn scp_upload_help_shows_params() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["scp", "upload", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("VPS_NAME"))
+        .stdout(predicate::str::contains("VPS"))
         .stdout(predicate::str::contains("LOCAL"))
         .stdout(predicate::str::contains("REMOTE"))
         .stdout(predicate::str::contains("--timeout"))
@@ -53,13 +53,13 @@ fn scp_upload_help_exibe_parametros() {
 
 #[test]
 #[serial]
-fn scp_download_help_exibe_parametros() {
+fn scp_download_help_shows_params() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["scp", "download", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("VPS_NAME"))
+        .stdout(predicate::str::contains("VPS"))
         .stdout(predicate::str::contains("REMOTE"))
         .stdout(predicate::str::contains("LOCAL"));
 }

@@ -1,6 +1,5 @@
 ---
 source: tests/snapshot_tests.rs
-assertion_line: 75
 expression: redacted
 ---
-ssh-cli 0.5.1 (HASH)
+ssh-cli 0.5.2 (HASH)

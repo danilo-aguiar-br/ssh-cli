@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/sftp-batch.schema.json",
+  "title": "sftp multi-host JSON batch",
+  "description": "Used for `sftp upload|download --all|--hosts`.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["event", "batch_run_id", "direction", "max_concurrency", "results"],
+  "properties": {
+    "event": { "type": "string", "const": "sftp-batch" },
+    "batch_run_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "direction": { "type": "string", "enum": ["upload", "download"] },
+    "max_concurrency": { "type": "integer", "minimum": 1 },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "ok"],
+        "properties": {
+          "name": { "type": "string" },
+          "ok": { "type": "boolean" },
+          "bytes": { "type": ["integer", "null"] },
+          "duration_ms": { "type": ["integer", "null"] },
+          "local": { "type": "string" },
+          "error": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+[package]
+name = "ssh-cli-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ssh-cli = { path = ".." }
+
+[[bin]]
+name = "packing_escape"
+path = "fuzz_targets/packing_escape.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "scp_header"
+path = "fuzz_targets/scp_header.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "import_envelope"
+path = "fuzz_targets/import_envelope.rs"
+test = false
+doc = false

@@ -16,9 +16,12 @@ logs/
 coverage/
 deny.toml
 Cross.toml
-graphrag.sqlite
-graphrag.sqlite-shm
-graphrag.sqlite-wal
-.enrich-queue.sqlite
-.enrich-queue.sqlite-shm
-.enrich-queue.sqlite-wal
+# GraphRAG / enrich-queue (qualquer pasta)
+**/graphrag.sqlite
+**/graphrag.sqlite-shm
+**/graphrag.sqlite-wal
+**/graphrag.sqlite-journal
+**/.enrich-queue.sqlite
+**/.enrich-queue.sqlite-shm
+**/.enrich-queue.sqlite-wal
+**/.enrich-queue.sqlite-journal

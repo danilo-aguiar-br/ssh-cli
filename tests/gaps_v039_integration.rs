@@ -20,16 +20,16 @@ fn cmd(tmp: &TempDir) -> Command {
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
-    c.env("SSH_CLI_ALLOW_PLAINTEXT_SECRETS", "1");
-    c.env("SSH_CLI_FORCE_TEXT", "1");
     c.arg("--config-dir").arg(tmp.path());
+    c.arg("--output-format").arg("text");
+    c.arg("--allow-plaintext-secrets");
     c
 }
 
 fn cmd_json(tmp: &TempDir) -> Command {
     let mut c = cmd(tmp);
     c.env_remove("SSH_CLI_FORCE_TEXT");
-    c.arg("--output-format").arg("json");
+    c.arg("--json");
     c
 }
 
@@ -51,14 +51,33 @@ fn add_host_password(tmp: &TempDir, name: &str) {
         .success();
 }
 
-fn write_ed25519(tmp: &TempDir) -> std::path::PathBuf {
+fn write_ed25519(tmp: &TempDir) -> Option<std::path::PathBuf> {
+    // G-PROC-02: test-only OpenSSH key fixture. Explicit stdio; direct argv; no shell.
+    // Runtime product never spawns ssh-keygen — keys are files parsed by russh.
     let key = tmp.path().join("id_ed25519_test");
-    let status = std::process::Command::new("ssh-keygen")
-        .args(["-t", "ed25519", "-f", key.to_str().unwrap(), "-N", "", "-q"])
+    let key_path = key.to_str().expect("temp path is UTF-8");
+    let status = match std::process::Command::new("ssh-keygen")
+        .arg("-t")
+        .arg("ed25519")
+        .arg("-f")
+        .arg(key_path)
+        .arg("-N")
+        .arg("")
+        .arg("-q")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .status()
-        .expect("ssh-keygen");
-    assert!(status.success(), "ssh-keygen failed");
-    key
+    {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("skip: ssh-keygen not on PATH ({e})");
+            return None;
+        }
+        Err(e) => panic!("ssh-keygen spawn failed: {e}"),
+    };
+    assert!(status.success(), "ssh-keygen failed: {status}");
+    Some(key)
 }
 
 // --- LOG-001 ---
@@ -101,7 +120,9 @@ fn gap_log_001_tunnel_json_stderr_sem_info_prosa() {
 #[serial]
 fn gap_json_001_key_only_password_null() {
     let tmp = TempDir::new().unwrap();
-    let key = write_ed25519(&tmp);
+    let Some(key) = write_ed25519(&tmp) else {
+        return;
+    };
     cmd(&tmp)
         .args([
             "vps",
@@ -121,8 +142,9 @@ fn gap_json_001_key_only_password_null() {
         .args(["vps", "show", "konly"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"password\": null"))
-        .stdout(predicate::str::contains("\"password\": \"***\"").not());
+        // Compact JSON wire (no spaces after `:`); key-only hosts use JSON null.
+        .stdout(predicate::str::contains("\"password\":null"))
+        .stdout(predicate::str::contains("\"password\":\"***\"").not());
 }
 
 #[test]
@@ -134,7 +156,7 @@ fn gap_json_001_com_password_continua_mascara() {
         .args(["vps", "show", "withpwd"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"password\": \"***\""))
+        .stdout(predicate::str::contains("\"password\":\"***\""))
         .stdout(predicate::str::contains("fake-test-password").not());
 }
 

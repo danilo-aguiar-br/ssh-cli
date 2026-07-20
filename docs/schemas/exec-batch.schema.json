@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/exec-batch.schema.json",
+  "title": "exec/sudo-exec/su-exec --all JSON batch",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["event", "batch_run_id", "max_concurrency", "results"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "const": "exec-batch"
+    },
+    "batch_run_id": {
+      "type": "string",
+      "description": "UUID v7 (hyphenated) correlating this multi-host run",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "max_concurrency": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "ok", "stdout", "stderr", "duration_ms"],
+        "properties": {
+          "name": { "type": "string" },
+          "ok": { "type": "boolean" },
+          "exit_code": { "type": ["integer", "null"] },
+          "stdout": { "type": "string" },
+          "stderr": { "type": "string" },
+          "duration_ms": { "type": "integer" },
+          "error": { "type": "string" }
+        }
+      }
+    }
+  }
+}

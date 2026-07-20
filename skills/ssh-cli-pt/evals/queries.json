@@ -26,11 +26,19 @@
       "should_trigger": true
     },
     {
-      "query": "recusar scp de diretório somente arquivos regulares sem -r sem SFTP",
+      "query": "recusar scp de diretório somente arquivos regulares sem -r use sftp recursive para árvores",
       "should_trigger": true
     },
     {
-      "query": "transferencia scp falhou com --json parsear envelope de erro no stderr exit_code message",
+      "query": "sftp upload recursive árvore de diretório com --json event sftp-transfer sem seguir symlink",
+      "should_trigger": true
+    },
+    {
+      "query": "sftp ls mkdir rmdir rm stat rename operações de filesystem remoto via subsystem ssh",
+      "should_trigger": true
+    },
+    {
+      "query": "transferencia scp falhou com --json parsear envelope de erro no stderr exit_code message retryable error_class suggestion",
       "should_trigger": true
     },
     {
@@ -46,11 +54,11 @@
       "should_trigger": true
     },
     {
-      "query": "secrets status falhou após rotacionar master-key, como faço reencrypt do config.toml",
+      "query": "secrets status falhou após rotacionar primary-key, como faço reencrypt do config.toml",
       "should_trigger": true
     },
     {
-      "query": "mismatch de host key TOFU qual flag substitui known_hosts após aprovação humana",
+      "query": "mismatch de host key TOFU qual flag replace-host-key substitui known_hosts após aprovação humana",
       "should_trigger": true
     },
     {
@@ -70,11 +78,11 @@
       "should_trigger": true
     },
     {
-      "query": "vps list json password null para host só-chave e mascarado para hosts com senha",
+      "query": "vps list json password null para host só-chave e máscara FIXED_MASK *** para hosts com senha",
       "should_trigger": true
     },
     {
-      "query": "stderr do ssh-cli barulhento com INFO por padrão como agentes mantêm logs limpos",
+      "query": "stderr do ssh-cli barulhento com INFO por padrão como agentes mantêm logs limpos RUST_LOG ignorado use -v",
       "should_trigger": true
     },
     {
@@ -82,7 +90,7 @@
       "should_trigger": true
     },
     {
-      "query": "parsear envelope de erro no stderr exit_code message remote_exit_code após exec falho",
+      "query": "parsear envelope de erro no stderr exit_code message remote_exit_code retryable error_class suggestion após exec falho",
       "should_trigger": true
     },
     {
@@ -122,7 +130,7 @@
       "should_trigger": true
     },
     {
-      "query": "vps export corpo padrão TOML mesmo em pipe non-TTY usar --json só para event vps-export",
+      "query": "vps export corpo padrão TOML mesmo em pipe non-TTY usar --json só para event igual a vps-export",
       "should_trigger": true
     },
     {
@@ -166,11 +174,67 @@
       "should_trigger": true
     },
     {
-      "query": "vps doctor --json secrets_plaintext_opt_out é boolean não string",
+      "query": "vps doctor --json event igual a vps-doctor e secrets_plaintext_opt_out é boolean não string",
       "should_trigger": true
     },
     {
-      "query": "importar hosts sem added_at ainda funciona serde default agora",
+      "query": "importar hosts sem added_at ainda funciona serde default",
+      "should_trigger": true
+    },
+    {
+      "query": "rodar health-check --all --json com --max-concurrency 8 em toda a frota do inventário",
+      "should_trigger": true
+    },
+    {
+      "query": "exec --all uptime em todos os hosts com concorrência limitada schema batch exec-batch",
+      "should_trigger": true
+    },
+    {
+      "query": "exec --tags prod,web uptime selecionar frota por tags OR batch",
+      "should_trigger": true
+    },
+    {
+      "query": "exec com --step cmd2 --step cmd3 na mesma sessão SSH sem reabrir handshake",
+      "should_trigger": true
+    },
+    {
+      "query": "vps add com --tag prod --tag web e list filtrar por --tag",
+      "should_trigger": true
+    },
+    {
+      "query": "vps add com --use-agent --agent-socket e auth via ssh-agent",
+      "should_trigger": true
+    },
+    {
+      "query": "vps add com --tls --tls-sni e mTLS client cert key para SSH-over-TLS",
+      "should_trigger": true
+    },
+    {
+      "query": "tls provider paths mtls import list show remove e acme account create issue complete status list",
+      "should_trigger": true
+    },
+    {
+      "query": "ACME invalidContact validação permanente exit 64 nunca retry como exit 74",
+      "should_trigger": true
+    },
+    {
+      "query": "locale show set clear e --lang pt-BR forçar idioma sem SSH_CLI_LANG",
+      "should_trigger": true
+    },
+    {
+      "query": "ssh-cli commands e schema para descobrir árvore e contratos JSON do agente",
+      "should_trigger": true
+    },
+    {
+      "query": "doctor root alias de vps doctor e secrets_key_auto_created no mesmo JSON vps-added",
+      "should_trigger": true
+    },
+    {
+      "query": "frota com --fail-fast parar admissão no primeiro erro e --scp-file-concurrency multi-arquivo",
+      "should_trigger": true
+    },
+    {
+      "query": "env SSH_CLI_SECRETS_KEY rejeitada fail-closed e sem store HOME LANG FORCE_TEXT MAX_CONCURRENCY",
       "should_trigger": true
     },
     {

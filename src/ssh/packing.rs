@@ -1,9 +1,21 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Empacotamento seguro de comandos sudo/su (one-shot multi-host para LLMs).
+// G-SECDEV-05: pure module — no `unsafe` permitted (crate root allows only OS FFI / test env).
+#![forbid(unsafe_code)]
+//! Safe packing of `sudo`/`su` commands for one-shot multi-host LLM flows.
 //!
-//! Usa `sh -c` com escape de aspas para comandos compostos seguros.
+//! Builds **remote** `sh -c` strings with shell-safe single-quote escaping for
+//! compound commands sent over the SSH channel (`channel.exec`), **not** local
+//! `std::process::Command` spawns.
+//!
+//! # External process boundary (G-PROC)
+//!
+//! - Local product code never invokes `sh`/`sudo`/`su` via `Command`.
+//! - Remote packing is intentional: elevation must run on the target host shell.
+//! - Secrets go on channel stdin (`sudo -S` / `su`), never in argv / command text.
+//! - Callers must pass payloads already rejected for NUL (`validate_command_length`).
 
 use secrecy::{ExposeSecret, SecretString};
+use zeroize::Zeroize;
 
 /// Escapes a string for safe use inside shell single quotes.
 ///
@@ -29,8 +41,8 @@ pub fn escape_shell_single_quotes(value: &str) -> String {
 pub fn append_description(command: &str, description: Option<&str>) -> String {
     match description {
         Some(d) if !d.trim().is_empty() => {
-            let limpo = d.replace(['\n', '\r'], " ");
-            format!("{command} # {limpo}")
+            let cleaned = d.replace(['\n', '\r'], " ");
+            format!("{command} # {cleaned}")
         }
         _ => command.to_string(),
     }
@@ -38,7 +50,11 @@ pub fn append_description(command: &str, description: Option<&str>) -> String {
 
 /// Packing result: remote command **without** secret in argv + optional bytes
 /// to send on the SSH channel stdin (GAP-SSH-SEC-001).
-#[derive(Debug, Clone)]
+///
+/// `stdin` may hold a password; [`Drop`] zeroizes it (memory / RAII rule).
+/// Debug redacts stdin. Prefer moving `stdin` into `run_command` (which also
+/// zeroizes after the channel write).
+#[derive(Clone)]
 pub struct PackedCommand {
     /// Remote command line (no embedded password).
     pub command: String,
@@ -46,10 +62,40 @@ pub struct PackedCommand {
     pub stdin: Option<Vec<u8>>,
 }
 
+impl std::fmt::Debug for PackedCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PackedCommand")
+            .field("command", &self.command)
+            .field(
+                "stdin",
+                &self.stdin.as_ref().map(|_| "<redacted bytes>"),
+            )
+            .finish()
+    }
+}
+
+impl Drop for PackedCommand {
+    fn drop(&mut self) {
+        if let Some(ref mut bytes) = self.stdin {
+            bytes.zeroize();
+        }
+    }
+}
+
+impl PackedCommand {
+    /// Moves stdin out for the channel write; remaining drop is a no-op.
+    ///
+    /// Prefer this over field access: `Drop` prevents partial moves of `stdin`.
+    #[must_use]
+    pub fn take_stdin(&mut self) -> Option<Vec<u8>> {
+        self.stdin.take()
+    }
+}
+
 /// Packs a command for `sudo` with `sh -c`.
 ///
 /// - With password: `sudo -S -p '' sh -c 'cmd'` and password on the **channel stdin** (not argv).
-/// - Sem password: `sudo -n sh -c 'cmd'`.
+/// - Without password: `sudo -n sh -c 'cmd'`.
 #[must_use]
 pub fn pack_sudo(command: &str, sudo_password: Option<&SecretString>) -> PackedCommand {
     let cmd_esc = escape_shell_single_quotes(command);
@@ -81,29 +127,32 @@ pub fn pack_su(command: &str, su_password: &SecretString) -> PackedCommand {
     }
 }
 
-/// Sanitiza trecho de command para uso best-effort em `pkill -f`.
+/// Sanitizes a command fragment for best-effort use with `pkill -f`.
 ///
-/// Accepts alphanumerics and restricted symbols; stops at the first metacharacter
-/// dangerous. Requires at least 3 chars. Never embeds passwords (only the command pattern).
+/// Accepts alphanumerics and a restricted symbol set; stops at the first dangerous
+/// metacharacter. Requires at least 3 characters. Never embeds passwords (pattern only).
 #[must_use]
 pub fn remote_abort_pattern(command: &str) -> Option<String> {
-    let mut limpo = String::with_capacity(command.len().min(128));
+    let mut cleaned = String::with_capacity(command.len().min(128));
     for ch in command.chars().take(128) {
         if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '/' | ' ' | ':' | '=') {
-            limpo.push(ch);
+            cleaned.push(ch);
         } else {
             break;
         }
     }
-    let t = limpo.trim();
-    if t.len() < 3 {
+    // Avoid a second heap string when trim does not shrink `cleaned`.
+    let trimmed = cleaned.trim();
+    if trimmed.len() < 3 {
         None
+    } else if trimmed.len() == cleaned.len() {
+        Some(cleaned)
     } else {
-        Some(t.to_string())
+        Some(trimmed.to_string())
     }
 }
 
-/// Monta command de abort best-effort remoto (TERM depois KILL).
+/// Builds a best-effort remote abort command (TERM, then KILL).
 ///
 /// Does not embed secrets; uses only the sanitized command pattern.
 #[must_use]
@@ -131,7 +180,8 @@ mod tests {
         assert!(pack.command.contains("sudo -S -p '' sh -c"));
         assert!(!pack.command.contains("s3cr3t"));
         assert!(!pack.command.contains("printf"));
-        let stdin = pack.stdin.expect("stdin com senha");
+        let mut pack = pack;
+        let stdin = pack.take_stdin().expect("stdin with password");
         assert_eq!(stdin, b"s3cr3t\n");
     }
 
@@ -158,6 +208,15 @@ mod tests {
             "ls # lista arquivos"
         );
         assert_eq!(append_description("ls", None), "ls");
+    }
+
+    #[test]
+    fn debug_redacts_stdin() {
+        let password = SecretString::from("s3cr3t".to_string());
+        let pack = pack_sudo("id", Some(&password));
+        let dbg = format!("{pack:?}");
+        assert!(!dbg.contains("s3cr3t"));
+        assert!(dbg.contains("<redacted bytes>"));
     }
 
     #[test]
