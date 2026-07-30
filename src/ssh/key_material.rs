@@ -122,10 +122,7 @@ mod tests {
         perms.set_mode(0o644);
         std::fs::set_permissions(f.path(), perms).unwrap();
         let err = ensure_private_key_permissions(f.path()).unwrap_err();
-        assert!(
-            matches!(err, SshCliError::InvalidArgument(_)),
-            "{err:?}"
-        );
+        assert!(matches!(err, SshCliError::InvalidArgument(_)), "{err:?}");
     }
 
     #[test]

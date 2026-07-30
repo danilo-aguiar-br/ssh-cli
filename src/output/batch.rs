@@ -8,11 +8,11 @@ use super::{is_quiet, report_json_serialize_error};
 use crate::domain::BatchRunId;
 use crate::json_wire::{
     self, ExecBatchJson, ExecHostJson, HealthBatchJson, HealthHostJson, ScpBatchJson, ScpHostJson,
-    ScpTransferJson, SftpBatchJson, SftpFsOpJson, SftpListEntryJson, SftpListJson, SftpTransferJson,
-    TunnelListeningJson,
+    ScpTransferJson, SftpBatchJson, SftpFsOpJson, SftpListEntryJson, SftpListJson,
+    SftpTransferJson, TunnelListeningJson,
 };
-use crate::ssh::sftp_types::{SftpListEntry, SftpStat};
 use crate::sftp::batch::HostSftpResult;
+use crate::ssh::sftp_types::{SftpListEntry, SftpStat};
 use crate::vps::{HostExecResult, HostHealthResult};
 use std::io::{self, Write};
 
@@ -447,4 +447,3 @@ pub fn print_tunnel_listening_json(
         }
     }
 }
-

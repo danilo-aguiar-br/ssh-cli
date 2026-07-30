@@ -4,7 +4,7 @@
 use serial_test::serial;
 use ssh_cli::i18n::{current_language, initialize_language, Language, Message, TextDirection};
 use ssh_cli::locale::{
-    negotiate_code, normalize_raw_locale, parse_language_identifier, parse_lang_cli_arg,
+    negotiate_code, normalize_raw_locale, parse_lang_cli_arg, parse_language_identifier,
     resolve_language_detailed, write_persisted_lang, LocaleSource,
 };
 

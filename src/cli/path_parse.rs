@@ -8,11 +8,7 @@ use std::path::PathBuf;
 
 /// Split a `--hosts` LIST (`a,b,c`) into names.
 pub(crate) fn parse_hosts_list(raw: &str) -> Vec<String> {
-    crate::vps::dedupe_host_names(
-        raw.split(',')
-            .map(|s| s.trim().to_string())
-            .collect(),
-    )
+    crate::vps::dedupe_host_names(raw.split(',').map(|s| s.trim().to_string()).collect())
 }
 
 /// Parses `exec`/`sudo-exec`/`su-exec` positionals into [`crate::vps::HostSelection`].
@@ -38,10 +34,9 @@ pub(crate) fn parse_exec_target(
         return match target.len() {
             // G-SEC-02: no unwrap after length gate — explicit Result extraction.
             1 => {
-                let cmd = target
-                    .into_iter()
-                    .next()
-                    .ok_or_else(|| "with --all pass only the shell command (one positional)".to_string())?;
+                let cmd = target.into_iter().next().ok_or_else(|| {
+                    "with --all pass only the shell command (one positional)".to_string()
+                })?;
                 Ok((HostSelection::All, cmd))
             }
             _ => Err("with --all pass only the shell command (one positional)".into()),
@@ -58,10 +53,9 @@ pub(crate) fn parse_exec_target(
             .collect::<Result<Vec<_>, _>>()?;
         return match target.len() {
             1 => {
-                let cmd = target
-                    .into_iter()
-                    .next()
-                    .ok_or_else(|| "with --hosts pass only the shell command (one positional)".to_string())?;
+                let cmd = target.into_iter().next().ok_or_else(|| {
+                    "with --hosts pass only the shell command (one positional)".to_string()
+                })?;
                 Ok((HostSelection::Named(names), cmd))
             }
             _ => Err("with --hosts pass only the shell command (one positional)".into()),
@@ -75,10 +69,9 @@ pub(crate) fn parse_exec_target(
         let tag_list = try_tags(tag_list).map_err(|e| e.to_string())?;
         return match target.len() {
             1 => {
-                let cmd = target
-                    .into_iter()
-                    .next()
-                    .ok_or_else(|| "with --tags pass only the shell command (one positional)".to_string())?;
+                let cmd = target.into_iter().next().ok_or_else(|| {
+                    "with --tags pass only the shell command (one positional)".to_string()
+                })?;
                 Ok((HostSelection::Tagged(tag_list), cmd))
             }
             _ => Err("with --tags pass only the shell command (one positional)".into()),

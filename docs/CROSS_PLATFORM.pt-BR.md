@@ -3,7 +3,7 @@
 > Fuja de cola SSH específica de SO com um binário Rust portátil.
 
 - Leia este documento em [inglês](CROSS_PLATFORM.md).
-- Linha de produto: 0.5.2.
+- Linha de produto: 0.5.3.
 
 
 ## A dor que você já conhece
@@ -94,7 +94,8 @@
 ## Suporte a shell
 - Completions via `clap_complete`: **Bash, Zsh, Fish, PowerShell, Elvish**
   (`ssh-cli completions <shell>`).
-- Nushell não está no enum padrão `clap_complete::Shell`; gere via tooling externo se precisar.
+- Nushell não está no enum padrão `clap_complete::Shell`; gere via tooling externo
+  se precisar.
 - Prefira arrays argv explícitos em runtimes de agente a eval de string shell.
 - Prefira flags stdin de segredo a embutir senhas no histórico do shell.
 
@@ -104,14 +105,43 @@
 - Sobrescreva só em testes via `--config-dir` (o produto não lê `SSH_CLI_HOME`).
 - Mantenha `known_hosts`, `active` e `secrets.key` como arquivos irmãos de `config.toml`.
 - Escritas atômicas + flock protegem processos one-shot concorrentes no mesmo config.
+- Sem store runtime de produto em `.env` para segredos, idioma ou config home.
+- `locale show|set|clear` funciona em todas as plataformas (XDG / ProjectDirs via `directories`).
+- Material de `tls mtls/*` e `tls acme/*` fica sob o dir de config da plataforma `tls/` (XDG no Linux).
 
 
-## Portabilidade SCP
-- SCP é somente arquivos regulares em toda plataforma (sem transferência recursiva de diretório; sem subsistema SFTP).
+## Superfície completa da CLI (agnóstica de SO)
+
+O inventário de comandos é idêntico em todo SO suportado. Descubra em runtime com `ssh-cli commands` / `ssh-cli schema`.
+
+| Superfície | Comandos |
+| --- | --- |
+| Registry VPS | `vps add` `vps list` `vps remove` `vps edit` `vps show` `vps path` `vps doctor` `vps export` `vps import` |
+| Sessão | `connect` |
+| Exec remoto | `exec` `sudo-exec` `su-exec` |
+| SCP | `scp upload` `scp download` (somente arquivos regulares) |
+| SFTP | `sftp upload` `sftp download` `sftp ls` `sftp mkdir` `sftp rmdir` `sftp rm` `sftp stat` `sftp rename` |
+| Rede | `tunnel` `health-check` |
+| Segredos | `secrets status` `secrets init` `secrets reencrypt` |
+| Descoberta | `completions` `commands` `schema` `doctor` (alias root de `vps doctor`) |
+| Locale | `locale show` `locale set` `locale clear` |
+| TLS | `tls provider` `tls paths` |
+| TLS mTLS | `tls mtls list` `tls mtls import` `tls mtls show` `tls mtls remove` |
+| TLS ACME | `tls acme account create` `tls acme account show` `tls acme issue` `tls acme complete` `tls acme status` `tls acme list` |
+
+Globals (todas as plataformas): `--lang`, `-v`/`-vv`/`-vvv` (escopo na crate G2/G14; `RUST_LOG` ambiente ignorado), `-q`, `--config-dir`, `--no-color`, `--output-format`/`--json`, `--disable-sudo`, `--replace-host-key`, `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`, `--timeout`, `--max-concurrency` (fan-out de frota 1..=64), `--fail-fast`, `--scp-file-concurrency`.
+
+- Prefira linha de produto **0.5.3+** para SFTP (integridade de upload G1) em toda plataforma; verifique o destino com checksum.
+- Sem `.env` de produto — só XDG / ProjectDirs / `--config-dir` / flags CLI.
+
+
+## Portabilidade SCP / SFTP
+- SCP é somente arquivos regulares em toda plataforma (sem transferência recursiva de diretório). Use `sftp upload|download --recursive` para árvores (sem seguir symlink).
+- Prefira linha de produto **0.5.3+** para SFTP em toda plataforma (integridade de upload G1); verifique o destino com checksum.
 - Downloads com falha ou em andamento usam path irmão terminando em `.ssh-cli.partial`, depois rename no lugar (padrão atômico agnóstico de plataforma).
 - Upload faz stream em blocos de 32 KiB em todo SO (evita carregar o arquivo inteiro na RAM).
 - Preserve de mtime/mode segue estilo OpenSSH com remoto `-p` / linha `T`; em Unix APIs locais de permissão aplicam modes; no Windows bits de permissão podem não bater com octal Unix — não assuma fidelidade POSIX ACL completa.
-- Matriz real-SSH E01–E16 (E10–E14 SCP) em `scripts/e2e_real_ssh.sh` é validada principalmente em hosts Linux; prefira `sshd` local / VPS throwaway. Nunca execute tempestades de falha de autenticação em hosts de produção (banimentos fail2ban).
+- Matriz real-SSH **E01–E18** (E10–E14 SCP; **E17/E18** SFTP checksum/árvore) em `scripts/e2e_real_ssh.sh` é validada principalmente em hosts Linux; prefira `sshd` local / VPS throwaway. Nunca execute tempestades de falha de autenticação em hosts de produção (banimentos fail2ban).
 
 
 ## Performance por alvo
@@ -127,10 +157,11 @@
 - Contratos JSON (`event` scp-transfer, `tunnel_listening`, flags de auth em tunnel/health) são idênticos em todo SO; veja AGENTS.pt-BR.md e docs/schemas/.
 - Tunnel `--bind` tem padrão `127.0.0.1` (loopback) em toda plataforma; sobrescreva só ao expor o listener de propósito.
 - Agentes em container devem preservar exit codes e separação stdout/stderr.
-- Tracing padrão é nível error para manter stderr do agente livre de prosa INFO salvo `-v` (`RUST_LOG` ambiente é ignorado).
+- Tracing padrão é nível error para manter stderr do agente livre de prosa INFO salvo `-v`/`-vv`/`-vvv` (escopo na crate; `RUST_LOG` ambiente é ignorado).
 - Parseie contratos de máquina só do stdout; trate tracing em stderr como log fora de contrato; envelopes de erro JSON usam stderr quando o modo JSON está ativo.
-- Helpers de E2E SSH real ficam em `scripts/e2e_real_ssh.sh` (anti-leak; só local; E01–E16; nunca tempestades de auth em produção / política fail2ban).
+- Helpers de E2E SSH real ficam em `scripts/e2e_real_ssh.sh` (anti-leak; só local; **E01–E18**; nunca tempestades de auth em produção / política fail2ban).
 - O carimbo de `ssh-cli --version` (versão Cargo + hash git + `-dirty` opcional) é agnóstico de SO.
+- Sem store runtime de produto em `.env` — só XDG / `--config-dir` / flags CLI.
 
 
 ## Matriz multi-OS local (G-E2E-18)

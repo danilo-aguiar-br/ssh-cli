@@ -69,7 +69,9 @@ fn doctor_reports_layer_and_secrets_plaintext() {
         .args(["vps", "doctor", "--json"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"secrets_at_rest\":\"plaintext\""))
+        .stdout(predicate::str::contains(
+            "\"secrets_at_rest\":\"plaintext\"",
+        ))
         .stdout(predicate::str::contains("\"secrets_key_source\":\"none\""))
         .stdout(predicate::str::contains("\"telemetry\":false"))
         .stdout(predicate::str::contains("\"runtime\""))
@@ -84,15 +86,7 @@ fn add_with_key_path_without_password() {
     let tmp = TempDir::new().unwrap();
     let key = tmp.path().join("id_test_ed25519");
     let status = match std::process::Command::new("ssh-keygen")
-        .args([
-            "-t",
-            "ed25519",
-            "-N",
-            "",
-            "-f",
-            key.to_str().unwrap(),
-            "-q",
-        ])
+        .args(["-t", "ed25519", "-N", "", "-f", key.to_str().unwrap(), "-q"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .status()

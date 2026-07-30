@@ -1,10 +1,10 @@
 # ssh-cli
 
-- Nota histórica: **0.4.1** fechou AUD-POST (export empty honesty, tunnel deadline, auth parity, scp-transfer event); **0.4.2** fechou TUN-003 / IO-010; **0.5.0** foi o rename EN/API + reencrypt de secrets force-init; linha de produto atual é **0.5.2** (roundtrip export/import agent-first, wire schema v3 dual-read, flags CLI de secrets, tunnel `--bind`).
+- Nota histórica: **0.4.1** fechou AUD-POST (export empty honesty, tunnel deadline, auth parity, scp-transfer event); **0.4.2** fechou TUN-003 / IO-010; **0.5.0** foi o rename EN/API + reencrypt de secrets force-init; **0.5.2** fechou G-E2E residual + wire v3 dual-read; linha de produto atual é **0.5.3** (G1–G19 fechados: integridade SFTP, verbosidade graduada crate-scoped, cardinalidade de cancel em batch; ver [CHANGELOG 0.5.3](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.pt-BR.md#053---2026-07-30)).
 
 > CLI SSH multi-host one-shot para agentes de IA com storage XDG e sem daemon Node
 
-ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores remotos via stdin/stdout. Substitui processos long-lived Node SSH daemons persistentes por invocações nascer-executar-morrer, inventário multi-host XDG, auth por senha ou chave, packing seguro de sudo, su-exec, tunnels limitados, known_hosts TOFU, limites dual de comando/saída e **cifragem at-rest de segredos por padrão** (ChaCha20-Poly1305 + `secrets.key`). **Transporte é SSH-2** (`russh` + **aws-lc-rs**), não TLS/HTTPS — sem `rustls`/`native-tls`/OpenSSL de produto; compressão SSH só `none`. Telemetria é proibida. Prefira `cargo install ssh-cli --locked`. Linha de produto atual: **0.5.2** (inventário fechado; russh 0.62.2; wire schema v3; gaps residuais G-E2E de produto fechados no binário (ver CHANGELOG 0.5.2 / fecho em gaps.md)).
+ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores remotos via stdin/stdout. Substitui processos long-lived Node SSH daemons persistentes por invocações nascer-executar-morrer, inventário multi-host XDG, auth por senha ou chave, packing seguro de sudo, su-exec, tunnels limitados, known_hosts TOFU, limites dual de comando/saída e **cifragem at-rest de segredos por padrão** (ChaCha20-Poly1305 + `secrets.key`). **Transporte é SSH-2** (`russh` + **aws-lc-rs**), não TLS/HTTPS — sem `rustls`/`native-tls`/OpenSSL de produto; compressão SSH só `none`. Telemetria é proibida. Prefira `cargo install ssh-cli --locked`. Linha de produto atual: **0.5.3** (G1–G19 fechados com prova de efeito no destino; prefira **0.5.3+** para SFTP; russh 0.62.2; wire schema v3; `-v`/`-vv`/`-vvv` crate-scoped; ver CHANGELOG 0.5.3).
 
 - Read this document in [English](llms.txt).
 - Índice expandido: [llms-full.txt](llms-full.txt)
@@ -15,9 +15,9 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - [HOW_TO_USE](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/HOW_TO_USE.pt-BR.md): primeiro comando em 60 segundos
 - [COOKBOOK](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/COOKBOOK.pt-BR.md): receitas executáveis
 - [AGENTS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/AGENTS.pt-BR.md): economia do agente e contrato JSON
-- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.pt-BR.md): upgrade de 0.3.3 para **0.5.2**
+- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.pt-BR.md): upgrade de 0.3.3 para **0.5.3**
 - [INTEGRATIONS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/INTEGRATIONS.pt-BR.md): catálogo de agentes e IDEs
-- [CHANGELOG](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.pt-BR.md): histórico de releases
+- [CHANGELOG](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.pt-BR.md): histórico de releases (**0.5.3** = G1–G19)
 - [CONTRIBUTING](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CONTRIBUTING.pt-BR.md): fluxo de contribuição
 - [SECURITY](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/SECURITY.pt-BR.md): divulgação de vulnerabilidades e segredos at-rest
 - [CODE_OF_CONDUCT](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CODE_OF_CONDUCT.pt-BR.md): padrões da comunidade
@@ -25,21 +25,23 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - [skill pt](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/skills/ssh-cli-pt/SKILL.md): pacote de skill imperativo
 
 ## Comandos principais
-### Subcomandos por ciclo de vida
+### Subcomandos por ciclo de vida (`ssh-cli commands`)
 - `vps add|list|show|edit|remove|path|doctor|export|import` gerencia inventário multi-host XDG
 - `schema [NAME]` emite catálogo/schema JSON embarcado (G-E2E-02); `doctor` é alias root de `vps doctor` (G-E2E-03); `commands` emite árvore de comandos
 - `connect` grava marcador de host ativo
-- `exec` roda comando remoto one-shot; **frota:** `exec --all '<CMD>' --json` (sessões concorrentes com bound)
+- `exec` roda comando remoto one-shot; **frota:** `exec --all '<CMD>' --json` (sessões concorrentes com bound); `exec --json` emite **um único** objeto NDJSON (G8)
 - `sudo-exec` eleva com packing seguro `sh -c`; **frota:** `sudo-exec --all …`
 - `su-exec` eleva com `su -` one-shot; **frota:** `su-exec --all …`
-- `scp upload|download` transfere **somente arquivos regulares** (sem `-r`; wire SCP do crates.io **0.3.9** estava quebrado — use **0.5.2+**); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → contrato `docs/schemas/scp-transfer.schema.json` com `event: "scp-transfer"` obrigatório; download usa `.ssh-cli.partial` e rename; preserve mtime/mode; upload em stream 32 KiB; remoto ausente → `file not found: <path>` exit **66**; **frota:** `scp upload|download --all …` → schema `scp-batch`
-- **SFTP:** `sftp upload|download [--recursive]` + `ls|mkdir|rmdir|rm|stat|rename` (subsistema v3; sem seguir symlink em árvores; JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`)
+- `scp upload|download` transfere **somente arquivos regulares** (sem `-r`; wire SCP do crates.io **0.3.9** estava quebrado — use **0.5.3+**); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → contrato `docs/schemas/scp-transfer.schema.json` com `event: "scp-transfer"` obrigatório; download usa `.ssh-cli.partial`, `sync_data` e rename (G9); preserve mtime/mode; upload em stream 32 KiB; remoto ausente → `file not found: <path>` exit **66**; **frota:** `scp upload|download --all …` → schema `scp-batch`
+- **SFTP (prefira 0.5.3+):** `sftp upload|download [--recursive]` + `ls|mkdir|rmdir|rm|stat|rename` (subsistema v3; sem seguir symlink em árvores; JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`). G1–G19 fechados: upload não trunca mais a 0 bytes; SETSTAT atime+mtime; metadata fail-closed; `SFTP_PERM_MASK` 0o7777
 - `tunnel` abre port-forward local limitado com `--timeout-ms` obrigatório; `--bind` opcional (default `127.0.0.1`); `--json` opcional emite `tunnel_listening` após bind; deadline pós-bind sai **0** (não 74); auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`; accepts limitados por `--max-concurrency`
 - `health-check [--timeout]` sonda conectividade e latência; auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`; **frota:** `health-check --all --json` → `health-check-batch`
 - `vps export` **TOML por padrão** (TTY e pipe); envelope JSON de agente só com `--json`; redacted limpa segredos; secret vazio serializa como `""` e nunca blob `sshcli-enc:`; `--include-secrets` em pipe/non-TTY exige `-o`/`--output` ou `--i-understand-secrets-on-stdout`
 - `vps import` aceita TOML (chaves EN + aliases PT) **ou** envelopes JSON `vps-export`; skeletons redacted precisam de `--allow-incomplete`; TOML inválido → exit **65**
 - `secrets status|init|reencrypt` gerencia master-key e cifragem at-rest (nunca imprime a chave); `--json` → schemas `secrets-init` / `secrets-reencrypt`; a 1ª gravação de segredo embute `secrets_key_auto_created: true` no mesmo JSON `vps-added` (um documento); flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`
 - `completions` emite scripts de completion
+- `locale show|set|clear` gerencia preferência de locale da UI sob XDG (não é env de produto)
+- `tls provider|paths|mtls {list,import,show,remove}|acme {account {create,show}, issue, complete, status, list}` material opcional de SSH-over-TLS sob XDG `tls/`
 
 ## Defaults e limites
 - Porta SSH default é 22
@@ -47,24 +49,26 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - max_command_chars default é 1000
 - max_output_chars default é 100000
 - Schema version de hosts novos é **3** (dual-read serialize EN + aliases PT legados)
-- Filtro de tracing default é **error**; `RUST_LOG` ambiente é ignorado; `-v` ativa debug
+- Filtro de tracing default é **error**; `RUST_LOG` ambiente é **ignorado**; verbosidade graduada: `-v` info / `-vv` debug / `-vvv` trace (`ArgAction::Count`), sempre crate-scoped `warn,ssh_cli=*` (G2/G14 — nunca debug global bare; sem dump de senha do russh mesmo em `-vvv`)
 - Campos de senha vazios são JSON `null` em hosts só-chave (`vps list` / `show`); segredos não vazios mascaram como `"***"`
 - Export redacted: secrets vazios como `""` (nunca `sshcli-enc:`); import de skeleton cross-machine permanece honesto
 - `health-check` aceita `--timeout <ms>` e flags de auth agent-safe
-- Segredos at-rest: **cifrados por padrão** (auto `secrets.key`); prefira flags CLI `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` ao env; opt-out só em testes
-- **Modus operandi multi-host:** prefira `exec|sudo-exec|su-exec|scp|health-check --all` **ou** `--hosts a,b` (um processo, SSH concorrente com bound) a N spawns single-host; schemas batch `health-check-batch` / `exec-batch` / `scp-batch` incluem `max_concurrency`
+- Segredos at-rest: **cifrados por padrão** (auto `secrets.key`); prefira flags CLI `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` ao env; opt-out só em testes; sem store de produto em `.env` — só XDG + flags CLI; `SSH_CLI_SECRETS_*` fail-closed se presentes
+- **Modus operandi multi-host:** prefira `exec|sudo-exec|su-exec|scp|sftp|health-check --all` **ou** `--hosts a,b` (um processo, SSH concorrente com bound) a N spawns single-host; schemas batch `health-check-batch` / `exec-batch` / `scp-batch` / `sftp-batch` incluem `max_concurrency`; no cancel, o resto é preenchido como cancelled para `results.len() == input.len()` (G5/G17)
 - Global `--max-concurrency N` (1..=64) limita fan-out e forwards de tunnel (auto = CPUs×4 vs RAM livre/2 / 16 MiB)
 - `vps doctor --probe-ssh [--hosts a,b] --json` = um root `event: vps-doctor` (`local` + `ssh_probe`); `tunnel` é single-host por contrato
 - SCP multi-arquivo (single-host): `scp upload VPS f1 f2 … REMOTE_DIR` com bound por arquivo; não com `--all`/`--hosts`
 - Telemetria é sempre false
-- Install: sempre prefira `--locked`; linha de produto **0.5.2+**
+- Install: sempre prefira `--locked`; linha de produto **0.5.3+**
 
 ## Regras de segurança para agentes
 - Prefira `--password-stdin` / `--key` a senhas em argv
 - Nunca logue senhas de host, master-key ou segredos decifrados
+- Nunca use `RUST_LOG` ambiente para debug de produto — use `-v`/`-vv`/`-vvv` (allowlist crate-scoped)
 - Em falha de auth tente `--key`, `--password-stdin`, `--key-passphrase-stdin` (auth rejeitada → exit **77**)
 - Revise erros TOFU de host-key antes de `--replace-host-key`
 - Faça parse só do stdout; stderr default fica silencioso no nível de tracing error
+- Prefira **0.5.3+** para integridade SFTP (G1 fechou o bug de truncamento)
 
 ## Exit codes
 - `0` sucesso

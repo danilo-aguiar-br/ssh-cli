@@ -4,9 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::paths::{
-    cert_pem_path, ensure_dir, key_pem_path, mtls_identity_dir, write_secret_file,
-};
+use super::paths::{cert_pem_path, ensure_dir, key_pem_path, mtls_identity_dir, write_secret_file};
 use super::pem::{load_cert_chain, load_private_key};
 use crate::errors::{SshCliError, SshCliResult};
 
@@ -53,14 +51,14 @@ pub fn mtls_import(
 
 /// Lists imported mTLS identity names.
 pub fn mtls_list(config_override: Option<&Path>) -> SshCliResult<Vec<String>> {
-    let root = super::paths::resolve_tls_root(config_override)?
-        .join(crate::constants::TLS_MTLS_DIR_NAME);
+    let root =
+        super::paths::resolve_tls_root(config_override)?.join(crate::constants::TLS_MTLS_DIR_NAME);
     if !root.exists() {
         return Ok(Vec::new());
     }
     let mut names = Vec::new();
-    for entry in std::fs::read_dir(&root)
-        .map_err(|e| SshCliError::tls_msg(format!("list mtls: {e}")))?
+    for entry in
+        std::fs::read_dir(&root).map_err(|e| SshCliError::tls_msg(format!("list mtls: {e}")))?
     {
         let entry = entry.map_err(|e| SshCliError::tls_msg(format!("list mtls entry: {e}")))?;
         if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {

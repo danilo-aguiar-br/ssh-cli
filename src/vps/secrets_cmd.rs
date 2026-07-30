@@ -157,4 +157,3 @@ pub(crate) fn take_auto_key_meta() -> Option<AutoKeyMeta> {
         None
     }
 }
-

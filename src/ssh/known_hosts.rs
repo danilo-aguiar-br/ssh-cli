@@ -93,10 +93,7 @@ impl KnownHosts {
     pub fn load(path: PathBuf) -> SshCliResult<Self> {
         let mut entries = BTreeMap::new();
         if path.exists() {
-            let text = crate::paths::read_text_capped(
-                &path,
-                crate::paths::MAX_KNOWN_HOSTS_BYTES,
-            )?;
+            let text = crate::paths::read_text_capped(&path, crate::paths::MAX_KNOWN_HOSTS_BYTES)?;
             for line in text.lines() {
                 let line = line.trim();
                 if line.is_empty() || line.starts_with('#') {
@@ -123,9 +120,7 @@ impl KnownHosts {
     /// Looks up a stored fingerprint (in-memory only).
     #[must_use]
     pub fn get(&self, host: &str, port: u16) -> Option<&str> {
-        self.entries
-            .get(&Self::key(host, port))
-            .map(String::as_str)
+        self.entries.get(&Self::key(host, port)).map(String::as_str)
     }
 
     /// Inserts or updates and persists under exclusive flock (G-PAR-49).

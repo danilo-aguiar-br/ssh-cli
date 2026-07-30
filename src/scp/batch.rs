@@ -58,8 +58,7 @@ pub(crate) async fn run_scp_multi_file_upload(
     );
 
     let cfg = vps::build_connection_config(&record, Some(&path), replace);
-    let client: Box<dyn SshClientTrait> =
-        <SshClient as SshClientTrait>::connect(cfg).await?;
+    let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
     // G-PAR-47 / G-O4: session reuse; optional parallel channels via scp_file_concurrency.
     let host_results =
         multi_file_upload_on_session(client.as_ref(), &sources, remote_dir, None).await;
@@ -78,13 +77,20 @@ pub(crate) async fn multi_file_upload_on_session(
 ) -> Vec<HostScpResult> {
     let window = crate::concurrency::scp_file_concurrency().max(1);
     if window > 1 && sources.len() > 1 {
-        tracing::debug!(window, files = sources.len(), "scp multi-file parallel window");
+        tracing::debug!(
+            window,
+            files = sources.len(),
+            "scp multi-file parallel window"
+        );
     }
     let mut host_results = Vec::with_capacity(sources.len());
     // Process in windows of `window` concurrent uploads (same session, &self channels).
     let mut i = 0;
     while i < sources.len() {
+        // G5: never return a short vector — fill cancelled remainder so
+        // `results.len() == sources.len()` always holds.
         if crate::signals::should_stop() {
+            push_cancelled_upload_remainder(&mut host_results, &sources[i..], name_prefix);
             break;
         }
         let end = (i + window).min(sources.len());
@@ -117,7 +123,35 @@ pub(crate) async fn multi_file_upload_on_session(
         }
         i = end;
     }
+    debug_assert_eq!(host_results.len(), sources.len());
     host_results
+}
+
+/// G5/G17: explicit cancelled rows for every unprocessed source (cardinal equality).
+fn push_cancelled_upload_remainder(
+    out: &mut Vec<HostScpResult>,
+    remaining: &[PathBuf],
+    name_prefix: Option<&str>,
+) {
+    for local in remaining {
+        let label = match name_prefix {
+            Some(h) => format!("{h}:{}", local.display()),
+            None => local.display().to_string(),
+        };
+        out.push(cancelled_host_scp(label, Some(local.display().to_string())));
+    }
+}
+
+/// Shared cancelled batch row (G5/G17 — machine-readable cancel, not a short vec).
+pub(crate) fn cancelled_host_scp(name: String, local: Option<String>) -> HostScpResult {
+    HostScpResult {
+        name,
+        ok: false,
+        bytes: None,
+        duration_ms: None,
+        local,
+        error: Some(i18n::t(Message::OperationCancelled)),
+    }
 }
 
 async fn upload_one(
@@ -131,14 +165,7 @@ async fn upload_one(
         None => local.display().to_string(),
     };
     if crate::signals::should_stop() {
-        return HostScpResult {
-            name: label,
-            ok: false,
-            bytes: None,
-            duration_ms: None,
-            local: Some(local.display().to_string()),
-            error: Some("operation cancelled by signal".into()),
-        };
+        return cancelled_host_scp(label, Some(local.display().to_string()));
     }
     let base = local
         .file_name()
@@ -179,8 +206,7 @@ pub(crate) async fn run_scp_multi_file_download(
     match dest_meta {
         Ok(m) if m.is_file() => {
             return Err(SshCliError::InvalidArgument(
-                "multi-file download destination must be a directory (not an existing file)"
-                    .into(),
+                "multi-file download destination must be a directory (not an existing file)".into(),
             )
             .into());
         }
@@ -209,8 +235,7 @@ pub(crate) async fn run_scp_multi_file_download(
     );
 
     let cfg = vps::build_connection_config(&record, Some(&path), replace);
-    let client: Box<dyn SshClientTrait> =
-        <SshClient as SshClientTrait>::connect(cfg).await?;
+    let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
     let host_results =
         multi_file_download_on_session(client.as_ref(), &remotes, local_dir, None).await;
     let _ = client.disconnect().await;
@@ -225,20 +250,21 @@ pub(crate) async fn multi_file_download_on_session(
     name_prefix: Option<&str>,
 ) -> Vec<HostScpResult> {
     let mut host_results = Vec::with_capacity(remotes.len());
-    for remote in remotes {
+    for (idx, remote) in remotes.iter().enumerate() {
         let label = match name_prefix {
             Some(h) => format!("{h}:{}", remote.display()),
             None => remote.display().to_string(),
         };
+        // G5/G17: fill every remaining remote as cancelled; never shorten the vec.
         if crate::signals::should_stop() {
-            host_results.push(HostScpResult {
-                name: label,
-                ok: false,
-                bytes: None,
-                duration_ms: None,
-                local: None,
-                error: Some("operation cancelled by signal".into()),
-            });
+            host_results.push(cancelled_host_scp(label, None));
+            for remote in &remotes[idx + 1..] {
+                let lab = match name_prefix {
+                    Some(h) => format!("{h}:{}", remote.display()),
+                    None => remote.display().to_string(),
+                };
+                host_results.push(cancelled_host_scp(lab, None));
+            }
             break;
         }
         let base = remote
@@ -265,9 +291,9 @@ pub(crate) async fn multi_file_download_on_session(
             }),
         }
     }
+    debug_assert_eq!(host_results.len(), remotes.len());
     host_results
 }
-
 
 pub(crate) fn finish_scp_results(
     direction: &str,

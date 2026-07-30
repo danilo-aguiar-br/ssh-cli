@@ -70,9 +70,7 @@ pub async fn run_tunnel(
     // GAP-SSH-IO-008: in JSON, zero prose — structured event after bind.
     // Banner with effective port is post-bind (TUN-003: port 0 is ephemeral).
     if !json {
-        output::print_human_banner(
-            "Press Ctrl+C to stop the tunnel before the deadline.",
-        );
+        output::print_human_banner("Press Ctrl+C to stop the tunnel before the deadline.");
     }
 
     // GAP-SSH-TUN-001: deadline covers connect + loop (not only the accept loop).
@@ -84,8 +82,7 @@ pub async fn run_tunnel(
     let bound = Arc::new(AtomicBool::new(false));
     let bound_flag = Arc::clone(&bound);
     let result = tokio::time::timeout(Duration::from_millis(timeout_ms), async {
-        let client: Box<dyn SshClientTrait> =
-            <SshClient as SshClientTrait>::connect(cfg).await?;
+        let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
         run_tunnel_with_client(
             vps_name,
             local_port,
@@ -104,10 +101,7 @@ pub async fn run_tunnel(
     match result {
         Ok(inner) => inner,
         Err(_) if bound.load(Ordering::Acquire) => {
-            tracing::info!(
-                timeout_ms,
-                "tunnel ended by one-shot deadline (success)"
-            );
+            tracing::info!(timeout_ms, "tunnel ended by one-shot deadline (success)");
             Ok(())
         }
         Err(_) => {
@@ -134,9 +128,7 @@ pub async fn run_tunnel_with_client(
 
     let bind_target = format!("{bind_addr}:{local_port}");
     let listener = TcpListener::bind(&bind_target).await.map_err(|e| {
-        SshCliError::Config(format!(
-            "failed to bind local address {bind_target}: {e}"
-        ))
+        SshCliError::Config(format!("failed to bind local address {bind_target}: {e}"))
     })?;
 
     // GAP-SSH-TUN-003: port 0 (ephemeral) must report the OS-assigned real port.
@@ -268,9 +260,7 @@ pub async fn run_tunnel_with_client(
     // Bounded drain: cooperative cancel gets a short grace; force already aborted.
     let drain = tokio::time::timeout(
         Duration::from_secs(crate::constants::TUNNEL_FORWARD_DRAIN_TIMEOUT_SECS),
-        async {
-            while forwards.join_next().await.is_some() {}
-        },
+        async { while forwards.join_next().await.is_some() {} },
     )
     .await;
     if drain.is_err() {

@@ -11,22 +11,22 @@
 //!
 //! ZERO `.env` at runtime. ZERO telemetry. One-shot cycle: start → dispatch → exit.
 
-mod scp_args;
-mod sftp_args;
-mod vps_action;
 mod commands;
 mod path_parse;
 mod schema_cmd;
+mod scp_args;
+mod sftp_args;
+mod vps_action;
 
-pub use scp_args::ScpAction;
-pub use sftp_args::SftpAction;
-pub use vps_action::VpsAction;
 pub use commands::{
     Command, LocaleAction, SecretsAction, TlsAcmeAccountAction, TlsAcmeAction, TlsAction,
     TlsMtlsAction,
 };
-pub use schema_cmd::run_schema;
 pub(crate) use path_parse::{parse_exec_target, parse_hosts_list, parse_scp_target, ScpPathPlan};
+pub use schema_cmd::run_schema;
+pub use scp_args::ScpAction;
+pub use sftp_args::SftpAction;
+pub use vps_action::VpsAction;
 
 use anyhow::Result;
 use clap::{ArgAction, Parser, ValueHint};
@@ -85,9 +85,7 @@ impl SshAuthArgs {
     /// Domain boundary: `PathBuf` → owned path string for VPS/SSH layers.
     #[must_use]
     pub fn key_path_string(&self) -> Option<String> {
-        self.key
-            .as_ref()
-            .map(|p| p.to_string_lossy().into_owned())
+        self.key.as_ref().map(|p| p.to_string_lossy().into_owned())
     }
 }
 
@@ -122,15 +120,18 @@ pub struct CliArgs {
     )]
     pub lang: Option<String>,
 
-    /// Increases log verbosity on stderr.
+    /// Increases log verbosity on stderr (`-v` info, `-vv` debug, `-vvv` trace).
+    ///
+    /// Always scoped to this crate (G2/G14): never a bare global `debug`/`trace`
+    /// that would enable `russh::client::encrypted` password dumps.
     #[arg(
         short,
         long,
         global = true,
-        action = ArgAction::SetTrue,
+        action = ArgAction::Count,
         conflicts_with = "quiet"
     )]
-    pub verbose: bool,
+    pub verbose: u8,
 
     /// Suppresses non-JSON output (quiet mode).
     #[arg(
@@ -265,9 +266,7 @@ pub fn effective_timeout_ms(
 ///
 /// # Errors
 /// Returns domain error text when any step is empty or contains NUL.
-pub fn parse_remote_steps(
-    steps: Vec<String>,
-) -> Result<Vec<crate::domain::RemoteCommand>, String> {
+pub fn parse_remote_steps(steps: Vec<String>) -> Result<Vec<crate::domain::RemoteCommand>, String> {
     steps
         .into_iter()
         .map(|s| crate::domain::RemoteCommand::try_new(s).map_err(|e| e.to_string()))
@@ -372,25 +371,15 @@ pub(crate) fn warn_if_password_argv(args: &CliArgs) {
     let has = match &args.command {
         Command::Exec { auth, .. }
         | Command::HealthCheck { auth, .. }
-        | Command::Tunnel { auth, .. } => {
-            auth.password.is_some() || auth.key_passphrase.is_some()
-        }
+        | Command::Tunnel { auth, .. } => auth.password.is_some() || auth.key_passphrase.is_some(),
         Command::SudoExec {
             auth,
             sudo_password,
             ..
-        } => {
-            auth.password.is_some()
-                || auth.key_passphrase.is_some()
-                || sudo_password.is_some()
-        }
+        } => auth.password.is_some() || auth.key_passphrase.is_some() || sudo_password.is_some(),
         Command::SuExec {
-            auth,
-            su_password,
-            ..
-        } => {
-            auth.password.is_some() || auth.key_passphrase.is_some() || su_password.is_some()
-        }
+            auth, su_password, ..
+        } => auth.password.is_some() || auth.key_passphrase.is_some() || su_password.is_some(),
         Command::Scp { action } => match action {
             ScpAction::Upload { auth, .. } | ScpAction::Download { auth, .. } => {
                 auth.password.is_some() || auth.key_passphrase.is_some()
@@ -477,7 +466,6 @@ pub fn resolve_format_from_cli(
     }
     Ok(resolve_format(explicit))
 }
-
 
 mod dispatch;
 

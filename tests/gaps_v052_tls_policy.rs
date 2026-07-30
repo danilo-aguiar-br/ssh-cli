@@ -52,10 +52,7 @@ fn lockfile_has_rustls_floor() {
         if line.trim() == "name = \"rustls\"" {
             if let Some(ver) = lines.next() {
                 // version = "0.23.xx"
-                let v = ver
-                    .split('"')
-                    .nth(1)
-                    .expect("version string");
+                let v = ver.split('"').nth(1).expect("version string");
                 let parts: Vec<_> = v.split('.').collect();
                 assert!(parts.len() >= 3, "unexpected rustls version {v}");
                 let major: u32 = parts[0].parse().unwrap();
@@ -140,10 +137,7 @@ fn cargo_toml_tls_feature_default() {
             || cargo.contains("default = [\"tls\", \"ssh-real\"]"),
         "default features must include tls"
     );
-    assert!(
-        cargo.contains("rustls ="),
-        "Cargo.toml must declare rustls"
-    );
+    assert!(cargo.contains("rustls ="), "Cargo.toml must declare rustls");
     assert!(
         cargo.contains("instant-acme"),
         "Cargo.toml must declare instant-acme for ACME"

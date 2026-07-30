@@ -142,10 +142,7 @@ pub(super) async fn run_doctor_with_optional_probe(
     }
 
     // Text mode: local doctor fields + optional probe section.
-    let layer = local
-        .get("layer")
-        .and_then(|v| v.as_str())
-        .unwrap_or("?");
+    let layer = local.get("layer").and_then(|v| v.as_str()).unwrap_or("?");
     let config_path_s = local
         .get("config_path")
         .and_then(|v| v.as_str())
@@ -224,9 +221,7 @@ pub(super) async fn run_doctor_with_optional_probe(
             rt.get("is_termux")
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false),
-            rt.get("sandbox")
-                .and_then(|v| v.as_str())
-                .unwrap_or("none"),
+            rt.get("sandbox").and_then(|v| v.as_str()).unwrap_or("none"),
         ))?;
     }
     if let Some((results, limit)) = probe_data {

@@ -380,8 +380,7 @@ pub async fn run_sftp(
             ..
         } => {
             let json = opts.json || json_local;
-            let client =
-                connect_client(&vps_name, config_override.as_deref(), &opts).await?;
+            let client = connect_client(&vps_name, config_override.as_deref(), &opts).await?;
             let timeout_ms = client.timeout_ms();
             let entries = sftp_session::under_timeout(timeout_ms, async {
                 let sftp = client.open_sftp().await?;
@@ -401,8 +400,7 @@ pub async fn run_sftp(
         } => {
             let json = opts.json || json_local;
             let start = Instant::now();
-            let client =
-                connect_client(&vps_name, config_override.as_deref(), &opts).await?;
+            let client = connect_client(&vps_name, config_override.as_deref(), &opts).await?;
             let timeout_ms = client.timeout_ms();
             let result = sftp_session::under_timeout(timeout_ms, async {
                 let sftp = client.open_sftp().await?;
@@ -430,8 +428,7 @@ pub async fn run_sftp(
         } => {
             let json = opts.json || json_local;
             let start = Instant::now();
-            let client =
-                connect_client(&vps_name, config_override.as_deref(), &opts).await?;
+            let client = connect_client(&vps_name, config_override.as_deref(), &opts).await?;
             let timeout_ms = client.timeout_ms();
             let result = sftp_session::under_timeout(timeout_ms, async {
                 let sftp = client.open_sftp().await?;
@@ -459,8 +456,7 @@ pub async fn run_sftp(
         } => {
             let json = opts.json || json_local;
             let start = Instant::now();
-            let client =
-                connect_client(&vps_name, config_override.as_deref(), &opts).await?;
+            let client = connect_client(&vps_name, config_override.as_deref(), &opts).await?;
             let timeout_ms = client.timeout_ms();
             let result = sftp_session::under_timeout(timeout_ms, async {
                 let sftp = client.open_sftp().await?;
@@ -487,8 +483,7 @@ pub async fn run_sftp(
             ..
         } => {
             let json = opts.json || json_local;
-            let client =
-                connect_client(&vps_name, config_override.as_deref(), &opts).await?;
+            let client = connect_client(&vps_name, config_override.as_deref(), &opts).await?;
             let timeout_ms = client.timeout_ms();
             let st = sftp_session::under_timeout(timeout_ms, async {
                 let sftp = client.open_sftp().await?;
@@ -509,8 +504,7 @@ pub async fn run_sftp(
         } => {
             let json = opts.json || json_local;
             let start = Instant::now();
-            let client =
-                connect_client(&vps_name, config_override.as_deref(), &opts).await?;
+            let client = connect_client(&vps_name, config_override.as_deref(), &opts).await?;
             let timeout_ms = client.timeout_ms();
             let result = sftp_session::under_timeout(timeout_ms, async {
                 let sftp = client.open_sftp().await?;
@@ -614,11 +608,11 @@ fn emit_fs_op(
         output::print_sftp_fs_op_json(op, vps, path, to, duration_ms)?;
     } else {
         match to {
-            Some(t) => output::print_success(&format!("sftp {op} ok: {path} -> {t} ({duration_ms}ms)")),
+            Some(t) => {
+                output::print_success(&format!("sftp {op} ok: {path} -> {t} ({duration_ms}ms)"))
+            }
             None => output::print_success(&format!("sftp {op} ok: {path} ({duration_ms}ms)")),
         }
     }
     Ok(())
 }
-
-

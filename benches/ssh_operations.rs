@@ -18,9 +18,7 @@ use ssh_cli::masking::mask;
 use ssh_cli::paths::{normalize_nfc, validate_and_normalize, validate_name};
 
 fn bench_masking(c: &mut Criterion) {
-    c.bench_function("mask_short", |b| {
-        b.iter(|| mask(black_box("short")))
-    });
+    c.bench_function("mask_short", |b| b.iter(|| mask(black_box("short"))));
     c.bench_function("mask_long", |b| {
         b.iter(|| mask(black_box("very-long-secret-password-here-123456")))
     });

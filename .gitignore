@@ -30,7 +30,8 @@ known_hosts
 docs_prd/
 docs_rules/
 projeto_ssh-cli.md
-# gaps.md versionado (GAP-SSH-DOC-001 / 0.3.8)
+# Local audit inventory — never publish (GitHub / crates)
+/gaps.md
 .cursor/
 
 # GraphRAG / filas de enriquecimento (artefatos locais — qualquer pasta)
@@ -42,6 +43,7 @@ projeto_ssh-cli.md
 **/.enrich-queue.sqlite-shm
 **/.enrich-queue.sqlite-wal
 **/.enrich-queue.sqlite-journal
+*.7z
 
 # IDE
 .idea/
@@ -65,3 +67,5 @@ ralph-loop.local.md
 /AGENTS.md
 # deny.toml versionado com o projeto (supply-chain 0.3.8)
 Cross.toml
+
+*.7.z

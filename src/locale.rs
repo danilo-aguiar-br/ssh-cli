@@ -89,10 +89,7 @@ pub const LANG_PREFERENCE_FILE: &str = crate::constants::LANG_PREFERENCE_FILE_NA
 /// (tests / isolation). When `None`, XDG via `directories` applies.
 /// Product does **not** read `SSH_CLI_HOME` or `SSH_CLI_LANG` as config stores.
 #[must_use]
-pub fn resolve_language(
-    force_lang: Option<&str>,
-    config_dir_override: Option<&Path>,
-) -> Language {
+pub fn resolve_language(force_lang: Option<&str>, config_dir_override: Option<&Path>) -> Language {
     resolve_language_detailed(force_lang, config_dir_override).language
 }
 

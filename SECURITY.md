@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 0.5.x | Supported | Yes, **current line** |
 | 0.4.x | Supported | Critical / high when feasible; prefer upgrade to **0.5.x** |
-| 0.3.x | Limited | Critical only when feasible; crates.io **0.3.9** SCP wire was inoperant — upgrade to **0.5.2+** for transfers |
+| 0.3.x | Limited | Critical only when feasible; crates.io **0.3.9** SCP wire was inoperant — upgrade to **0.5.3+** for transfers |
 | 0.2.x | Limited | Critical fixes only when feasible |
 | 0.1.x | Unsupported | No patches |
 | < 0.1 | Unsupported | No patches |
@@ -90,12 +90,19 @@
 
 **Accepted residual risks (explicit):** (1) password-on-argv still parseable (warned; prefer stdin); (2) remote host after auth is fully trusted for the one-shot command the operator requested; (3) co-tenant with same UID can read process memory — OS isolation, not this CLI; (4) Spectre/side-channel CPU class threats out of scope for a one-shot userland tool.
 
+## Logging and secret leakage (G2 / G14)
+- **Never** rely on ambient `RUST_LOG` for product debugging — the product **ignores** it (not a config store).
+- Use graduated flags only: `-v` (info) / `-vv` (debug) / `-vvv` (trace) via `ArgAction::Count`.
+- The filter is **always crate-scoped** (`warn,ssh_cli=*`) — never bare global `debug`/`trace`. This keeps russh (and other deps) from dumping passwords or channel material onto stderr.
+- Even `-vvv` does **not** enable russh encrypted-channel dumps; only the `ssh_cli` crate (plus warn-level deps) is allowlisted.
+- Prefer **0.5.3+** so agents cannot accidentally enable global debug that leaked credentials in older lines.
+
 ## Best Practices for Users
 - Prefer private key authentication over password authentication when the host allows it.
 - Prefer `--password-stdin`, `--sudo-password-stdin`, and `--su-password-stdin` over argv secrets (password-on-argv emits a stderr warning on **0.5.2+**).
 - Prefer stdin password flags for agent runs; avoid embedding live secrets in shell history.
 - **Default at-rest encryption** (ChaCha20-Poly1305): on first secret write, auto-creates `secrets.key` (0o600) next to `config.toml` unless you opt out.
-- Secrets control is CLI/XDG only: `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`, or XDG `secrets.key`.
+- Secrets control is CLI/XDG only: `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`, or XDG `secrets.key`. No `.env` product store.
 - Key resolution order: CLI flags → keyring (when `--use-keyring`) → XDG `secrets.key`. `SSH_CLI_SECRETS_KEY` / `SSH_CLI_SECRETS_KEY_FILE` are **rejected fail-closed** (not a store).
 - CLI: `ssh-cli secrets status|init|reencrypt` (never prints the master key); `--json` emits `secrets-init` / `secrets-reencrypt` without key material.
 - Opt-out for tests only: `--allow-plaintext-secrets` (no env store).
@@ -110,6 +117,6 @@
 - Disable elevation with `--disable-sudo` when a workflow must not escalate.
 - Run one-shot commands only; never expect a long-lived SSH daemon from this CLI.
 - Install with `--locked` to avoid accidental crypto re-resolve drift.
-- Prefer current **0.5.2+** for the supply-chain floor (russh 0.62.2), working SCP/SFTP wire, ACME permanent classification (`invalidContact` → exit **64**), and redacted export mask `***` (`FIXED_MASK`).
+- Prefer current **0.5.3+** for SFTP integrity (G1 closed 0-byte upload truncation), crate-scoped verbosity (G2/G14 — no russh password dumps), the supply-chain floor (russh 0.62.2), working SCP/SFTP wire, ACME permanent classification (`invalidContact` → exit **64**), and redacted export mask `***` (`FIXED_MASK`).
 - Historical honesty: **0.4.1** fixed empty-secret redacted export (never `sshcli-enc:` of empty) and tunnel post-bind exit 0.
 - Default redacted `vps export` clears secrets; empty secrets must serialize as empty strings, never encrypted `sshcli-enc:` blobs of empty values (0.4.2 EXP-001).

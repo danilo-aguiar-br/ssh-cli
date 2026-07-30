@@ -170,6 +170,8 @@ mod tests {
 
     #[test]
     fn vps_list_present() {
-        assert!(SCHEMAS.iter().any(|(n, _, b)| *n == "vps-list" && b.contains("schema")));
+        assert!(SCHEMAS
+            .iter()
+            .any(|(n, _, b)| *n == "vps-list" && b.contains("schema")));
     }
 }

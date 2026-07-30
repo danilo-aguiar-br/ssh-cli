@@ -46,9 +46,7 @@ pub use client_config::{build_client_config, TlsClientOptions};
 #[cfg(feature = "tls")]
 pub use dial::{dial_tls, TlsStream};
 #[cfg(feature = "tls")]
-pub use mtls::{
-    mtls_import, mtls_list, mtls_remove, mtls_show, resolve_mtls_paths, MtlsIdentity,
-};
+pub use mtls::{mtls_import, mtls_list, mtls_remove, mtls_show, resolve_mtls_paths, MtlsIdentity};
 #[cfg(feature = "tls")]
 pub use paths::{
     acme_account_path, acme_domain_dir, mtls_identity_dir, resolve_tls_root, tls_root_dir,

@@ -120,14 +120,18 @@ fn g_ssh_06_split_modules_exist() {
         );
     }
     let m = read("src/ssh/mod.rs");
-    assert!(m.contains("client_handler") && m.contains("client_connect") && m.contains("key_material"));
+    assert!(
+        m.contains("client_handler") && m.contains("client_connect") && m.contains("key_material")
+    );
 }
 
 #[test]
 fn g_ssh_09_fail_closed_known_hosts_non_test() {
     let h = read("src/ssh/client_handler.rs");
     assert!(
-        h.contains("cfg(test)") && h.contains("fail-closed") || h.contains("fail-closed") || h.contains("rejecting host key"),
+        h.contains("cfg(test)") && h.contains("fail-closed")
+            || h.contains("fail-closed")
+            || h.contains("rejecting host key"),
         "G-SSH-09: non-test must reject missing known_hosts path"
     );
 }
@@ -136,10 +140,7 @@ fn g_ssh_09_fail_closed_known_hosts_non_test() {
 fn g_ssh_11_deny_bans_c_bindings() {
     let d = read("deny.toml");
     for name in ["ssh2", "thrussh", "libssh-rs"] {
-        assert!(
-            d.contains(name),
-            "G-SSH-11: deny must ban {name}"
-        );
+        assert!(d.contains(name), "G-SSH-11: deny must ban {name}");
     }
 }
 

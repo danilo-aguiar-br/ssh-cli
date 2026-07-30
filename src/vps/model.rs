@@ -154,7 +154,10 @@ impl std::fmt::Debug for VpsRecord {
                 "sudo_password",
                 &self.sudo_password.as_ref().map(|_| "<redacted>"),
             )
-            .field("su_password", &self.su_password.as_ref().map(|_| "<redacted>"))
+            .field(
+                "su_password",
+                &self.su_password.as_ref().map(|_| "<redacted>"),
+            )
             .field("disable_sudo", &self.disable_sudo)
             .field("schema_version", &self.schema_version)
             .field("added_at", &self.added_at.to_rfc3339())
@@ -605,7 +608,10 @@ schema_version = 3
         assert!(s.contains("added_at ="), "expected EN key added_at: {s}");
         assert!(!s.contains("nome ="), "must not write PT key nome: {s}");
         assert!(!s.contains("porta ="), "must not write PT key porta: {s}");
-        assert!(!s.contains("adicionado_em ="), "must not write PT adicionado_em: {s}");
+        assert!(
+            !s.contains("adicionado_em ="),
+            "must not write PT adicionado_em: {s}"
+        );
         crate::secrets::set_runtime_flags(false, None, false);
         crate::secrets::set_config_dir(None);
     }

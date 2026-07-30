@@ -57,8 +57,7 @@ mod tests {
 
     #[test]
     fn domain_into_ssh_cli_error() {
-        let e: crate::errors::SshCliError =
-            DomainError::new("host", "empty").into();
+        let e: crate::errors::SshCliError = DomainError::new("host", "empty").into();
         assert!(matches!(e, crate::errors::SshCliError::Domain(_)));
     }
 }

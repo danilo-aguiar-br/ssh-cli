@@ -226,17 +226,20 @@ fn g_sftp_12_not_inline_in_client_real() {
         "G-SFTP-12: SFTP wire must live in sftp_session, not client_real façade"
     );
     assert!(
-        impl_body.contains("sftp_session") || impl_body.contains("open_sftp") || facade.contains("include!"),
+        impl_body.contains("sftp_session")
+            || impl_body.contains("open_sftp")
+            || facade.contains("include!"),
         "client_real may thin-wrap open_sftp"
     );
 }
 
 #[test]
-fn g_sftp_15_gaps_inventory() {
-    let gaps = read("gaps.md");
+fn g_sftp_15_gaps_inventory_exists() {
+    // G13: never assert semantic FIXED claims from gaps.md (circular self-cert).
+    // Only require that the inventory file is present for operators.
     assert!(
-        gaps.contains("G-SFTP") && gaps.contains("residual"),
-        "G-SFTP-15: gaps.md must inventory G-SFTP"
+        std::path::Path::new("gaps.md").is_file(),
+        "gaps.md inventory file must exist at repo root"
     );
 }
 

@@ -62,11 +62,7 @@ pub fn map_acme_error(context: &str, err: instant_acme::Error) -> SshCliError {
 fn map_acme_problem(context: &str, problem: &instant_acme::Problem) -> SshCliError {
     let urn = problem.r#type.as_deref().unwrap_or("");
     let leaf = acme_type_leaf(urn);
-    let detail = problem
-        .detail
-        .as_deref()
-        .unwrap_or("")
-        .to_ascii_lowercase();
+    let detail = problem.detail.as_deref().unwrap_or("").to_ascii_lowercase();
     let status = problem.status.unwrap_or(0);
 
     if is_transient_leaf(leaf) {

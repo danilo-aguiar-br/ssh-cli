@@ -459,9 +459,9 @@ impl SshCliError {
             }
             Self::Domain(_) => RetryKind::PermanentClient,
             Self::SshConnection(_) => RetryKind::TransientSsh,
-            Self::SshAuthentication(_) | Self::AuthenticationFailed | Self::HostKeyChanged { .. } => {
-                RetryKind::PermanentAuth
-            }
+            Self::SshAuthentication(_)
+            | Self::AuthenticationFailed
+            | Self::HostKeyChanged { .. } => RetryKind::PermanentAuth,
             Self::ConnectionFailed(_) | Self::Tls { .. } => RetryKind::TransientNetwork,
             Self::CommandTooLong { .. }
             | Self::SudoDisabled
@@ -500,9 +500,9 @@ impl SshCliError {
     #[must_use]
     pub fn classify(&self) -> ErrorClass {
         match self.retry_kind() {
-            RetryKind::TransientNetwork
-            | RetryKind::TransientTimeout
-            | RetryKind::TransientSsh => ErrorClass::Transient,
+            RetryKind::TransientNetwork | RetryKind::TransientTimeout | RetryKind::TransientSsh => {
+                ErrorClass::Transient
+            }
             RetryKind::Cancelled => ErrorClass::Cancelled,
             RetryKind::NotRetryable
             | RetryKind::PermanentAuth
@@ -600,7 +600,6 @@ pub fn io_error_is_transient_network(err: &std::io::Error) -> bool {
 
 /// Result alias using [`SshCliError`].
 pub type SshCliResult<T> = std::result::Result<T, SshCliError>;
-
 
 #[cfg(test)]
 #[path = "errors_tests.rs"]

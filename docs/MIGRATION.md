@@ -1,11 +1,28 @@
 # Migration Guide
 
-> Move from ssh-cli 0.3.3 (or later) to 0.5.2 without losing multi-host inventory.
+> Move from ssh-cli 0.3.3 (or later) to 0.5.3 without losing multi-host inventory.
 
 - Read this document in [Portuguese (pt-BR)](MIGRATION.pt-BR.md).
 
 
 ## What Changes
+
+### Since 0.5.3
+- **G1** SFTP upload no longer truncates destination to zero bytes — prefer 0.5.3+ for all SFTP; verify with destination `sha256sum`.
+- **G2 / G14** Verbosity is graduated (`-v` info / `-vv` debug / `-vvv` trace) and always crate-scoped (`warn,ssh_cli=…`); bare global debug removed (no password leak via russh). Ambient `RUST_LOG` still ignored.
+- **G3** SFTP SETSTAT sends `atime`+`mtime` together (no epoch atime).
+- **G4** SFTP `set_metadata` Result is fail-closed (mutating SETSTAT is not best-effort).
+- **G5 / G17** Multi-file SCP/SFTP cancel fills cancelled remainder; `results.len() == input.len()`.
+- **G6** Signal/cancel tests that touch global state (`CANCEL_FLAG`) use `serial_test` isolation so the suite is deterministic (not agent runtime).
+- **G7** Official real-SSH E2E covers SFTP checksum matrix + recursive tree (**E17/E18**); full matrix **E01–E18**.
+- **G8** `exec --json` single-step emits exactly one JSON object (no dual events on the success path).
+- **G9** SCP download propagates `sync_data` failure before atomic rename.
+- **G10** Release gate includes `cargo fmt --check`.
+- **G11** Baseline suite is green without re-run lottery; re-running until pass is not a gate strategy.
+- **G12 / G19** Permission bits masked with named `SFTP_PERM_MASK` (`0o7777`).
+- **G13 / G15** No circular tests that assert FIXED text in local `gaps.md`; acceptance requires destination effect proof (checksum). `gaps.md` is maintainer-local (gitignored / cargo-excluded) — not a published contract.
+- **G16** English identifiers and channel errors on the SCP client path (`client_real_scp.rs`).
+- **G18** SFTP download local `set_permissions` failures are surfaced.
 
 ### Since 0.3.4 (core SSH automation parity)
 - Install crypto graph is pinned so `cargo install --locked` succeeds (GAP-014).
@@ -50,7 +67,7 @@
 
 ### Since 0.4.1 (historical)
 - AUD-POST patch: empty secrets never become `sshcli-enc` blobs on redacted export (EXP-001); tunnel post-bind deadline exits 0 (TUN-002); `tunnel`/`health-check` auth flag parity with exec/scp (CLI-005/006); SCP JSON includes `event: "scp-transfer"` (IO-009). Additive only — no breaking CLI changes.
-- SCP wire fix (0.4.0): crates.io 0.3.9 advertised SCP but the protocol was broken. Upgrade to 0.4.0+ (prefer product line 0.5.2) before relying on `scp`.
+- SCP wire fix (0.4.0): crates.io 0.3.9 advertised SCP but the protocol was broken. Upgrade to 0.4.0+ (prefer product line 0.5.3) before relying on `scp`.
 - SCP is regular files only (no `-r`). Directory trees use `sftp --recursive`. Use `--timeout` for large files (covers connect + transfer). Success JSON via `--json` / `--output-format json` (`docs/schemas/scp-transfer.schema.json`; SFTP: `sftp-transfer.schema.json`).
 - SCP download writes `{path}.ssh-cli.partial` then atomic rename; mode/times applied on the partial before rename.
 - SCP upload streams in 32 KiB chunks (no full-file `fs::read` into RAM).
@@ -118,9 +135,10 @@ ssh-cli su-exec prod "id"
 - IO-009: parse SCP success with `docs/schemas/scp-transfer.schema.json` including required `event: "scp-transfer"`.
 - CLI-005: `tunnel` accepts `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`.
 - CLI-006: `health-check` accepts `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`.
-- If you came from 0.4.0: redacted export could show fake empty-password ciphertext; tunnel could emit `ok:true` and still exit 74 — upgrade wrappers and the binary to 0.5.2.
+- If you came from 0.4.0: redacted export could show fake empty-password ciphertext; tunnel could emit `ok:true` and still exit 74 — upgrade wrappers and the binary to 0.5.3.
 - On SCP/tunnel `--json` failure, parse stderr error envelope (not human prose).
 - Treat SCP as regular files only; do not send directory trees.
+- Prefer 0.5.3+ for SFTP; re-verify uploads with destination checksum after upgrade (G1).
 - Re-test transfers after leaving 0.3.9 (that release SCP was not trustworthy).
 - Treat `--maxChars` as input limit, not output limit.
 - Prefer `--password-stdin` for secrets; password on argv warns on stderr (0.5.2+).
@@ -128,7 +146,8 @@ ssh-cli su-exec prod "id"
 - Empty remote command fails with technical message `empty command` (any locale).
 - Handle host-key mismatch errors before forcing replace.
 - Expect encrypted `config.toml` values prefixed with `sshcli-enc:v1:`.
-- Expect default tracing error; use `-v` only when debugging (ambient `RUST_LOG` is ignored); do not parse stderr as success JSON.
+- Expect default tracing error; use `-v`/`-vv`/`-vvv` when debugging (ambient `RUST_LOG` is ignored); do not parse stderr as success JSON.
+- Parse single-host `exec --json` as one object (G8).
 - ACME `invalidContact` / permanent validation → exit **64** (do not retry as 74) (G-E2E-01).
 - First `vps add` with auto-key: **one** JSON document `event: "vps-added"` with field `secrets_key_auto_created` (G-E2E-04).
 - Prefer root `ssh-cli schema` / `ssh-cli doctor` for agent discovery (G-E2E-02/03).
@@ -148,7 +167,7 @@ ssh-cli su-exec prod "id"
 ## JSON Schema Changes
 
 - Historical (0.3.4 era): new host records wrote `schema_version` 2 with the field set of that release.
-- Current (0.5.2): new writes use schema v3 and English TOML keys; loads dual-read legacy Portuguese key aliases.
+- Current (0.5.3): new writes use schema v3 and English TOML keys; loads dual-read legacy Portuguese key aliases.
 - Agent event schemas live under `docs/schemas/` (see [schemas/README.md](schemas/README.md)).
 
 ### After 0.3.4+ host fields
@@ -184,7 +203,8 @@ ssh-cli su-exec prod "id"
 - Always-trust host key behavior is gone in release builds.
 - Default encryption is on; plaintext requires explicit CLI opt-out `--allow-plaintext-secrets` only (env secrets stores are rejected fail-closed).
 - Default tracing is error; INFO prose is not expected on agent stderr.
-- SCP remains file-only by design in 0.4.0+ (still true in 0.5.2; not a temporary limitation).
+- SCP remains file-only by design in 0.4.0+ (still true in 0.5.3; not a temporary limitation).
+- SFTP integrity requires 0.5.3+ (G1); do not rely on pre-0.5.3 SFTP upload without destination checksum proof.
 
 
 ## Rollback
@@ -192,8 +212,9 @@ ssh-cli su-exec prod "id"
 - Keep a redacted export via `vps export` before major experiments.
 - If rolling back below 0.3.6, encrypted blobs need the matching primary-key or a plaintext re-export while still on 0.3.6+.
 - If rolling back to 0.3.9, do not expect working SCP wire (upgrade again to 0.4.0+ for transfers).
+- If rolling back below 0.5.3, do not trust SFTP upload integrity without external checksum (G1).
 
-## 0.5.2 wire format (schema v3) — current
+## 0.5.3 wire format (schema v3) — current
 
 - Current `schema_version` for new writes is 3 (not 2).
 - New writes use English TOML keys: `name`, `port`, `username`, `password`, `added_at`, …
@@ -209,7 +230,7 @@ ssh-cli su-exec prod "id"
 - clap feature `env` removed — no `#[arg(env=…)]` product config (G-E2E-08).
 - Version stamp appends `-dirty` when the working tree is dirty even with `.commit_hash` (G-E2E-06).
 - ACME `invalidContact` / permanent validation → exit **64** (do not retry as 74) (G-E2E-01).
-- First `vps add` with auto-key: **one** JSON document `event: "vps-added"` with field `secrets_key_auto_created` (G-E2E-04).
+- First `vps add` with auto-key: **one** JSON document `event: "vps-added"` with field `secrets_key_auto_created` (G-E2E-04 / G8 family).
 - Root `ssh-cli schema` / `ssh-cli doctor` for agent discovery (G-E2E-02/03).
 - Timeout values under 1000 ms emit a stderr warning (milliseconds, not seconds).
 - Password-like values on argv warn on stderr; prefer `--password-stdin` / `--*-stdin`.
@@ -218,9 +239,11 @@ ssh-cli su-exec prod "id"
 - CRUD success JSON events when JSON is effective: `vps-added`, `vps-edited`, `vps-removed`, `vps-connected`, `vps-import`.
 - Tunnel `--bind` defaults to `127.0.0.1` (loopback).
 - Exit 65 covers `TomlDe` / bad import data; exit 77 is auth/host-key/permission; missing SCP file is exit 66 with `file not found: <path>`.
-- Suites: `tests/gaps_v042_integration.rs` + `tests/gaps_v051_integration.rs`; official e2e E01–E16.
+- Graduated verbosity `-v`/`-vv`/`-vvv` (info/debug/trace), always crate-scoped (G2/G14).
+- SFTP upload integrity fixed (G1); SETSTAT atime+mtime (G3); fail-closed set_metadata (G4); perm mask (G12); batch cancel cardinality (G5/G17).
+- Suites: `tests/gaps_v042_integration.rs` + `tests/gaps_v051_integration.rs` + `tests/gaps_v056_ssh.rs` + `tests/gaps_v057_sftp.rs` + `tests/gaps_v058_e2e_residual.rs`; official e2e **E01–E18**.
 
-Product line: 0.5.2.
+Product line: 0.5.3.
 
 ## See Also
 - [HOW_TO_USE.md](HOW_TO_USE.md) — end-user command surface

@@ -64,7 +64,10 @@ pub fn validate_entry_name(name: &str) -> SshCliResult<()> {
             "sftp entry name refuses relative segment: {name}"
         )));
     }
-    if name.chars().any(|c| c.is_control() || c == '\0' || c == '/' || c == '\\') {
+    if name
+        .chars()
+        .any(|c| c.is_control() || c == '\0' || c == '/' || c == '\\')
+    {
         return Err(SshCliError::InvalidArgument(format!(
             "sftp entry name must not contain controls or path separators: {name}"
         )));

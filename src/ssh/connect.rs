@@ -94,7 +94,10 @@ mod tests {
     #[test]
     fn build_ssh_client_config_policy_surface() {
         let cfg = build_ssh_client_config(Duration::from_secs(5));
-        assert_eq!(cfg.preferred.compression.as_ref(), &[russh::compression::NONE]);
+        assert_eq!(
+            cfg.preferred.compression.as_ref(),
+            &[russh::compression::NONE]
+        );
         assert!(cfg.nodelay);
         assert_eq!(cfg.keepalive_max, SSH_KEEPALIVE_MAX);
         assert!(cfg.inactivity_timeout.is_some());

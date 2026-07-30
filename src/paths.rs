@@ -485,7 +485,9 @@ mod tests {
 
     #[test]
     fn short_local_path_ok() {
-        assert!(validate_local_path_length(Path::new("/home/user/.config/ssh-cli/config.toml")).is_ok());
+        assert!(
+            validate_local_path_length(Path::new("/home/user/.config/ssh-cli/config.toml")).is_ok()
+        );
     }
 
     #[test]
@@ -505,5 +507,4 @@ mod tests {
         let err = read_text_capped(&p, 4).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
     }
-
 }

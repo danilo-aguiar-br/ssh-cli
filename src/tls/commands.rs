@@ -4,9 +4,7 @@
 
 use std::path::PathBuf;
 
-use crate::cli::{
-    OutputFormat, TlsAcmeAccountAction, TlsAcmeAction, TlsAction, TlsMtlsAction,
-};
+use crate::cli::{OutputFormat, TlsAcmeAccountAction, TlsAcmeAction, TlsAction, TlsMtlsAction};
 use crate::errors::SshCliError;
 use crate::output;
 use anyhow::Result;

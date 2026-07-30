@@ -17,9 +17,11 @@
 
 ## New Flags by Version
 ### Track surface growth without reading source
-- `0.5.2+` **SFTP subsystem (G-SFTP):** `ssh-cli sftp upload|download|ls|mkdir|rmdir|rm|stat|rename` via `russh-sftp` 2.3 (SFTP v3). Upload/download support `--recursive` trees (symlink **no-follow**), multi-host `--all`/`--hosts`, and JSON events `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`. Stream I/O only (no full-file heap). SCP remains regular-file-only.
+- `0.5.3` **SFTP integrity + agent safety (G1–G19):** SFTP upload no longer truncates destinations to 0 bytes (`FileAttributes::empty`); SETSTAT sends atime+mtime together; `set_metadata` fail-closed; permission bits via `SFTP_PERM_MASK` (`0o7777`); download surfaces local `set_permissions` failures; SCP download `sync_data` before rename; batch cancel fills cancelled remainder (`results.len() == input.len()`); `exec --json` single NDJSON object; E2E SFTP checksums E17/E18. Prefer **0.5.3+** for any SFTP transfer.
+- `0.5.3` **graduated verbosity (G2/G14):** `-v` info / `-vv` debug / `-vvv` trace via `ArgAction::Count`, always crate-scoped `warn,ssh_cli=*` — never bare global debug (no russh password dump). Ambient `RUST_LOG` still ignored. Even `-vvv` does **not** enable russh encrypted channel dumps.
+- `0.5.2+` **SFTP subsystem (G-SFTP):** `ssh-cli sftp upload|download|ls|mkdir|rmdir|rm|stat|rename` via `russh-sftp` 2.3 (SFTP v3). Upload/download support `--recursive` trees (symlink **no-follow**), multi-host `--all`/`--hosts`, and JSON events `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`. Stream I/O only (no full-file heap). SCP remains regular-file-only. **Use 0.5.3+** for SFTP integrity fixes above.
 - `0.5.2+` **multi-host fan-out (bounded concurrency):** `exec|sudo-exec|su-exec|scp|sftp|health-check --all` runs concurrent SSH sessions gated by global `--max-concurrency N` (1..=64; auto CPUs×4 vs free RAM/2 / 16 MiB when omitted). Batch envelopes: `health-check-batch` / `exec-batch` / `scp-batch` / `sftp-batch` (`docs/schemas/*-batch.schema.json`, field `max_concurrency`). Prefer one process with `--all` over N single-host spawns for fleet work. Tunnel accepts share the same admission gate.
-- `0.5.2` **residual E2E + agent-first export/import + wire v3**: root `schema`/`doctor`; single `vps-added` + `secrets_key_auto_created`; ambient `RUST_LOG` ignored (`-v` only); ACME permanent 64; `vps add --use-agent`; export redacted `***` (`FIXED_MASK`); no product GH Actions; plus `vps export` body is **TOML by default** (TTY and pipe); JSON agent envelope only with `--json`; `vps import` accepts TOML (EN keys + PT aliases) **or** JSON `vps-export` envelopes; dual-read EN serialize + PT aliases; host **schema v3**; CLI flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` (prefer over env); `secrets init|reencrypt --json` events `secrets-init` / `secrets-reencrypt`; first secret write sets `secrets_key_auto_created` on the same `vps-added` document; CRUD success paths use `emit_success` JSON events; `--include-secrets` to pipe/non-TTY requires `-o`/`--output` or `--i-understand-secrets-on-stdout`; tunnel `--bind` (default `127.0.0.1`); import `TomlDe` → exit **65**; `SshAuthentication` → **77**; SCP missing message `file not found: <path>` (exit **66**); timeout warn if `<1000` ms; password-on-argv stderr warn; doctor `secrets_plaintext_opt_out` is **bool**.
+- `0.5.2` **residual E2E + agent-first export/import + wire v3**: root `schema`/`doctor`; single `vps-added` + `secrets_key_auto_created`; ambient `RUST_LOG` ignored; ACME permanent 64; `vps add --use-agent`; export redacted `***` (`FIXED_MASK`); no product GH Actions; plus `vps export` body is **TOML by default** (TTY and pipe); JSON agent envelope only with `--json`; `vps import` accepts TOML (EN keys + PT aliases) **or** JSON `vps-export` envelopes; dual-read EN serialize + PT aliases; host **schema v3**; CLI flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` (prefer over env); `secrets init|reencrypt --json` events `secrets-init` / `secrets-reencrypt`; first secret write sets `secrets_key_auto_created` on the same `vps-added` document; CRUD success paths use `emit_success` JSON events; `--include-secrets` to pipe/non-TTY requires `-o`/`--output` or `--i-understand-secrets-on-stdout`; tunnel `--bind` (default `127.0.0.1`); import `TomlDe` → exit **65**; `SshAuthentication` → **77**; SCP missing message `file not found: <path>` (exit **66**); timeout warn if `<1000` ms; password-on-argv stderr warn; doctor `secrets_plaintext_opt_out` is **bool**.
 - `0.4.2` tunnel ephemeral port `local_port=0` reports OS-assigned port after bind (TUN-003); SCP remote missing → exit **66** (IO-010); `vps export --json` envelope `event: "vps-export"`; e2e E15/E16; suite `gaps_v042`.
 - `0.4.1` SCP **regular files only** auth parity + scp event + export/tunnel fixes (inherits 0.4.0 wire; no `-r` / no SFTP); solid SCP wire (avoid crates.io **0.3.9** broken SCP); scp flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → `docs/schemas/scp-transfer.schema.json` with required `event: "scp-transfer"` (IO-009); download writes `{path}.ssh-cli.partial` then rename; preserve mtime/mode bi-dir; upload streams 32 KiB; `tunnel --json` emits `tunnel_listening` after bind; scp JSON error envelope on stderr when `--json`; **EXP-001** redacted export empty secrets stay `""` (never `sshcli-enc:` of empty); **TUN-002** tunnel post-bind deadline exits **0** after `tunnel_listening` (pre-bind timeout still **74**); **CLI-005** tunnel auth stdin/passphrase parity; **CLI-006** health-check auth parity.
 - `0.4.0` solid SCP wire protocol (fixes crates.io **0.3.9** broken SCP); file-only transfers; `tunnel --json` / `tunnel_listening`.
@@ -30,7 +32,14 @@
 - `0.3.5` adds `--key-passphrase-stdin` runtime paths, auto JSON on non-TTY, doctor `secrets_at_rest`, residual atomic export and AEAD (then optional).
 - `0.3.4` adds `--key`, `--key-passphrase`, `--password-stdin`, `--sudo-password-stdin`, `--su-password-stdin`, `--timeout-ms` (tunnel), `--disable-sudo`, `--description`, `--replace-host-key`, `max_command_chars`, `max_output_chars`, `vps doctor`, `vps export`, `vps import`, `su-exec`.
 - `0.2.0` adds runtime `--password`, `--sudo-password`, `--timeout` overrides and camelCase aliases.
-- Prefer **0.5.2+** for export/import roundtrip, wire schema v3, working SCP + `tunnel --json` / `--bind`, full SSH automation, default secret encryption, and clean supply-chain.
+- Prefer **0.5.3+** for SFTP integrity (G1–G19), graduated crate-scoped verbosity, export/import roundtrip, wire schema v3, working SCP + `tunnel --json` / `--bind`, full SSH automation, default secret encryption, and clean supply-chain.
+
+## Discovery for agents
+- `ssh-cli commands` — full command tree (vps, connect, exec, sudo-exec, su-exec, scp, sftp, tunnel, health-check, secrets, completions, commands, schema, doctor, locale, tls).
+- `ssh-cli schema [NAME]` — embedded JSON Schema catalog/body.
+- `ssh-cli doctor` — root alias of `vps doctor` (local + optional SSH probe).
+- `ssh-cli locale show|set|clear` — UI locale preference (XDG; not product env).
+- `ssh-cli tls provider|paths|mtls|acme` — optional SSH-over-TLS material under XDG `tls/`.
 
 
 ## Summary Table
@@ -54,14 +63,14 @@
 - Load [skills/ssh-cli-en/SKILL.md](skills/ssh-cli-en/SKILL.md) or the pt package.
 - Register hosts once with `vps add` (prefer `--password-stdin`) then call `exec` per task.
 - Prefer `--json` envelopes for structured tool results.
-- Parse stdout only; default stderr is silent at tracing level `error` (pass `-v` when debugging (ambient `RUST_LOG` is ignored)).
-- Use `ssh-cli secrets status` / `vps doctor --json` as preflight for encryption and paths.
+- Parse stdout only; default stderr is silent at tracing level `error` (pass `-v`/`-vv`/`-vvv` when debugging — crate-scoped allowlist; ambient `RUST_LOG` is ignored).
+- Use `ssh-cli secrets status` / `vps doctor --json` / `ssh-cli commands` as preflight for encryption, paths, and surface discovery.
 
 
 ## Cursor
 - Add a project rule that prefers `ssh-cli` over long-lived Node SSH processes.
 - Keep credentials out of chat by using stored hosts and stdin secret flags.
-- Parse JSON stdout only; default stderr is silent at tracing level `error` (ignore tracing unless you pass `-v`; ambient `RUST_LOG` is ignored).
+- Parse JSON stdout only; default stderr is silent at tracing level `error` (ignore tracing unless you pass `-v`/`-vv`/`-vvv`; ambient `RUST_LOG` is ignored).
 
 
 ## Windsurf

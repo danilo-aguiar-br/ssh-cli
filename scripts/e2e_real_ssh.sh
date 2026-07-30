@@ -357,6 +357,66 @@ else
 fi
 cli exec e2e "rm -f $(printf '%q' "$SYM_REMOTE")" >/dev/null 2>&1 || true
 
+# E17: G7 — SFTP upload/download round-trip with destination checksum (never trust client bytes)
+# Matrix: empty, 1B, 760B, 32KiB, 32KiB+1, 64KiB (covers chunk boundary and G1 sizes).
+SFTP_OK=1
+for SFTP_SIZE in 0 1 760 32768 32769 65536; do
+  SFTP_LOCAL="$TMP/sftp-up-${SFTP_SIZE}.bin"
+  SFTP_REMOTE="/tmp/ssh-cli-e2e-sftp-${SFTP_SIZE}-$$.bin"
+  SFTP_DOWN="$TMP/sftp-down-${SFTP_SIZE}.bin"
+  if [[ "$SFTP_SIZE" -eq 0 ]]; then
+    : >"$SFTP_LOCAL"
+  else
+    dd if=/dev/urandom of="$SFTP_LOCAL" bs=1 count="$SFTP_SIZE" status=none 2>/dev/null \
+      || head -c "$SFTP_SIZE" /dev/urandom >"$SFTP_LOCAL"
+  fi
+  LOCAL_HASH="$(sha256sum "$SFTP_LOCAL" | awk '{print $1}')"
+  if ! cli sftp upload e2e --timeout 60000 "$SFTP_LOCAL" "$SFTP_REMOTE" >/dev/null 2>&1; then
+    SFTP_OK=0
+    break
+  fi
+  # Measure EFFECT on destination via remote sha256 — not the JSON bytes field.
+  REMOTE_HASH="$(cli exec e2e --json "sha256sum $(printf '%q' "$SFTP_REMOTE")" 2>/dev/null \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("stdout") or "").split()[0] if d.get("stdout") else "")' 2>/dev/null || true)"
+  if [[ -z "$REMOTE_HASH" || "$REMOTE_HASH" != "$LOCAL_HASH" ]]; then
+    SFTP_OK=0
+    cli exec e2e "rm -f $(printf '%q' "$SFTP_REMOTE")" >/dev/null 2>&1 || true
+    break
+  fi
+  if ! cli sftp download e2e --timeout 60000 "$SFTP_REMOTE" "$SFTP_DOWN" >/dev/null 2>&1 \
+    || ! cmp -s "$SFTP_LOCAL" "$SFTP_DOWN"; then
+    SFTP_OK=0
+    cli exec e2e "rm -f $(printf '%q' "$SFTP_REMOTE")" >/dev/null 2>&1 || true
+    break
+  fi
+  cli exec e2e "rm -f $(printf '%q' "$SFTP_REMOTE")" >/dev/null 2>&1 || true
+done
+if [[ "$SFTP_OK" -eq 1 ]]; then
+  pass E17
+else
+  fail E17
+fi
+
+# E18: G7 — SFTP recursive tree upload + remote checksum of one leaf
+SFTP_TREE="$TMP/sftp-tree-$$"
+mkdir -p "$SFTP_TREE/sub"
+printf 'leaf-a\n' >"$SFTP_TREE/a.txt"
+printf 'leaf-b\n' >"$SFTP_TREE/sub/b.txt"
+SFTP_TREE_REMOTE="/tmp/ssh-cli-e2e-sftp-tree-$$"
+LEAF_HASH="$(sha256sum "$SFTP_TREE/sub/b.txt" | awk '{print $1}')"
+if cli sftp upload e2e --recursive --timeout 120000 "$SFTP_TREE" "$SFTP_TREE_REMOTE" >/dev/null 2>&1; then
+  REMOTE_LEAF_HASH="$(cli exec e2e --json "sha256sum $(printf '%q' "$SFTP_TREE_REMOTE/sub/b.txt")" 2>/dev/null \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("stdout") or "").split()[0] if d.get("stdout") else "")' 2>/dev/null || true)"
+  if [[ -n "$REMOTE_LEAF_HASH" && "$REMOTE_LEAF_HASH" == "$LEAF_HASH" ]]; then
+    pass E18
+  else
+    fail E18
+  fi
+else
+  fail E18
+fi
+cli exec e2e "rm -rf $(printf '%q' "$SFTP_TREE_REMOTE")" >/dev/null 2>&1 || true
+
 # Best-effort remote cleanup (never print paths with secrets)
 cli exec e2e "rm -f $(printf '%q' "$REMOTE_SCP") $(printf '%q' "$REMOTE_SPACE") $(printf '%q' "${REMOTE_SCP}.1m")" >/dev/null 2>&1 || true
 

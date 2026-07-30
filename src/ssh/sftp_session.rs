@@ -14,14 +14,14 @@
 //!
 //! Recursive walks **do not follow** symlinks (fail-safe default G-SFTP-06).
 
-use super::client_handler::ClientHandler;
 use super::client::TransferResult;
+use super::client_handler::ClientHandler;
+use super::scp_wire::partial_download_path;
 use super::sftp_path::{
     check_depth, ensure_local_under, join_remote, validate_entry_name, validate_remote_path,
 };
 use super::sftp_types::{SftpListEntry, SftpStat};
-use super::scp_wire::partial_download_path;
-use crate::constants::{SFTP_IO_CHUNK, SFTP_LIST_MAX_ENTRIES, SFTP_SUBSYSTEM};
+use crate::constants::{SFTP_IO_CHUNK, SFTP_LIST_MAX_ENTRIES, SFTP_PERM_MASK, SFTP_SUBSYSTEM};
 use crate::errors::{SshCliError, SshCliResult};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
@@ -91,7 +91,9 @@ pub async fn open_sftp_session(
     channel
         .request_subsystem(true, SFTP_SUBSYSTEM)
         .await
-        .map_err(|e| SshCliError::channel_msg(format!("request subsystem {SFTP_SUBSYSTEM}: {e}")))?;
+        .map_err(|e| {
+            SshCliError::channel_msg(format!("request subsystem {SFTP_SUBSYSTEM}: {e}"))
+        })?;
     let sftp = SftpSession::new(channel.into_stream())
         .await
         .map_err(|e| SshCliError::channel_msg(format!("SftpSession::new: {e}")))?;
@@ -146,17 +148,8 @@ pub async fn upload_file(
         .map_err(SshCliError::Io)?;
 
     let flags = OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE;
-    let mut attrs = FileAttributes::default();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        attrs.permissions = Some(meta.permissions().mode());
-    }
-    if let Ok(mtime) = meta.modified() {
-        if let Ok(d) = mtime.duration_since(std::time::UNIX_EPOCH) {
-            attrs.mtime = Some(u32::try_from(d.as_secs()).unwrap_or(u32::MAX));
-        }
-    }
+    // Build attrs from `empty()` only (G1/G3/G12): never `Default` (directory template).
+    let attrs = upload_file_attrs(&meta);
 
     let mut remote_file = sftp
         .open_with_flags_and_attributes(remote.to_owned(), flags, attrs.clone())
@@ -167,9 +160,9 @@ pub async fn upload_file(
     let mut bytes = 0_u64;
     loop {
         if crate::signals::should_stop() {
-            return Err(SshCliError::InvalidArgument(
-                crate::i18n::t(crate::i18n::Message::OperationCancelled),
-            ));
+            return Err(SshCliError::InvalidArgument(crate::i18n::t(
+                crate::i18n::Message::OperationCancelled,
+            )));
         }
         let n = local_file.read(&mut buf).await.map_err(SshCliError::Io)?;
         if n == 0 {
@@ -186,13 +179,47 @@ pub async fn upload_file(
         .await
         .map_err(|e| SshCliError::channel_msg(format!("sftp shutdown {remote}: {e}")))?;
 
-    // Best-effort metadata (mode/mtime) if open flags did not stick.
-    let _ = sftp.set_metadata(remote.to_owned(), attrs).await;
+    // G4: SETSTAT is a mutating op — never discard its Result (was the silent
+    // path that made G1 undetectable). Failure aborts the transfer.
+    sftp.set_metadata(remote.to_owned(), attrs)
+        .await
+        .map_err(|e| map_sftp_err(remote, e))?;
 
     Ok(TransferResult {
         bytes_transferred: bytes,
         duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
     })
+}
+
+/// Builds wire `FileAttributes` for an SFTP upload from local metadata (G1/G3/G12/G19).
+///
+/// Uses [`FileAttributes::empty`] (neutral) — never [`Default`] (directory template
+/// with `size: Some(0)` that truncates after CLOSE).
+fn upload_file_attrs(meta: &std::fs::Metadata) -> FileAttributes {
+    let mut attrs = FileAttributes::empty();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Mask S_IFMT: `mode()` carries file-type bits; protocol wants perms only.
+        attrs.permissions = Some(meta.permissions().mode() & SFTP_PERM_MASK);
+    }
+    // SFTP v3 ACMODTIME is atomic: missing atime serializes as 0 (epoch). Always
+    // pair atime+mtime; fall back to mtime when local atime is unreadable.
+    if let Ok(mtime) = meta.modified() {
+        if let Ok(d) = mtime.duration_since(std::time::UNIX_EPOCH) {
+            let mtime_secs = u32::try_from(d.as_secs()).unwrap_or(u32::MAX);
+            attrs.mtime = Some(mtime_secs);
+            attrs.atime = Some(
+                meta.accessed()
+                    .ok()
+                    .and_then(|a| a.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(mtime_secs, |a| {
+                        u32::try_from(a.as_secs()).unwrap_or(u32::MAX)
+                    }),
+            );
+        }
+    }
+    attrs
 }
 
 /// Streams a remote regular file to a local path (partial + atomic rename).
@@ -240,15 +267,9 @@ pub async fn download_file(
     }
 
     let partial = partial_download_path(local);
-    let result = download_file_to_partial(
-        &mut remote_file,
-        &partial,
-        local,
-        remote,
-        &link_meta,
-        start,
-    )
-    .await;
+    let result =
+        download_file_to_partial(&mut remote_file, &partial, local, remote, &link_meta, start)
+            .await;
     if result.is_err() {
         let _ = tokio::fs::remove_file(&partial).await;
     }
@@ -271,9 +292,9 @@ async fn download_file_to_partial(
     let mut bytes = 0_u64;
     loop {
         if crate::signals::should_stop() {
-            return Err(SshCliError::InvalidArgument(
-                crate::i18n::t(crate::i18n::Message::OperationCancelled),
-            ));
+            return Err(SshCliError::InvalidArgument(crate::i18n::t(
+                crate::i18n::Message::OperationCancelled,
+            )));
         }
         let n = remote_file
             .read(&mut buf)
@@ -289,17 +310,27 @@ async fn download_file_to_partial(
         bytes = bytes.saturating_add(n as u64);
     }
     local_file.flush().await.map_err(SshCliError::Io)?;
+    // Durability barrier before atomic rename (parity with SCP G9).
+    local_file.sync_data().await.map_err(SshCliError::Io)?;
     drop(local_file);
 
     tokio::fs::rename(partial, local)
         .await
         .map_err(SshCliError::Io)?;
 
-    // Best-effort local mode (Unix).
+    // G18: local mode is a mutation — surface failure (do not silent-ok).
     #[cfg(unix)]
     if let Some(mode) = link_meta.permissions {
         use std::os::unix::fs::PermissionsExt;
-        let _ = tokio::fs::set_permissions(local, std::fs::Permissions::from_mode(mode)).await;
+        let mode_bits = mode & SFTP_PERM_MASK;
+        tokio::fs::set_permissions(local, std::fs::Permissions::from_mode(mode_bits))
+            .await
+            .map_err(|e| {
+                SshCliError::Io(std::io::Error::new(
+                    e.kind(),
+                    format!("sftp download set_permissions {}: {e}", local.display()),
+                ))
+            })?;
     }
 
     Ok(TransferResult {
@@ -368,9 +399,9 @@ async fn upload_tree_rec(
         .map_err(SshCliError::Io)?;
     while let Some(entry) = rd.next_entry().await.map_err(SshCliError::Io)? {
         if crate::signals::should_stop() {
-            return Err(SshCliError::InvalidArgument(
-                crate::i18n::t(crate::i18n::Message::OperationCancelled),
-            ));
+            return Err(SshCliError::InvalidArgument(crate::i18n::t(
+                crate::i18n::Message::OperationCancelled,
+            )));
         }
         let ft = entry.file_type().await.map_err(SshCliError::Io)?;
         if ft.is_symlink() {
@@ -464,9 +495,9 @@ async fn download_tree_rec(
             )));
         }
         if crate::signals::should_stop() {
-            return Err(SshCliError::InvalidArgument(
-                crate::i18n::t(crate::i18n::Message::OperationCancelled),
-            ));
+            return Err(SshCliError::InvalidArgument(crate::i18n::t(
+                crate::i18n::Message::OperationCancelled,
+            )));
         }
         let name = entry.file_name();
         // G-SFTP-R01: malicious server basenames must not escape local_root.
@@ -582,5 +613,28 @@ mod tests {
         assert_eq!(sftp_timeout_secs(1000), 1);
         assert_eq!(sftp_timeout_secs(1001), 2);
         assert_eq!(sftp_timeout_secs(30_000), 30);
+    }
+
+    /// Tripwire for russh-sftp #89: `Default` is a dummy NEW-DIRECTORY template,
+    /// not a neutral attribute set. Uploading with it makes the post-CLOSE
+    /// SETSTAT carry `size = 0`, truncating every uploaded file to zero bytes
+    /// while every request still answers `Status::Ok`. Upload paths MUST build
+    /// from `empty()`. If a dependency bump ever changes either invariant, this
+    /// fails loudly instead of silently destroying user data again.
+    #[test]
+    fn upstream_default_attributes_are_destructive_use_empty() {
+        let dummy = FileAttributes::default();
+        assert_eq!(
+            dummy.size,
+            Some(0),
+            "upstream Default no longer carries size=0; revisit the upload attrs"
+        );
+        let neutral = FileAttributes::empty();
+        assert!(
+            neutral.size.is_none(),
+            "empty() must omit size (no truncate)"
+        );
+        assert!(neutral.uid.is_none(), "empty() must omit uid (no chown)");
+        assert!(neutral.gid.is_none(), "empty() must omit gid (no chown)");
     }
 }

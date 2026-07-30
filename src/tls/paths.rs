@@ -30,9 +30,8 @@ pub fn tls_root_dir(config_override: Option<&Path>) -> SshCliResult<PathBuf> {
 
 /// `…/tls/mtls/<name>/`
 pub fn mtls_identity_dir(config_override: Option<&Path>, name: &str) -> SshCliResult<PathBuf> {
-    let safe = validate_and_normalize(name).map_err(|e| {
-        SshCliError::InvalidArgument(format!("invalid mTLS identity name: {e}"))
-    })?;
+    let safe = validate_and_normalize(name)
+        .map_err(|e| SshCliError::InvalidArgument(format!("invalid mTLS identity name: {e}")))?;
     Ok(resolve_tls_root(config_override)?
         .join(TLS_MTLS_DIR_NAME)
         .join(safe.as_str()))
@@ -78,7 +77,9 @@ pub fn order_json_path(dir: &Path) -> PathBuf {
 fn sanitize_domain_leaf(domain: &str) -> SshCliResult<String> {
     let d = domain.trim().to_ascii_lowercase();
     if d.is_empty() {
-        return Err(SshCliError::InvalidArgument("domain cannot be empty".into()));
+        return Err(SshCliError::InvalidArgument(
+            "domain cannot be empty".into(),
+        ));
     }
     if d.contains("..") || d.contains('/') || d.contains('\\') {
         return Err(SshCliError::InvalidArgument(format!(
@@ -98,9 +99,8 @@ fn sanitize_domain_leaf(domain: &str) -> SshCliResult<String> {
 
 /// Ensures directory exists with restrictive permissions on Unix.
 pub(crate) fn ensure_dir(path: &Path) -> SshCliResult<()> {
-    std::fs::create_dir_all(path).map_err(|e| {
-        SshCliError::tls_msg(format!("create TLS dir {}: {e}", path.display()))
-    })?;
+    std::fs::create_dir_all(path)
+        .map_err(|e| SshCliError::tls_msg(format!("create TLS dir {}: {e}", path.display())))?;
     // Best-effort secret dir mode (matches prior ignore-on-error chmod).
     let _ = crate::fs_perm::set_secret_dir_mode(path);
     Ok(())

@@ -177,10 +177,7 @@ pub fn write_stderr_line_to(err: &mut impl Write, content: &str) -> io::Result<(
 ///
 /// # Errors
 /// Non-pipe I/O failures from the underlying writer.
-pub fn write_stderr_line_to_fmt(
-    err: &mut impl Write,
-    args: fmt::Arguments<'_>,
-) -> io::Result<()> {
+pub fn write_stderr_line_to_fmt(err: &mut impl Write, args: fmt::Arguments<'_>) -> io::Result<()> {
     match write_line_to_fmt(err, args) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),

@@ -190,6 +190,13 @@ pub const SFTP_SUBSYSTEM: &str = "sftp";
 /// Stream chunk size for SFTP file I/O (bytes). Never load whole files into RAM.
 pub const SFTP_IO_CHUNK: usize = 32 * 1024;
 
+/// SFTP v3 permission field mask: permission bits only (no `S_IFMT` file-type bits).
+///
+/// Unix `st_mode` carries type in the high bits (e.g. `0o100644` for a regular
+/// file). The protocol `permissions` attribute must carry permission bits only
+/// (`0o7777` = mode + setuid/setgid/sticky). See G12 / G19.
+pub const SFTP_PERM_MASK: u32 = 0o7777;
+
 /// Max recursion depth for `sftp upload|download --recursive`.
 pub const SFTP_MAX_RECURSION_DEPTH: u32 = 64;
 
@@ -287,6 +294,7 @@ const _: () = assert!(SSH_RSA_PREFERRED_BITS >= SSH_RSA_MIN_BITS);
 const _: () = assert!(!WINDOWS_SSH_AGENT_PIPE.is_empty());
 const _: () = assert!(!SFTP_SUBSYSTEM.is_empty());
 const _: () = assert!(SFTP_IO_CHUNK > 0);
+const _: () = assert!(SFTP_PERM_MASK == 0o7777);
 const _: () = assert!(SFTP_MAX_RECURSION_DEPTH > 0);
 const _: () = assert!(SFTP_LIST_MAX_ENTRIES > 0);
 const _: () = assert!(!SFTP_FALLBACK_BASENAME.is_empty());

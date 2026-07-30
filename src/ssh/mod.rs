@@ -16,13 +16,13 @@
 //! - without default features: stub that fails connect with a clear error
 
 pub mod client;
-pub mod connection;
 #[cfg(feature = "ssh-real")]
 pub(crate) mod client_connect;
 #[cfg(feature = "ssh-real")]
 pub(crate) mod client_handler;
 #[cfg(feature = "ssh-real")]
 pub(crate) mod connect;
+pub mod connection;
 #[cfg(feature = "ssh-real")]
 pub(crate) mod key_material;
 pub mod known_hosts;
@@ -31,21 +31,21 @@ pub(crate) mod scp_wire;
 pub(crate) mod session_io;
 /// Pure remote path validation (G-SFTP-06/16).
 pub(crate) mod sftp_path;
-/// SFTP list/stat DTOs (always available).
-pub(crate) mod sftp_types;
 /// SFTP subsystem session + stream ops (G-SFTP; feature `ssh-real`).
 #[cfg(feature = "ssh-real")]
 pub(crate) mod sftp_session;
+/// SFTP list/stat DTOs (always available).
+pub(crate) mod sftp_types;
 
 pub use sftp_types::{SftpListEntry, SftpStat};
 
 pub use client::ExecutionOutput;
-pub use connection::ConnectionConfig;
-pub use session_io::truncate_utf8;
 /// SSH client type (real or stub depending on feature `ssh-real`).
 #[cfg_attr(docsrs, doc(cfg(feature = "ssh-real")))]
 pub use client::SshClient;
+pub use connection::ConnectionConfig;
 pub use packing::{
-    append_description, pack_abort_pkill, pack_su, pack_sudo,
-    escape_shell_single_quotes, remote_abort_pattern,
+    append_description, escape_shell_single_quotes, pack_abort_pkill, pack_su, pack_sudo,
+    remote_abort_pattern,
 };
+pub use session_io::truncate_utf8;

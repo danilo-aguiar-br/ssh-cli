@@ -66,10 +66,7 @@ impl std::fmt::Debug for PackedCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PackedCommand")
             .field("command", &self.command)
-            .field(
-                "stdin",
-                &self.stdin.as_ref().map(|_| "<redacted bytes>"),
-            )
+            .field("stdin", &self.stdin.as_ref().map(|_| "<redacted bytes>"))
             .finish()
     }
 }

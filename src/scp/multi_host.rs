@@ -4,7 +4,7 @@
 //! Multi-host SCP paths using bounded concurrency.
 
 use super::batch::{
-    finish_scp_batch, finish_scp_nested_batch, multi_file_upload_on_session,
+    cancelled_host_scp, finish_scp_batch, finish_scp_nested_batch, multi_file_upload_on_session,
     validate_local_upload_sources,
 };
 use super::{apply_scp_options, HostScpResult, ScpOptions};
@@ -46,15 +46,17 @@ pub(crate) async fn run_scp_multi_host_multi_file_upload(
         let remote_dir = remote_dir.clone();
         let sources = sources_c.clone();
         async move {
+            // G5/G17: one cancelled row per source so nested batch cardinality is honest.
             if crate::signals::should_stop() {
-                return vec![HostScpResult {
-                    name,
-                    ok: false,
-                    bytes: None,
-                    duration_ms: None,
-                    local: None,
-                    error: Some("operation cancelled by signal".into()),
-                }];
+                return sources
+                    .iter()
+                    .map(|local| {
+                        cancelled_host_scp(
+                            format!("{name}:{}", local.display()),
+                            Some(local.display().to_string()),
+                        )
+                    })
+                    .collect();
             }
             apply_scp_options(&mut record, opts.as_ref());
             let cfg = vps::build_connection_config(&record, Some(&path_c), replace);
@@ -100,8 +102,7 @@ pub(crate) async fn run_scp_multi_host_multi_file_download(
     match dest_meta {
         Ok(m) if m.is_file() => {
             return Err(SshCliError::InvalidArgument(
-                "multi-file download destination must be a directory (not an existing file)"
-                    .into(),
+                "multi-file download destination must be a directory (not an existing file)".into(),
             )
             .into());
         }
@@ -140,31 +141,26 @@ pub(crate) async fn run_scp_multi_host_multi_file_download(
         let host_safe = name.replace(['/', '\\'], "_");
         async move {
             if crate::signals::should_stop() {
-                return vec![HostScpResult {
-                    name,
-                    ok: false,
-                    bytes: None,
-                    duration_ms: None,
-                    local: None,
-                    error: Some("operation cancelled by signal".into()),
-                }];
+                return remotes
+                    .iter()
+                    .map(|remote| cancelled_host_scp(format!("{name}:{}", remote.display()), None))
+                    .collect();
             }
             apply_scp_options(&mut record, opts.as_ref());
             let cfg = vps::build_connection_config(&record, Some(&path_c), replace);
             let mut out = Vec::with_capacity(remotes.len());
             match <SshClient as SshClientTrait>::connect(cfg).await {
                 Ok(client) => {
-                    for remote in remotes {
+                    for (idx, remote) in remotes.iter().enumerate() {
                         let label = format!("{}:{}", name, remote.display());
                         if crate::signals::should_stop() {
-                            out.push(HostScpResult {
-                                name: label,
-                                ok: false,
-                                bytes: None,
-                                duration_ms: None,
-                                local: None,
-                                error: Some("operation cancelled by signal".into()),
-                            });
+                            out.push(cancelled_host_scp(label, None));
+                            for remote in &remotes[idx + 1..] {
+                                out.push(cancelled_host_scp(
+                                    format!("{name}:{}", remote.display()),
+                                    None,
+                                ));
+                            }
                             break;
                         }
                         let base = remote
@@ -185,7 +181,7 @@ pub(crate) async fn run_scp_multi_host_multi_file_download(
                             continue;
                         }
                         let local = host_subdir.join(&base);
-                        match client.download(&remote, &local).await {
+                        match client.download(remote, &local).await {
                             Ok(t) => out.push(HostScpResult {
                                 name: label,
                                 ok: true,
@@ -256,14 +252,7 @@ pub(crate) async fn run_scp_all_upload(
         let path_c = path_c.clone();
         async move {
             if crate::signals::should_stop() {
-                return HostScpResult {
-                    name,
-                    ok: false,
-                    bytes: None,
-                    duration_ms: None,
-                    local: Some(local_owned.display().to_string()),
-                    error: Some("operation cancelled by signal".into()),
-                };
+                return cancelled_host_scp(name, Some(local_owned.display().to_string()));
             }
             apply_scp_options(&mut record, opts.as_ref());
             let cfg = vps::build_connection_config(&record, Some(&path_c), replace);
@@ -341,14 +330,7 @@ pub(crate) async fn run_scp_all_download(
         let path_c = path_c.clone();
         async move {
             if crate::signals::should_stop() {
-                return HostScpResult {
-                    name,
-                    ok: false,
-                    bytes: None,
-                    duration_ms: None,
-                    local: Some(local_path.display().to_string()),
-                    error: Some("operation cancelled by signal".into()),
-                };
+                return cancelled_host_scp(name, Some(local_path.display().to_string()));
             }
             apply_scp_options(&mut record, opts.as_ref());
             let cfg = vps::build_connection_config(&record, Some(&path_c), replace);

@@ -29,6 +29,18 @@ pub struct HostSftpResult {
     pub error: Option<String>,
 }
 
+/// G5/G17: explicit cancelled batch row (cardinal honesty for multi-host SFTP).
+fn cancelled_host_sftp(name: String, local: Option<String>) -> HostSftpResult {
+    HostSftpResult {
+        name,
+        ok: false,
+        bytes: None,
+        duration_ms: None,
+        local,
+        error: Some(crate::i18n::t(crate::i18n::Message::OperationCancelled)),
+    }
+}
+
 fn finish_batch(
     direction: &str,
     results: Vec<crate::concurrency::IndexedResult<HostSftpResult>>,
@@ -96,14 +108,7 @@ pub(crate) async fn run_sftp_all_upload(
         let path_c = path_c.clone();
         async move {
             if crate::signals::should_stop() {
-                return HostSftpResult {
-                    name,
-                    ok: false,
-                    bytes: None,
-                    duration_ms: None,
-                    local: Some(local_owned.display().to_string()),
-                    error: Some("operation cancelled by signal".into()),
-                };
+                return cancelled_host_sftp(name, Some(local_owned.display().to_string()));
             }
             apply_sftp_options(&mut record, opts.as_ref());
             let cfg = vps::build_connection_config(&record, Some(&path_c), replace);
@@ -190,23 +195,14 @@ pub(crate) async fn run_sftp_all_download(
                 local_base.with_file_name(format!("{stem}.{name}{ext}"))
             };
             if crate::signals::should_stop() {
-                return HostSftpResult {
-                    name,
-                    ok: false,
-                    bytes: None,
-                    duration_ms: None,
-                    local: Some(local_path.display().to_string()),
-                    error: Some("operation cancelled by signal".into()),
-                };
+                return cancelled_host_sftp(name, Some(local_path.display().to_string()));
             }
             apply_sftp_options(&mut record, opts.as_ref());
             let cfg = vps::build_connection_config(&record, Some(&path_c), replace);
             match SshClient::connect(cfg).await {
                 Ok(client) => {
                     let result = if recursive {
-                        client
-                            .sftp_download_tree(&remote_owned, &local_path)
-                            .await
+                        client.sftp_download_tree(&remote_owned, &local_path).await
                     } else {
                         client.sftp_download(&remote_owned, &local_path).await
                     };
@@ -377,8 +373,7 @@ pub(crate) async fn run_sftp_multi_host_multi_file_download(
                             validate_entry_name(&fname)?;
                             let local = host_dir.join(&fname);
                             ensure_local_under(&host_root, &local)?;
-                            let r =
-                                sftp_session::download_file(&sftp, &remote, &local).await?;
+                            let r = sftp_session::download_file(&sftp, &remote, &local).await?;
                             bytes = bytes.saturating_add(r.bytes_transferred);
                         }
                         sftp_session::close_sftp(&sftp).await;

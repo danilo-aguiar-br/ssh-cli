@@ -53,12 +53,12 @@ pub(crate) fn parse_scp_t_line(line: &str) -> SshCliResult<(u64, u64)> {
             "malformed SCP T line: {line}"
         )));
     }
-    let mtime: u64 = partes[0].parse().map_err(|_| {
-        SshCliError::channel_msg(format!("invalid mtime in T line: {}", partes[0]))
-    })?;
-    let atime: u64 = partes[2].parse().map_err(|_| {
-        SshCliError::channel_msg(format!("invalid atime in T line: {}", partes[2]))
-    })?;
+    let mtime: u64 = partes[0]
+        .parse()
+        .map_err(|_| SshCliError::channel_msg(format!("invalid mtime in T line: {}", partes[0])))?;
+    let atime: u64 = partes[2]
+        .parse()
+        .map_err(|_| SshCliError::channel_msg(format!("invalid atime in T line: {}", partes[2])))?;
     Ok((mtime, atime))
 }
 
@@ -92,9 +92,9 @@ pub(crate) fn parse_scp_header(header: &str) -> SshCliResult<(u32, u64)> {
     let mode: u32 = u32::from_str_radix(mode_oct, 8)
         .map_err(|_| SshCliError::channel_msg(format!("invalid SCP mode: {mode_oct}")))?;
 
-    let size = partes[1].parse().map_err(|_| {
-        SshCliError::channel_msg(format!("invalid size in header: {}", partes[1]))
-    })?;
+    let size = partes[1]
+        .parse()
+        .map_err(|_| SshCliError::channel_msg(format!("invalid size in header: {}", partes[1])))?;
     Ok((mode & 0o7777, size))
 }
 
@@ -262,9 +262,7 @@ where
                 )));
             }
             Some(ChannelMsg::Close) | None => {
-                return Err(SshCliError::channel_msg(
-                    "SCP channel closed prematurely",
-                ));
+                return Err(SshCliError::channel_msg("SCP channel closed prematurely"));
             }
             _ => continue,
         }
@@ -281,7 +279,9 @@ where
 }
 
 /// Reads bytes until a newline (header `C`/`T`) or error status `1`/`2`.
-pub(crate) async fn scp_read_until_newline<S>(channel: &mut russh::Channel<S>) -> SshCliResult<Vec<u8>>
+pub(crate) async fn scp_read_until_newline<S>(
+    channel: &mut russh::Channel<S>,
+) -> SshCliResult<Vec<u8>>
 where
     S: From<(russh::ChannelId, russh::ChannelMsg)> + Send + Sync + 'static,
 {
@@ -297,9 +297,7 @@ where
             return Ok(buf);
         }
         if buf.len() > 16_384 {
-            return Err(SshCliError::channel_msg(
-                "SCP header excessively long",
-            ));
+            return Err(SshCliError::channel_msg("SCP header excessively long"));
         }
     }
 }
@@ -310,7 +308,16 @@ mod wire_adversarial_tests {
 
     #[test]
     fn parse_header_adversarial_no_panic() {
-        for s in ["", "C", "Cxxxx", "T", "T1", "\0\n", "C0644 not_a_size name\n", "C9999 1 x\n"] {
+        for s in [
+            "",
+            "C",
+            "Cxxxx",
+            "T",
+            "T1",
+            "\0\n",
+            "C0644 not_a_size name\n",
+            "C9999 1 x\n",
+        ] {
             let _ = parse_scp_header(s);
             let _ = parse_scp_t_line(s);
             let _ = interpret_scp_status(s.as_bytes());

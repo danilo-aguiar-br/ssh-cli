@@ -171,7 +171,12 @@ mod tests {
             SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 22)),
             SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 22, 0, 0)),
             SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 2), 22)),
-            SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 2), 22, 0, 0)),
+            SocketAddr::V6(SocketAddrV6::new(
+                Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 2),
+                22,
+                0,
+                0,
+            )),
         ];
         let ordered = interleave_address_families(addrs);
         assert_eq!(ordered.len(), 4);

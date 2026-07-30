@@ -22,6 +22,7 @@ pub use batch::{
     print_sftp_list_json, print_sftp_stat_json, print_sftp_transfer_json, print_transfer_json,
     print_tunnel_listening_json,
 };
+pub(crate) use emit::report_json_serialize_error;
 pub use emit::{
     emit_success, emit_success_fmt, is_quiet, print_error, print_error_envelope, print_error_fmt,
     print_human_banner, print_json_value, print_success, print_success_fmt, print_warning,
@@ -29,7 +30,6 @@ pub use emit::{
     write_line_to, write_line_to_fmt, write_lines, write_stderr_fmt, write_stderr_line,
     write_stderr_line_to, write_stderr_line_to_fmt,
 };
-pub(crate) use emit::report_json_serialize_error;
 pub use json::{
     export_envelope_json, export_hosts_to_json, print_details_json, print_execution_output_json,
     print_health_check_json, print_list_json, record_to_masked_json,

@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 
 use super::error::DomainError;
-use crate::validation::{MAX_FIELD_LEN, MAX_TAG_LEN, MAX_TAGS};
+use crate::validation::{MAX_FIELD_LEN, MAX_TAGS, MAX_TAG_LEN};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 

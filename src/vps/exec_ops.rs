@@ -222,10 +222,13 @@ pub async fn run_exec_with_client_steps(
         tracing::debug!(step = i, "exec multi-cmd step");
         match client.run_command(cmd, max_out, None).await {
             Ok(output) => {
-                if format == OutputFormat::Json || json {
+                // G8: multi-step guard on JSON path too (parity with text branch).
+                // Single-step must emit exactly one object (the aggregate at the end).
+                if (format == OutputFormat::Json || json) && cmds.len() > 1 {
                     // Multi-step: emit one JSON line per step with index.
-                    let mut v = serde_json::to_value(crate::json_wire::ExecutionJson::from(&output))
-                        .unwrap_or_else(|_| serde_json::json!({}));
+                    let mut v =
+                        serde_json::to_value(crate::json_wire::ExecutionJson::from(&output))
+                            .unwrap_or_else(|_| serde_json::json!({}));
                     if let Some(obj) = v.as_object_mut() {
                         obj.insert("step".into(), serde_json::json!(i));
                         obj.insert("command".into(), serde_json::json!(cmd));
@@ -401,13 +404,15 @@ pub async fn run_su_exec(
         return Err(SshCliError::SudoDisabled.into());
     }
     // `take` moves the secret out of the record (no clone of SecretString).
-    let su_password = vps.su_password.take().ok_or(SshCliError::SuPasswordMissing)?;
+    let su_password = vps
+        .su_password
+        .take()
+        .ok_or(SshCliError::SuPasswordMissing)?;
     let cmd = append_description(command, opts.description.as_deref());
     validate_command_length(&cmd, vps.max_command_chars.wire())?;
     let mut pack = pack_su(&cmd, &su_password);
     let cfg = build_connection_config(&vps, Some(&path), opts.replace_host_key);
-    let mut client: Box<dyn SshClientTrait> =
-        <SshClient as SshClientTrait>::connect(cfg).await?;
+    let mut client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
     let max_out = effective_limit(vps.max_output_chars.wire());
     let stdin = pack.take_stdin();
     let result = client.run_command(&pack.command, max_out, stdin).await;
@@ -454,120 +459,117 @@ async fn run_exec_all(
         jobs,
         limit,
         move |(name, mut vps)| {
-        let cmd_base = cmd_base.clone();
-        let path_c = path_c.clone();
-        let opts_arc = std::sync::Arc::clone(&opts_c);
-        async move {
-            let mut opts = (*opts_arc).clone();
+            let cmd_base = cmd_base.clone();
+            let path_c = path_c.clone();
+            let opts_arc = std::sync::Arc::clone(&opts_c);
+            async move {
+                let mut opts = (*opts_arc).clone();
 
-            if crate::signals::should_stop() {
-                return HostExecResult {
-                    name,
-                    ok: false,
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: "cancelled".into(),
-                    duration_ms: 0,
-                    error: Some("operation cancelled by signal".into()),
-                };
-            }
-            apply_overrides(
-                &mut vps,
-                opts.password.take(),
-                opts.sudo_password.take(),
-                opts.su_password.take(),
-                opts.timeout,
-                opts.key.take(),
-                opts.key_passphrase.take(),
-                opts.use_agent,
-                opts.agent_socket.take(),
-            );
-            let cmd = append_description(&cmd_base, opts.description.as_deref());
-            if let Err(e) = validate_command_length(&cmd, vps.max_command_chars.wire()) {
-                return HostExecResult {
-                    name,
-                    ok: false,
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: e.to_string(),
-                    duration_ms: 0,
-                    error: Some(e.to_string()),
-                };
-            }
-            match kind {
-                ExecKind::Sudo | ExecKind::Su if opts.disable_sudo || vps.disable_sudo => {
+                if crate::signals::should_stop() {
                     return HostExecResult {
                         name,
                         ok: false,
                         exit_code: None,
                         stdout: String::new(),
-                        stderr: "sudo/su disabled".into(),
+                        stderr: "cancelled".into(),
                         duration_ms: 0,
-                        error: Some("sudo/su disabled".into()),
+                        error: Some("operation cancelled by signal".into()),
                     };
                 }
-                _ => {}
-            }
-            let start = std::time::Instant::now();
-            let run = async {
-                let cfg = build_connection_config(&vps, Some(&path_c), replace);
-                let mut client: Box<dyn SshClientTrait> =
-                    <SshClient as SshClientTrait>::connect(cfg).await?;
-                let max_out = effective_limit(vps.max_output_chars.wire());
-                let output = match kind {
-                    ExecKind::Plain => client.run_command(&cmd, max_out, None).await?,
-                    ExecKind::Sudo => {
-                        let mut pack = pack_sudo(&cmd, vps.sudo_password.as_ref());
-                        let stdin = pack.take_stdin();
-                        client.run_command(&pack.command, max_out, stdin).await?
-                    }
-                    ExecKind::Su => {
-                        let su_pw = vps
-                            .su_password
-                            .take()
-                            .ok_or(SshCliError::SuPasswordMissing)?;
-                        let mut pack = pack_su(&cmd, &su_pw);
-                        let stdin = pack.take_stdin();
-                        client.run_command(&pack.command, max_out, stdin).await?
-                    }
-                };
-                let _ = client.disconnect().await;
-                Ok::<_, SshCliError>(output)
-            }
-            .await;
-            let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
-            match run {
-                Ok(output) => {
-                    let code_ok = output.exit_code.unwrap_or(0) == 0;
-                    HostExecResult {
+                apply_overrides(
+                    &mut vps,
+                    opts.password.take(),
+                    opts.sudo_password.take(),
+                    opts.su_password.take(),
+                    opts.timeout,
+                    opts.key.take(),
+                    opts.key_passphrase.take(),
+                    opts.use_agent,
+                    opts.agent_socket.take(),
+                );
+                let cmd = append_description(&cmd_base, opts.description.as_deref());
+                if let Err(e) = validate_command_length(&cmd, vps.max_command_chars.wire()) {
+                    return HostExecResult {
                         name,
-                        ok: code_ok,
-                        exit_code: output.exit_code,
-                        stdout: output.stdout,
-                        stderr: output.stderr,
-                        duration_ms,
-                        error: if code_ok {
-                            None
-                        } else {
-                            Some(format!(
-                                "exit {}",
-                                output.exit_code.unwrap_or(-1)
-                            ))
-                        },
-                    }
+                        ok: false,
+                        exit_code: None,
+                        stdout: String::new(),
+                        stderr: e.to_string(),
+                        duration_ms: 0,
+                        error: Some(e.to_string()),
+                    };
                 }
-                Err(e) => HostExecResult {
-                    name,
-                    ok: false,
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: e.to_string(),
-                    duration_ms,
-                    error: Some(e.to_string()),
-                },
+                match kind {
+                    ExecKind::Sudo | ExecKind::Su if opts.disable_sudo || vps.disable_sudo => {
+                        return HostExecResult {
+                            name,
+                            ok: false,
+                            exit_code: None,
+                            stdout: String::new(),
+                            stderr: "sudo/su disabled".into(),
+                            duration_ms: 0,
+                            error: Some("sudo/su disabled".into()),
+                        };
+                    }
+                    _ => {}
+                }
+                let start = std::time::Instant::now();
+                let run = async {
+                    let cfg = build_connection_config(&vps, Some(&path_c), replace);
+                    let mut client: Box<dyn SshClientTrait> =
+                        <SshClient as SshClientTrait>::connect(cfg).await?;
+                    let max_out = effective_limit(vps.max_output_chars.wire());
+                    let output = match kind {
+                        ExecKind::Plain => client.run_command(&cmd, max_out, None).await?,
+                        ExecKind::Sudo => {
+                            let mut pack = pack_sudo(&cmd, vps.sudo_password.as_ref());
+                            let stdin = pack.take_stdin();
+                            client.run_command(&pack.command, max_out, stdin).await?
+                        }
+                        ExecKind::Su => {
+                            let su_pw = vps
+                                .su_password
+                                .take()
+                                .ok_or(SshCliError::SuPasswordMissing)?;
+                            let mut pack = pack_su(&cmd, &su_pw);
+                            let stdin = pack.take_stdin();
+                            client.run_command(&pack.command, max_out, stdin).await?
+                        }
+                    };
+                    let _ = client.disconnect().await;
+                    Ok::<_, SshCliError>(output)
+                }
+                .await;
+                let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+                match run {
+                    Ok(output) => {
+                        let code_ok = output.exit_code.unwrap_or(0) == 0;
+                        HostExecResult {
+                            name,
+                            ok: code_ok,
+                            exit_code: output.exit_code,
+                            stdout: output.stdout,
+                            stderr: output.stderr,
+                            duration_ms,
+                            error: if code_ok {
+                                None
+                            } else {
+                                Some(format!("exit {}", output.exit_code.unwrap_or(-1)))
+                            },
+                        }
+                    }
+                    Err(e) => HostExecResult {
+                        name,
+                        ok: false,
+                        exit_code: None,
+                        stdout: String::new(),
+                        stderr: e.to_string(),
+                        duration_ms,
+                        error: Some(e.to_string()),
+                    },
+                }
             }
-        }
-    },
+        },
         |h: &HostExecResult| !h.ok,
     )
     .await;

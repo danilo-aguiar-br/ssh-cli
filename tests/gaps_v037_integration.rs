@@ -266,7 +266,10 @@ fn gap_sec_002_mask_sempre_asteriscos() {
         .args(["vps", "show", "maskhost", "--json"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"password\":\"***\"").or(predicate::str::contains("\"password\":\"***\"")))
+        .stdout(
+            predicate::str::contains("\"password\":\"***\"")
+                .or(predicate::str::contains("\"password\":\"***\"")),
+        )
         .stdout(predicate::str::contains("fake-test-password").not());
 }
 

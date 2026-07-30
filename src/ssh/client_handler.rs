@@ -69,10 +69,7 @@ impl russh::client::Handler for ClientHandler {
         &mut self,
         server_key: &russh::keys::ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        let fingerprint = format!(
-            "{}",
-            server_key.fingerprint(russh::keys::HashAlg::Sha256)
-        );
+        let fingerprint = format!("{}", server_key.fingerprint(russh::keys::HashAlg::Sha256));
 
         // `take`: host-key check runs once per connection; move path, no clone.
         let Some(path) = self.known_hosts_path.take() else {

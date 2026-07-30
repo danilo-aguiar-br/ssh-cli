@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Testes property-based com proptest.
 
+use clap::Parser;
 use proptest::prelude::*;
 use ssh_cli::cli::CliArgs;
 use ssh_cli::masking::mask;
-use clap::Parser;
 
 proptest! {
     // ---------- mask (GAP-SSH-SEC-002: sempre "***") ----------
@@ -70,7 +70,6 @@ proptest! {
         }
     }
 }
-
 
 proptest! {
     /// G-O5: shell escape never panics.

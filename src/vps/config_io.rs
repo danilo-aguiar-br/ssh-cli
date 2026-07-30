@@ -287,10 +287,7 @@ mod tests {
     #[test]
     fn resolve_config_path_with_dir_override() {
         let result = resolve_config_path(Some(Path::new("/tmp/test-dir")));
-        assert_eq!(
-            result.unwrap(),
-            PathBuf::from("/tmp/test-dir/config.toml")
-        );
+        assert_eq!(result.unwrap(), PathBuf::from("/tmp/test-dir/config.toml"));
     }
 
     #[test]

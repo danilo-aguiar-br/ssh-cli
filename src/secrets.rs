@@ -19,10 +19,9 @@
 //! **Never** log or return the key or plaintext in public errors.
 
 use crate::constants::{
-    AEAD_NONCE_LEN_BYTES, AEAD_TAG_LEN_BYTES, APP_NAME,
-    ENV_SECRETS_KEY, ENV_SECRETS_KEY_FILE, KEYRING_SERVICE, KEYRING_USER_LEGACY,
-    KEYRING_USER_PRIMARY, PRIMARY_KEY_HEX_LEN, PRIMARY_KEY_LEN_BYTES,
-    SECRETS_KEY_FILE_NAME,
+    AEAD_NONCE_LEN_BYTES, AEAD_TAG_LEN_BYTES, APP_NAME, ENV_SECRETS_KEY, ENV_SECRETS_KEY_FILE,
+    KEYRING_SERVICE, KEYRING_USER_LEGACY, KEYRING_USER_PRIMARY, PRIMARY_KEY_HEX_LEN,
+    PRIMARY_KEY_LEN_BYTES, SECRETS_KEY_FILE_NAME,
 };
 use crate::errors::{SshCliError, SshCliResult};
 use chacha20poly1305::aead::{Aead, KeyInit};
@@ -172,7 +171,6 @@ pub fn plaintext_allowed() -> bool {
     lock_global(&RUNTIME_FLAGS).allow_plaintext
 }
 
-
 /// Config directory used for `secrets.key` (CLI/test override > XDG).
 ///
 /// # Errors
@@ -197,19 +195,16 @@ pub fn load_primary_key() -> SshCliResult<(Option<[u8; PRIMARY_KEY_LEN_BYTES]>, 
     // CLI flag: --secrets-key-file
     let secrets_key_file = lock_global(&RUNTIME_FLAGS).secrets_key_file.clone();
     if let Some(path) = secrets_key_file {
-        let mut text = crate::paths::read_text_capped(
-            &path,
-            crate::paths::MAX_SECRETS_KEY_FILE_BYTES,
-        )
-        .map_err(|e| {
-            SshCliError::InvalidArgument(format!(
-                "failed reading --secrets-key-file {}: {e}",
-                path.display()
-            ))
-        })?;
-        let key = parse_hex_key(text.trim()).map_err(|e| {
-            SshCliError::InvalidArgument(format!("invalid --secrets-key-file: {e}"))
-        });
+        let mut text =
+            crate::paths::read_text_capped(&path, crate::paths::MAX_SECRETS_KEY_FILE_BYTES)
+                .map_err(|e| {
+                    SshCliError::InvalidArgument(format!(
+                        "failed reading --secrets-key-file {}: {e}",
+                        path.display()
+                    ))
+                })?;
+        let key = parse_hex_key(text.trim())
+            .map_err(|e| SshCliError::InvalidArgument(format!("invalid --secrets-key-file: {e}")));
         text.zeroize();
         return Ok((Some(key?), KeySource::ConfigFile));
     }
@@ -237,13 +232,11 @@ pub fn load_primary_key() -> SshCliResult<(Option<[u8; PRIMARY_KEY_LEN_BYTES]>, 
 
     let path = secrets_key_path()?;
     if path.is_file() {
-        let mut text = crate::paths::read_text_capped(
-            &path,
-            crate::paths::MAX_SECRETS_KEY_FILE_BYTES,
-        )
-        .map_err(|e| {
-            SshCliError::Config(format!("failed reading {}: {e}", path.display()))
-        })?;
+        let mut text =
+            crate::paths::read_text_capped(&path, crate::paths::MAX_SECRETS_KEY_FILE_BYTES)
+                .map_err(|e| {
+                    SshCliError::Config(format!("failed reading {}: {e}", path.display()))
+                })?;
         let key = parse_hex_key(text.trim())
             .map_err(|e| SshCliError::InvalidArgument(format!("invalid {KEY_FILE_NAME}: {e}")));
         text.zeroize();
@@ -274,8 +267,8 @@ pub fn ensure_key_for_write() -> SshCliResult<(Option<[u8; PRIMARY_KEY_LEN_BYTES
         path = %path.display(),
         "secrets.key auto-created (event secrets-key-auto-created)"
     );
-    let key = parse_hex_key(&hex)
-        .map_err(|e| SshCliError::Config(format!("invalid generated key: {e}")));
+    let key =
+        parse_hex_key(&hex).map_err(|e| SshCliError::Config(format!("invalid generated key: {e}")));
     hex.zeroize();
     Ok((Some(key?), KeySource::XdgFile))
 }
@@ -466,8 +459,8 @@ fn parse_hex_key(hex: &str) -> Result<[u8; PRIMARY_KEY_LEN_BYTES], String> {
 }
 
 fn encrypt_secret(key: &[u8; PRIMARY_KEY_LEN_BYTES], plaintext: &str) -> SshCliResult<String> {
-    let cipher = ChaCha20Poly1305::new_from_slice(key)
-        .map_err(|_| SshCliError::crypto("aead_key"))?;
+    let cipher =
+        ChaCha20Poly1305::new_from_slice(key).map_err(|_| SshCliError::crypto("aead_key"))?;
     let mut nonce_bytes = [0u8; AEAD_NONCE_LEN_BYTES];
     getrandom::getrandom(&mut nonce_bytes)
         .map_err(|e| SshCliError::Config(format!("RNG failed: {e}")))?;
@@ -491,17 +484,15 @@ fn decrypt_secret(key: &[u8; PRIMARY_KEY_LEN_BYTES], blob: &str) -> SshCliResult
     let packed = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
         .map_err(|_| SshCliError::crypto("blob_b64"))?;
     if packed.len() < AEAD_NONCE_LEN_BYTES + AEAD_TAG_LEN_BYTES {
-        return Err(SshCliError::Config(
-            "encrypted blob too short".to_string(),
-        ));
+        return Err(SshCliError::Config("encrypted blob too short".to_string()));
     }
     let (nonce_bytes, ct) = packed.split_at(AEAD_NONCE_LEN_BYTES);
-    let cipher = ChaCha20Poly1305::new_from_slice(key)
-        .map_err(|_| SshCliError::crypto("aead_key"))?;
+    let cipher =
+        ChaCha20Poly1305::new_from_slice(key).map_err(|_| SshCliError::crypto("aead_key"))?;
     let nonce = Nonce::from_slice(nonce_bytes);
-    let plain = cipher.decrypt(nonce, ct).map_err(|_| {
-        SshCliError::crypto("decrypt")
-    })?;
+    let plain = cipher
+        .decrypt(nonce, ct)
+        .map_err(|_| SshCliError::crypto("decrypt"))?;
     match String::from_utf8(plain) {
         Ok(s) => Ok(s),
         Err(e) => {
@@ -522,7 +513,9 @@ fn read_keyring() -> SshCliResult<Option<[u8; PRIMARY_KEY_LEN_BYTES]>> {
             Ok(e) => e,
             Err(e) => {
                 if user == "secrets-master-key" {
-                    return Err(SshCliError::Config(format!("keyring Entry::new failed: {e}")));
+                    return Err(SshCliError::Config(format!(
+                        "keyring Entry::new failed: {e}"
+                    )));
                 }
                 continue;
             }
@@ -646,10 +639,10 @@ mod tests {
     #[test]
     fn parse_hex_tamanho() {
         assert!(parse_hex_key("aa").is_err());
-        assert!(parse_hex_key(
-            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
-        )
-        .is_ok());
+        assert!(
+            parse_hex_key("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
+                .is_ok()
+        );
     }
 
     #[test]

@@ -66,12 +66,12 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task::{Id as TaskId, JoinError, JoinSet};
 
-/// Minimum concurrency (always at least one in-flight op).
-pub use crate::constants::MIN_CONCURRENCY;
 /// Hard upper bound — protects FD / RAM even on huge hosts (G-AUD-19/23).
 pub use crate::constants::HARD_CAP;
 /// Async I/O may oversubscribe cores (SSH waits on RTT, not CPU).
 pub use crate::constants::IO_OVERSUBSCRIBE;
+/// Minimum concurrency (always at least one in-flight op).
+pub use crate::constants::MIN_CONCURRENCY;
 /// When free RAM cannot be read (non-Linux), cap CPU×IO budget conservatively
 /// so low-RAM hosts do not open `cpus×4` sessions blindly (G-PAR-25).
 pub use crate::constants::NON_LINUX_CPU_CAP;
@@ -104,7 +104,10 @@ static CURRENT_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
 pub fn install_process_limit(limit: usize) {
     let capped = limit.clamp(MIN_CONCURRENCY, HARD_CAP);
     let _ = PROCESS_LIMIT.set(capped);
-    tracing::debug!(max_concurrency = capped, "installed process concurrency limit");
+    tracing::debug!(
+        max_concurrency = capped,
+        "installed process concurrency limit"
+    );
 }
 
 /// Install global fail-fast policy (G-O1). Default: false (partial success).
@@ -125,13 +128,19 @@ pub fn fail_fast_enabled() -> bool {
 pub fn install_scp_file_concurrency(n: usize) {
     let capped = n.clamp(MIN_CONCURRENCY, HARD_CAP);
     let _ = SCP_FILE_CONCURRENCY.set(capped);
-    tracing::debug!(scp_file_concurrency = capped, "installed scp file concurrency");
+    tracing::debug!(
+        scp_file_concurrency = capped,
+        "installed scp file concurrency"
+    );
 }
 
 /// Effective SCP per-session file concurrency (default 1).
 #[must_use]
 pub fn scp_file_concurrency() -> usize {
-    SCP_FILE_CONCURRENCY.get().copied().unwrap_or(MIN_CONCURRENCY)
+    SCP_FILE_CONCURRENCY
+        .get()
+        .copied()
+        .unwrap_or(MIN_CONCURRENCY)
 }
 
 /// Effective concurrency for this process.
@@ -210,11 +219,7 @@ pub fn free_ram_bytes() -> Option<u64> {
         let text = std::fs::read_to_string("/proc/meminfo").ok()?;
         for line in text.lines() {
             if let Some(rest) = line.strip_prefix("MemAvailable:") {
-                let kb: u64 = rest
-                    .split_whitespace()
-                    .next()?
-                    .parse()
-                    .ok()?;
+                let kb: u64 = rest.split_whitespace().next()?.parse().ok()?;
                 return Some(kb.saturating_mul(1024));
             }
         }
@@ -465,7 +470,6 @@ where
     results
 }
 
-
 fn push_joined<R>(
     results: &mut Vec<IndexedResult<R>>,
     task_index: &mut HashMap<TaskId, usize>,
@@ -543,7 +547,6 @@ where
     }
     out
 }
-
 
 #[cfg(test)]
 #[path = "concurrency_tests.rs"]

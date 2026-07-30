@@ -52,8 +52,8 @@ use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};
 
 use crate::constants::{
-    AGENT_RETRY_BASE_MS, AGENT_RETRY_MAX_DELAY_MS, AGENT_RETRY_MAX_RETRIES, HARD_RETRY_MAX_DELAY_MS,
-    HARD_RETRY_MAX_RETRIES,
+    AGENT_RETRY_BASE_MS, AGENT_RETRY_MAX_DELAY_MS, AGENT_RETRY_MAX_RETRIES,
+    HARD_RETRY_MAX_DELAY_MS, HARD_RETRY_MAX_RETRIES,
 };
 use crate::errors::exit_codes;
 
@@ -107,10 +107,7 @@ impl RetryConfig {
         } else {
             self.base_ms
         };
-        let max_delay_ms = self
-            .max_delay_ms
-            .min(HARD_RETRY_MAX_DELAY_MS)
-            .max(base_ms);
+        let max_delay_ms = self.max_delay_ms.min(HARD_RETRY_MAX_DELAY_MS).max(base_ms);
         let max_retries = self.max_retries.min(HARD_RETRY_MAX_RETRIES);
         let enabled = self.enabled && max_retries > 0;
         Self {

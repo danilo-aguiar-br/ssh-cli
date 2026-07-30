@@ -101,10 +101,7 @@ pub fn print_details_text(r: &VpsRecord) {
     } else {
         mask(r.password.expose_secret())
     };
-    let key_path_owned = r
-        .key_path
-        .as_ref()
-        .map(|k| k.to_string_lossy_owned());
+    let key_path_owned = r.key_path.as_ref().map(|k| k.to_string_lossy_owned());
     let key_path = key_path_owned.as_deref().unwrap_or("(not set)");
     let sudo = r
         .sudo_password
@@ -161,11 +158,7 @@ pub fn print_execution_output(output: &ExecutionOutput) {
                 "--- exit code: {} ({}ms) ---",
                 code, output.duration_ms
             )?,
-            None => writeln!(
-                out,
-                "--- exit code: N/A ({}ms) ---",
-                output.duration_ms
-            )?,
+            None => writeln!(out, "--- exit code: N/A ({}ms) ---", output.duration_ms)?,
         }
         // G-IO-04: technical English only on stdout (agent contract).
         if output.truncated_stdout {
@@ -196,4 +189,3 @@ pub fn print_health_check(name: &str, latency_ms: u64) {
         out.flush()
     })();
 }
-

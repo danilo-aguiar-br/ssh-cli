@@ -1,7 +1,7 @@
 # JSON Schemas Index
 
 ## English
-- This directory versions machine-readable JSON contracts for ssh-cli stdout/stderr payloads (**0.5.2**).
+- This directory versions machine-readable JSON contracts for ssh-cli stdout/stderr payloads (**0.5.3**).
 - **Runtime discovery:** `ssh-cli schema` lists the embedded catalog; `ssh-cli schema <name>` emits one schema body (G-E2E-02). Root `ssh-cli doctor` is an alias of `vps doctor` (G-E2E-03).
 - **Wire format:** classic single-root JSON (RFC 8259 object or array) — **not** NDJSON/JSONL. Emit is **compact** (one line + trailing LF), UTF-8 without BOM. Pretty-print is not part of the agent contract.
 - Host wire inventory on disk uses **schema v3** (English serialize + dual-read Portuguese aliases); JSON schemas here contract CLI stdout/stderr, not the full TOML host file.
@@ -20,23 +20,24 @@
 - `scp-batch.schema.json` contracts `ssh-cli scp upload|download --all --json` (`event: "scp-batch"`).
 - Optional CLI `--timeout` on `health-check` does not change response schema fields.
 - Global `--max-concurrency N` (CLI-only; auto formula when omitted) bounds multi-host fan-out and tunnel forwards (not a JSON field except `max_concurrency` inside batch envelopes).
-- `scp-transfer.schema.json` contracts `ssh-cli scp upload|download --json` **success on stdout** (regular files only; no directories / no `-r`); required field `event: "scp-transfer"` (IO-009 from 0.4.x retained in product line **0.5.2**).
-- `sftp-transfer.schema.json` contracts `ssh-cli sftp upload|download --json` (`event: "sftp-transfer"`; optional `recursive`).
+- `scp-transfer.schema.json` contracts `ssh-cli scp upload|download --json` **success on stdout** (regular files only; no directories / no `-r`); required field `event: "scp-transfer"` (IO-009 from 0.4.x retained in product line **0.5.3**).
+- `sftp-transfer.schema.json` contracts `ssh-cli sftp upload|download --json` (`event: "sftp-transfer"`; optional `recursive`). Prefer product line **0.5.3+** (G1 upload integrity). Runtime notes not encoded as schema fields: SETSTAT sends atime+mtime together (G3); mutating set_metadata is fail-closed (G4); permission bits use named `SFTP_PERM_MASK` `0o7777` (G12/G19); SFTP download local `set_permissions` is fail-closed (G18).
 - `sftp-list.schema.json` contracts `ssh-cli sftp ls --json` (`event: "sftp-list"`).
 - `sftp-fs-op.schema.json` contracts `ssh-cli sftp mkdir|rmdir|rm|rename|stat --json` (`event: "sftp-fs-op"`).
-- `sftp-batch.schema.json` contracts `ssh-cli sftp upload|download --all|--hosts --json` (`event: "sftp-batch"`).
+- `sftp-batch.schema.json` contracts `ssh-cli sftp upload|download --all|--hosts --json` (`event: "sftp-batch"`). On cancel, multi-file/batch results keep input cardinality (G5/G17) — cancelled remainder filled so `results.len() == input.len()`.
 - `tunnel-listening.schema.json` contracts the post-bind stdout event for `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`). After `tunnel_listening`, one-shot post-bind deadline is process exit **0** (not a schema field; see AGENTS / TUN-002). Pre-bind timeout remains **74**.
-- `vps-export.schema.json` contracts **only** `ssh-cli vps export --json` (`event: "vps-export"`, redacted by default; GAP-SSH-UX-001 / **0.5.2**). Default `vps export` body is **TOML** (even on pipe/non-TTY) — not this schema.
+- `vps-export.schema.json` contracts **only** `ssh-cli vps export --json` (`event: "vps-export"`, redacted by default; GAP-SSH-UX-001 / **0.5.3**). Default `vps export` body is **TOML** (even on pipe/non-TTY) — not this schema.
 - `secrets-init.schema.json` contracts `ssh-cli secrets init --json` (`event: "secrets-init"`).
 - `secrets-reencrypt.schema.json` contracts `ssh-cli secrets reencrypt --json` (`event: "secrets-reencrypt"`).
 - `error-envelope.schema.json` contracts **stderr** failure payloads when JSON errors mode is active (`--json` / global `--output-format json` / effective JSON on scp and tunnel): fields `exit_code`, `message`, optional `remote_exit_code`.
 - Secrets in list/show payloads: empty password is JSON `null` (key-only hosts); non-empty password is the masked string `***` (`FIXED_MASK`), never raw credentials. Redacted `vps export --json` uses the same `***` for non-empty secrets (empty stay `""`) (G-E2E-10).
 - There is no schema for `secrets status` key material (command never emits the primary key); treat status JSON as non-sensitive metadata only. Keyring may still accept the legacy `secrets-master-key` read alias.
 - CRUD success events (`vps-added`, …) may appear without dedicated schema files; on first secret write the **same** `vps-added` document may include boolean `secrets_key_auto_created` (never a second stdout event). Parsers should treat the `event` field as discriminator.
+- Discovery envelopes: `ssh-cli commands` emits `event: "commands"` and `ssh-cli schema` emits `event: "schema-catalog"` (catalog list). No dedicated `.schema.json` files are required for those discovery envelopes — parse via the `event` discriminator.
 - `telemetry` in doctor output is always false.
 
 ## Português Brasileiro
-- Este diretório versiona contratos JSON legíveis por máquina para payloads stdout/stderr do ssh-cli (**0.5.2**).
+- Este diretório versiona contratos JSON legíveis por máquina para payloads stdout/stderr do ssh-cli (**0.5.3**).
 - **Descoberta em runtime:** `ssh-cli schema` lista o catálogo embarcado; `ssh-cli schema <name>` emite um schema (G-E2E-02). Root `ssh-cli doctor` é alias de `vps doctor` (G-E2E-03).
 - **Formato wire:** JSON clássico de raiz única (RFC 8259 objeto ou array) — **não** NDJSON/JSONL. Emissão **compacta** (uma linha + LF final), UTF-8 sem BOM. Pretty-print não faz parte do contrato agent-first.
 - O inventário wire em disco usa **schema v3** (serialização em inglês + dual-read de aliases em português); os JSON schemas aqui contratam stdout/stderr da CLI, não o arquivo TOML completo de hosts.
@@ -53,19 +54,20 @@
 - `health-check-batch.schema.json` cobre `ssh-cli health-check --all --json` (`event: "health-check-batch"`).
 - `exec-batch.schema.json` cobre `ssh-cli exec|sudo-exec|su-exec --all --json` (`event: "exec-batch"`).
 - `scp-batch.schema.json` cobre `ssh-cli scp upload|download --all --json` (`event: "scp-batch"`).
-- `sftp-transfer.schema.json` cobre `ssh-cli sftp upload|download --json` (`event: "sftp-transfer"`; `recursive` opcional).
+- `sftp-transfer.schema.json` cobre `ssh-cli sftp upload|download --json` (`event: "sftp-transfer"`; `recursive` opcional). Prefira linha de produto **0.5.3+** (integridade de upload G1). Notas de runtime não codificadas como campos de schema: SETSTAT envia atime+mtime juntos (G3); set_metadata mutante é fail-closed (G4); bits de permissão usam `SFTP_PERM_MASK` nomeado `0o7777` (G12/G19); `set_permissions` local no download SFTP é fail-closed (G18).
 - `sftp-list.schema.json` cobre `ssh-cli sftp ls --json` (`event: "sftp-list"`).
 - `sftp-fs-op.schema.json` cobre `ssh-cli sftp mkdir|rmdir|rm|rename|stat --json` (`event: "sftp-fs-op"`).
-- `sftp-batch.schema.json` cobre `ssh-cli sftp upload|download --all|--hosts --json` (`event: "sftp-batch"`).
+- `sftp-batch.schema.json` cobre `ssh-cli sftp upload|download --all|--hosts --json` (`event: "sftp-batch"`). Em cancel, resultados multi-arquivo/batch mantêm a cardinalidade de entrada (G5/G17) — resto cancelado preenchido para `results.len() == input.len()`.
 - O CLI opcional `--timeout` em `health-check` não altera os campos do schema de resposta.
 - Global `--max-concurrency N` (só CLI; fórmula auto quando omitido) limita fan-out multi-host e forwards de tunnel (`max_concurrency` nos envelopes batch).
-- `scp-transfer.schema.json` cobre sucesso em **stdout** de `ssh-cli scp upload|download --json` (somente arquivos regulares; sem diretórios / sem `-r`). Para árvores/FS use `sftp-*` schemas. O campo `event: "scp-transfer"` é **obrigatório** (IO-009 de 0.4.x retido na linha de produto **0.5.2**).
+- `scp-transfer.schema.json` cobre sucesso em **stdout** de `ssh-cli scp upload|download --json` (somente arquivos regulares; sem diretórios / sem `-r`). Para árvores/FS use `sftp-*` schemas. O campo `event: "scp-transfer"` é **obrigatório** (IO-009 de 0.4.x retido na linha de produto **0.5.3**).
 - `tunnel-listening.schema.json` cobre o evento pós-bind em stdout de `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`). Após `tunnel_listening`, o deadline one-shot pós-bind é exit **0** do processo (não é campo de schema; ver AGENTS / TUN-002). Timeout pré-bind permanece **74**.
-- `vps-export.schema.json` cobre **somente** `ssh-cli vps export --json` (`event: "vps-export"`, redacted por omissão; GAP-SSH-UX-001 / **0.5.2**). O corpo padrão de `vps export` é **TOML** (mesmo em pipe/non-TTY) — não este schema.
+- `vps-export.schema.json` cobre **somente** `ssh-cli vps export --json` (`event: "vps-export"`, redacted por omissão; GAP-SSH-UX-001 / **0.5.3**). O corpo padrão de `vps export` é **TOML** (mesmo em pipe/non-TTY) — não este schema.
 - `secrets-init.schema.json` cobre `ssh-cli secrets init --json` (`event: "secrets-init"`).
 - `secrets-reencrypt.schema.json` cobre `ssh-cli secrets reencrypt --json` (`event: "secrets-reencrypt"`).
 - `error-envelope.schema.json` cobre payloads de falha em **stderr** quando o modo de erros JSON está ativo (`--json` / `--output-format json` global / JSON efetivo em scp e tunnel): campos `exit_code`, `message`, opcional `remote_exit_code`.
 - Segredos em list/show: senha vazia é JSON `null` (hosts só-chave); senha não vazia é a string mascarada `***` (`FIXED_MASK`), nunca credenciais cruas. `vps export --json` redacted usa o mesmo `***` para segredos não vazios (vazios ficam `""`) (G-E2E-10).
 - Não há schema de material de chave de `secrets status` (o comando nunca emite a primary-key); trate o JSON de status como metadado não sensível. O keyring ainda pode aceitar o alias legado de leitura `secrets-master-key`.
 - Eventos de sucesso CRUD (`vps-added`, …) podem aparecer sem arquivos de schema dedicados; na 1ª gravação o **mesmo** documento `vps-added` pode incluir o booleano `secrets_key_auto_created` (nunca um segundo evento no stdout). Parsers devem tratar o campo `event` como discriminador.
+- Envelopes de descoberta: `ssh-cli commands` emite `event: "commands"` e `ssh-cli schema` emite `event: "schema-catalog"` (lista do catálogo). Não há arquivos `.schema.json` dedicados obrigatórios para esses envelopes de descoberta — parseie via discriminador `event`.
 - `telemetry` no doctor é sempre false.

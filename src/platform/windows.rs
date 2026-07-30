@@ -64,16 +64,13 @@ fn configure_utf8_codepage() {
 /// agents and redirected handles often reject mode changes).
 #[cfg(target_os = "windows")]
 fn enable_virtual_terminal_processing() {
+    use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Console::{
         GetConsoleMode, GetStdHandle, SetConsoleMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING,
         STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
     };
-    use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
 
-    for (handle_id, label) in [
-        (STD_OUTPUT_HANDLE, "stdout"),
-        (STD_ERROR_HANDLE, "stderr"),
-    ] {
+    for (handle_id, label) in [(STD_OUTPUT_HANDLE, "stdout"), (STD_ERROR_HANDLE, "stderr")] {
         // SAFETY: GetStdHandle with STD_* constants is documented Win32; returns
         // INVALID_HANDLE_VALUE when the handle is unavailable (e.g. fully detached).
         let handle: HANDLE = unsafe { GetStdHandle(handle_id) };

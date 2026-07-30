@@ -86,38 +86,38 @@ pub mod commands;
 pub mod concurrency;
 /// Named domain constants (XDG file names, env keys, network/timing defaults).
 pub mod constants;
-/// TCP dial (async DNS + Happy Eyeballs multi-address connect).
-pub mod net;
+/// Domain newtypes (parse, don't validate — G-TYPE / G-DOM 4-crates).
+pub mod domain;
 /// Canonical error module name per clap layout rules (`error.rs`).
 pub mod error;
 /// Structured error types (`thiserror`) and sysexits-style exit codes.
 pub mod errors;
-/// Explicit retry policy + full-jitter backoff (agent re-invoke; opt-in in-process).
-pub mod retry;
+/// Unix secret file/dir permission helpers (G-AUD-24).
+pub mod fs_perm;
 pub mod i18n;
 pub mod json_wire;
 pub mod locale;
 pub mod masking;
+/// TCP dial (async DNS + Happy Eyeballs multi-address connect).
+pub mod net;
 pub mod output;
 pub mod paths;
-/// Unix secret file/dir permission helpers (G-AUD-24).
-pub mod fs_perm;
 pub mod platform;
+/// Explicit retry policy + full-jitter backoff (agent re-invoke; opt-in in-process).
+pub mod retry;
 pub mod scp;
-pub mod sftp;
 pub mod secrets;
+pub mod sftp;
 pub mod signals;
 pub mod ssh;
-/// rustls TLS stack (SSH-over-TLS, mTLS, ACME) — feature `tls` (default).
-pub mod tls;
 /// Process-local tracing subscriber (binary path only; libraries only emit).
 pub mod telemetry;
 pub mod terminal;
+/// rustls TLS stack (SSH-over-TLS, mTLS, ACME) — feature `tls` (default).
+pub mod tls;
 pub mod tunnel;
 /// Shared parse→validate pipeline for external config/import (G-SERDE-07).
 pub mod validation;
-/// Domain newtypes (parse, don't validate — G-TYPE / G-DOM 4-crates).
-pub mod domain;
 pub mod vps;
 
 /// Test-only helpers (env mutation with SAFETY). Not linked into release builds.
@@ -451,10 +451,7 @@ mod resolve_exit_tests {
 
     #[test]
     fn resolve_broken_pipe_is_141() {
-        let err = SshCliError::Io(std::io::Error::new(
-            std::io::ErrorKind::BrokenPipe,
-            "pipe",
-        ));
+        let err = SshCliError::Io(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe"));
         // Prefer signal exit if a concurrent test set flags; otherwise EPIPE.
         let code = resolve_exit_code(Err(err.into()));
         assert!(

@@ -73,9 +73,7 @@ fn main() {
         Err(e) => {
             // Bootstrap path: lib not yet initialized; stderr is the only channel.
             // G-MAC-01: format_args + write_fmt (no temporary String).
-            let _ = ssh_cli::output::print_error_fmt(format_args!(
-                "failed to create runtime: {e}"
-            ));
+            let _ = ssh_cli::output::print_error_fmt(format_args!("failed to create runtime: {e}"));
             std::process::exit(ssh_cli::errors::exit_codes::EX_IOERR);
         }
     };

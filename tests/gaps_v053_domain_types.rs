@@ -66,7 +66,8 @@ fn g_dom_01_four_crates_declared_with_features() {
     );
     // url crate line (not just docs URL)
     assert!(
-        toml.lines().any(|l| l.trim_start().starts_with("url =") && l.contains("serde")),
+        toml.lines()
+            .any(|l| l.trim_start().starts_with("url =") && l.contains("serde")),
         "url crate with serde feature required"
     );
 }
@@ -120,7 +121,10 @@ fn g_dom_05_batch_run_id_on_wire() {
     let wire = fs::read_to_string(workspace_root().join("src/json_wire/mod.rs")).unwrap()
         + &fs::read_to_string(workspace_root().join("src/json_wire/execution.rs")).unwrap()
         + &fs::read_to_string(workspace_root().join("src/json_wire/emit.rs")).unwrap();
-    assert!(wire.contains("batch_run_id"), "batch envelopes need batch_run_id");
+    assert!(
+        wire.contains("batch_run_id"),
+        "batch envelopes need batch_run_id"
+    );
     let batch = fs::read_to_string(workspace_root().join("src/output/batch.rs")).unwrap();
     assert!(
         batch.contains("BatchRunId"),
@@ -161,10 +165,10 @@ fn g_dom_08_money_not_on_vps_record() {
 
 #[test]
 fn g_dom_runtime_types_smoke() {
-    use ssh_cli::domain::{
-        AcmeOrderUrl, BatchRunId, CorrelationId, HttpsUrl, Money, Rfc3339Utc, Brl,
-    };
     use rust_decimal::dec;
+    use ssh_cli::domain::{
+        AcmeOrderUrl, BatchRunId, Brl, CorrelationId, HttpsUrl, Money, Rfc3339Utc,
+    };
 
     let t = Rfc3339Utc::try_new("2024-06-01T12:00:00Z").unwrap();
     assert!(t.to_rfc3339().starts_with("2024-06-01T12:00:00"));

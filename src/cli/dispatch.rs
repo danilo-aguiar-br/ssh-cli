@@ -7,8 +7,8 @@
 
 use super::{
     command_tree_json, effective_timeout_ms, generate_completions, parse_exec_target,
-    parse_hosts_list, parse_remote_steps, read_stdin_if, warn_if_password_argv, CliArgs,
-    Command, LocaleAction, OutputFormat, ScpAction, SftpAction,
+    parse_hosts_list, parse_remote_steps, read_stdin_if, warn_if_password_argv, CliArgs, Command,
+    LocaleAction, OutputFormat, ScpAction, SftpAction,
 };
 use anyhow::Result;
 
@@ -59,7 +59,7 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
         Command::Connect { name } => {
             // Sequential: writes active marker only (no SSH fan-out).
             crate::vps::run_connect(&name, config_override, formato).await
-        },
+        }
         Command::Exec {
             all,
             hosts,
@@ -87,10 +87,9 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             })?;
             let key = auth.key_path_string();
             let password = read_stdin_if(auth.password_stdin, auth.password)?;
-            let key_passphrase =
-                read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
-            let steps = parse_remote_steps(steps)
-                .map_err(crate::errors::SshCliError::InvalidArgument)?;
+            let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
+            let steps =
+                parse_remote_steps(steps).map_err(crate::errors::SshCliError::InvalidArgument)?;
             let opts = crate::vps::ExecOptions {
                 password,
                 key,
@@ -102,18 +101,13 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
                 disable_sudo,
                 steps,
                 use_agent: auth.use_agent,
-                agent_socket: auth.agent_socket.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                agent_socket: auth
+                    .agent_socket
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
                 ..Default::default()
             };
-            crate::vps::run_exec(
-                selection,
-                &command,
-                config_override,
-                formato,
-                json,
-                opts,
-            )
-            .await
+            crate::vps::run_exec(selection, &command, config_override, formato, json, opts).await
         }
         Command::SudoExec {
             all,
@@ -145,10 +139,9 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             let key = auth.key_path_string();
             let password = read_stdin_if(auth.password_stdin, auth.password)?;
             let sudo_password = read_stdin_if(sudo_password_stdin, sudo_password)?;
-            let key_passphrase =
-                read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
-            let steps = parse_remote_steps(steps)
-                .map_err(crate::errors::SshCliError::InvalidArgument)?;
+            let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
+            let steps =
+                parse_remote_steps(steps).map_err(crate::errors::SshCliError::InvalidArgument)?;
             let opts = crate::vps::ExecOptions {
                 password,
                 sudo_password,
@@ -161,18 +154,14 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
                 disable_sudo,
                 steps,
                 use_agent: auth.use_agent,
-                agent_socket: auth.agent_socket.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                agent_socket: auth
+                    .agent_socket
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
                 ..Default::default()
             };
-            crate::vps::run_sudo_exec(
-                selection,
-                &command,
-                config_override,
-                formato,
-                json,
-                opts,
-            )
-            .await
+            crate::vps::run_sudo_exec(selection, &command, config_override, formato, json, opts)
+                .await
         }
         Command::SuExec {
             all,
@@ -204,10 +193,9 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             let key = auth.key_path_string();
             let password = read_stdin_if(auth.password_stdin, auth.password)?;
             let su_password = read_stdin_if(su_password_stdin, su_password)?;
-            let key_passphrase =
-                read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
-            let steps = parse_remote_steps(steps)
-                .map_err(crate::errors::SshCliError::InvalidArgument)?;
+            let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
+            let steps =
+                parse_remote_steps(steps).map_err(crate::errors::SshCliError::InvalidArgument)?;
             let opts = crate::vps::ExecOptions {
                 password,
                 su_password,
@@ -220,18 +208,13 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
                 disable_sudo,
                 steps,
                 use_agent: auth.use_agent,
-                agent_socket: auth.agent_socket.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                agent_socket: auth
+                    .agent_socket
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
                 ..Default::default()
             };
-            crate::vps::run_su_exec(
-                selection,
-                &command,
-                config_override,
-                formato,
-                json,
-                opts,
-            )
-            .await
+            crate::vps::run_su_exec(selection, &command, config_override, formato, json, opts).await
         }
         Command::Scp { action } => {
             let (auth, timeout, json_local) = match &action {
@@ -250,8 +233,7 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             };
             let key = auth.key_path_string();
             let password = read_stdin_if(auth.password_stdin, auth.password)?;
-            let key_passphrase =
-                read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
+            let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
             // GAP-SSH-IO-007b: local --json or global --format json → JSON error envelope.
             let json_efetivo = json_local || formato == OutputFormat::Json;
             if json_efetivo {
@@ -330,8 +312,7 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             };
             let key = auth.key_path_string();
             let password = read_stdin_if(auth.password_stdin, auth.password)?;
-            let key_passphrase =
-                read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
+            let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
             let json_efetivo = json_local || formato == OutputFormat::Json;
             if json_efetivo {
                 crate::output::set_json_errors(true);
@@ -377,8 +358,7 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             // Forwards: JoinSet + Semaphore (concurrency::effective_limit).
             let key = auth.key_path_string();
             let password = read_stdin_if(auth.password_stdin, auth.password)?;
-            let key_passphrase =
-                read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
+            let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
             crate::tunnel::run_tunnel(
                 &vps_name,
                 local_port,
@@ -406,8 +386,7 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             // GAP-SSH-CLI-006: auth parity with exec/scp (stdin + key + passphrase).
             let key = auth.key_path_string();
             let password = read_stdin_if(auth.password_stdin, auth.password)?;
-            let key_passphrase =
-                read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
+            let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
             let selection = if all {
                 crate::vps::HostSelection::All
             } else if let Some(h) = hosts {
@@ -429,8 +408,7 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
                     Some(n) => n,
                     None => {
                         // GAP-SSH-EXIT-002: typed → exit 66.
-                        let active =
-                            crate::vps::read_active_vps(config_override.as_deref())?;
+                        let active = crate::vps::read_active_vps(config_override.as_deref())?;
                         active.ok_or(crate::errors::SshCliError::NoActiveVps)?
                     }
                 };
@@ -491,13 +469,7 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
         Command::Tls { json, action } => {
             #[cfg(feature = "tls")]
             {
-                crate::tls::commands::run_tls_command(
-                    action,
-                    config_override,
-                    formato,
-                    json,
-                )
-                .await
+                crate::tls::commands::run_tls_command(action, config_override, formato, json).await
             }
             #[cfg(not(feature = "tls"))]
             {
@@ -595,9 +567,8 @@ pub(crate) fn run_locale_command(
             Ok(())
         }
         LocaleAction::Set { lang } => {
-            let language = negotiate_code(&lang).ok_or_else(|| {
-                anyhow::anyhow!("unsupported language after validation: {lang}")
-            })?;
+            let language = negotiate_code(&lang)
+                .ok_or_else(|| anyhow::anyhow!("unsupported language after validation: {lang}"))?;
             let path = write_persisted_lang(language, override_ref)?;
             // Note: OnceLock already set for this process; preference applies next run
             // unless --lang/env override.
@@ -630,4 +601,3 @@ pub(crate) fn run_locale_command(
         }
     }
 }
-

@@ -5,8 +5,8 @@
 
 use super::config_io::{load, resolve_config_path, save, validate_key_path_exists};
 use super::doctor::run_doctor_with_optional_probe;
-use super::import_export::{run_export, run_import};
 use super::health::run_health_check;
+use super::import_export::{run_export, run_import};
 use super::model::{self, VpsRecord};
 use super::secrets_cmd::take_auto_key_meta;
 use super::selection::HostSelection;
@@ -125,13 +125,12 @@ pub async fn run_vps_command(
             // G-O2: tags for fleet selection (dedupe preserve order).
             let tag_list = crate::vps::selection::dedupe_host_names(tags);
             record
-                .set_tags_from_raw(tag_list).map_err(SshCliError::from)?;
+                .set_tags_from_raw(tag_list)
+                .map_err(SshCliError::from)?;
             record.tls = tls;
             record.tls_sni = tls_sni;
-            record.tls_client_cert = tls_client_cert
-                .map(|p| p.to_string_lossy().into_owned());
-            record.tls_client_key = tls_client_key
-                .map(|p| p.to_string_lossy().into_owned());
+            record.tls_client_cert = tls_client_cert.map(|p| p.to_string_lossy().into_owned());
+            record.tls_client_key = tls_client_key.map(|p| p.to_string_lossy().into_owned());
             if record.tls {
                 // Validate options early (SNI empty / partial mTLS).
                 let sni = record
@@ -141,7 +140,10 @@ pub async fn run_vps_command(
                     .unwrap_or(record.host.as_str());
                 let _ = crate::tls::TlsConnectOptions::try_new(
                     sni,
-                    record.tls_client_cert.as_ref().map(std::path::PathBuf::from),
+                    record
+                        .tls_client_cert
+                        .as_ref()
+                        .map(std::path::PathBuf::from),
                     record.tls_client_key.as_ref().map(std::path::PathBuf::from),
                 )?;
             }
@@ -174,12 +176,7 @@ pub async fn run_vps_command(
                     name: name_key.clone(),
                 })
             };
-            crate::output::emit_success(
-                "vps-added",
-                data,
-                &msg,
-                format == OutputFormat::Json,
-            )?;
+            crate::output::emit_success("vps-added", data, &msg, format == OutputFormat::Json)?;
             if check {
                 run_health_check(
                     HostSelection::Single(name.clone()),
@@ -266,13 +263,16 @@ pub async fn run_vps_command(
                 .ok_or(SshCliError::VpsNotFound(name.clone()))?;
             use crate::domain::{CharLimit, KeyPath, SshHost, SshPort, SshUser, TimeoutMs};
             if let Some(h) = host {
-                record.host = SshHost::try_new(h).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
+                record.host =
+                    SshHost::try_new(h).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
             }
             if let Some(p) = port {
-                record.port = SshPort::try_new(p).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
+                record.port =
+                    SshPort::try_new(p).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
             }
             if let Some(u) = user {
-                record.username = SshUser::try_new(u).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
+                record.username =
+                    SshUser::try_new(u).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
             }
             if use_agent {
                 record.use_agent = true;
@@ -294,7 +294,8 @@ pub async fn run_vps_command(
                     let k = k.to_string_lossy().into_owned();
                     validate_key_path_exists(&k)?;
                     record.key_path = Some(
-                        KeyPath::try_new(k).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?,
+                        KeyPath::try_new(k)
+                            .map_err(|e| SshCliError::InvalidArgument(e.to_string()))?,
                     );
                     record.use_agent = false;
                 }
@@ -306,16 +307,16 @@ pub async fn run_vps_command(
                 }
             }
             if let Some(t) = timeout {
-                record.timeout_ms =
-                    TimeoutMs::try_new(t).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
+                record.timeout_ms = TimeoutMs::try_new(t)
+                    .map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
             }
             if let Some(m) = max_command_chars.or(max_chars) {
-                record.max_command_chars =
-                    CharLimit::try_new(m).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
+                record.max_command_chars = CharLimit::try_new(m)
+                    .map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
             }
             if let Some(m) = max_output_chars {
-                record.max_output_chars =
-                    CharLimit::try_new(m).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
+                record.max_output_chars = CharLimit::try_new(m)
+                    .map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
             }
             if sudo_password_stdin {
                 record.sudo_password = Some(read_secret_stdin()?);
@@ -355,7 +356,10 @@ pub async fn run_vps_command(
                     .unwrap_or(record.host.as_str());
                 let _ = crate::tls::TlsConnectOptions::try_new(
                     sni,
-                    record.tls_client_cert.as_ref().map(std::path::PathBuf::from),
+                    record
+                        .tls_client_cert
+                        .as_ref()
+                        .map(std::path::PathBuf::from),
                     record.tls_client_key.as_ref().map(std::path::PathBuf::from),
                 )?;
             }

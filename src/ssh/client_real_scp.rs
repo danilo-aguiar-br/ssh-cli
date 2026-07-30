@@ -75,19 +75,19 @@
                     // Remote sink sends ACK (0x00) before accepting the header.
                     scp_wait_status(&mut channel).await?;
 
-                    // Preserve times (line T) antes do header C.
-                    let linha_t = format_scp_t_line(mtime, atime);
+                    // Preserve times (T line) before the C header.
+                    let t_line = format_scp_t_line(mtime, atime);
                     channel
-                        .data(linha_t.as_bytes())
+                        .data(t_line.as_bytes())
                         .await
-                        .map_err(|e| SshCliError::channel_msg(format!("enviar linha T SCP: {e}")))?;
+                        .map_err(|e| SshCliError::channel_msg(format!("send SCP T line: {e}")))?;
                     scp_wait_status(&mut channel).await?;
 
                     let header = format_scp_upload_header_with_mode(mode, size, file_name);
                     channel
                         .data(header.as_bytes())
                         .await
-                        .map_err(|e| SshCliError::channel_msg(format!("enviar header SCP: {e}")))?;
+                        .map_err(|e| SshCliError::channel_msg(format!("send SCP header: {e}")))?;
                     scp_wait_status(&mut channel).await?;
 
                     // SCP-018 + latency: async disk read so the runtime worker is not
@@ -105,7 +105,7 @@
                             break;
                         }
                         channel.data(&buf[..n]).await.map_err(|e| {
-                            SshCliError::channel_msg(format!("enviar bloco SCP: {e}"))
+                            SshCliError::channel_msg(format!("send SCP payload block: {e}"))
                         })?;
                     }
 
@@ -113,7 +113,7 @@
                     channel
                         .data([SCP_OK].as_slice())
                         .await
-                        .map_err(|e| SshCliError::channel_msg(format!("enviar EOF SCP: {e}")))?;
+                        .map_err(|e| SshCliError::channel_msg(format!("send SCP EOF: {e}")))?;
                     scp_wait_status(&mut channel).await?;
 
                     let _ = channel.eof().await;
@@ -187,11 +187,11 @@
                 channel
                     .data([SCP_OK].as_slice())
                     .await
-                    .map_err(|e| SshCliError::channel_msg(format!("enviar ack inicial: {e}")))?;
+                    .map_err(|e| SshCliError::channel_msg(format!("send initial SCP ack: {e}")))?;
 
                 let mut times: Option<(u64, u64)> = None;
                 let mut header_bytes = scp_read_until_newline(&mut channel).await?;
-                // Erro remoto: status 1/2 no primeiro byte.
+                // Remote error: status 1/2 in the first byte.
                 if !header_bytes.is_empty() && matches!(header_bytes[0], 1 | 2) {
                     interpret_scp_status(&header_bytes)?;
                 }
@@ -202,19 +202,19 @@
                     channel
                         .data([SCP_OK].as_slice())
                         .await
-                        .map_err(|e| SshCliError::channel_msg(format!("enviar ack T: {e}")))?;
+                        .map_err(|e| SshCliError::channel_msg(format!("send T-line ack: {e}")))?;
                     header_bytes = scp_read_until_newline(&mut channel).await?;
                     if !header_bytes.is_empty() && matches!(header_bytes[0], 1 | 2) {
                         interpret_scp_status(&header_bytes)?;
                     }
                     header = String::from_utf8_lossy(&header_bytes).into_owned();
                 }
-                let (mode_remoto, size) = parse_scp_header(&header)?;
+                let (remote_mode, size) = parse_scp_header(&header)?;
 
                 channel
                     .data([SCP_OK].as_slice())
                     .await
-                    .map_err(|e| SshCliError::channel_msg(format!("enviar ack header: {e}")))?;
+                    .map_err(|e| SshCliError::channel_msg(format!("send header ack: {e}")))?;
 
                 if let Some(parent_dir) = local.parent() {
                     if !parent_dir.as_os_str().is_empty() {
@@ -228,11 +228,11 @@
                 let mut file = tokio::fs::File::create(&partial)
                     .await
                     .map_err(SshCliError::Io)?;
-                let mut recebidos: u64 = 0;
+                let mut received: u64 = 0;
                 // Resource: reuse pending window (~upload chunk size); stream to disk, not full file.
                 let mut pending: Vec<u8> = Vec::with_capacity(32_768);
 
-                while recebidos < size {
+                while received < size {
                     if crate::signals::should_stop() {
                         return Err(SshCliError::InvalidArgument(crate::i18n::t(
                             crate::i18n::Message::OperationCancelled,
@@ -243,12 +243,12 @@
                         pending.extend_from_slice(&chunk);
                     }
                     // G-CLOSE-03: TryFrom for remaining bytes (no silent truncate on huge sizes).
-                    let need = usize::try_from(size.saturating_sub(recebidos)).unwrap_or(usize::MAX);
+                    let need = usize::try_from(size.saturating_sub(received)).unwrap_or(usize::MAX);
                     let use_n = need.min(pending.len());
                     file.write_all(&pending[..use_n])
                         .await
                         .map_err(SshCliError::Io)?;
-                    recebidos = recebidos.saturating_add(u64::try_from(use_n).unwrap_or(u64::MAX));
+                    received = received.saturating_add(u64::try_from(use_n).unwrap_or(u64::MAX));
                     pending.drain(..use_n);
                 }
 
@@ -256,7 +256,7 @@
                 if pending.is_empty() {
                     match scp_read_data(&mut channel).await {
                         Ok(trail) => pending.extend_from_slice(&trail),
-                        Err(_) if recebidos == size => {}
+                        Err(_) if received == size => {}
                         Err(e) => return Err(e),
                     }
                 }
@@ -270,13 +270,14 @@
                 }
 
                 file.flush().await.map_err(SshCliError::Io)?;
-                let _ = file.sync_data().await;
+                // G9: durability barrier — do not report success if fsync fails.
+                file.sync_data().await.map_err(SshCliError::Io)?;
                 drop(file);
 
                 channel
                     .data([SCP_OK].as_slice())
                     .await
-                    .map_err(|e| SshCliError::channel_msg(format!("enviar ack final: {e}")))?;
+                    .map_err(|e| SshCliError::channel_msg(format!("send final ack: {e}")))?;
 
                 let _ = channel.eof().await;
                 while let Some(msg) = channel.wait().await {
@@ -288,7 +289,7 @@
                 // SCP-022b: apply mode/times on partial BEFORE atomic rename.
                 // So metadata failure does not leave `local` with partial success content.
                 // G-PAR-50: async permissions; FileTimes/parent fsync via spawn_blocking.
-                apply_local_mode(&partial, mode_remoto).await?;
+                apply_local_mode(&partial, remote_mode).await?;
                 if let Some((mtime, atime)) = times {
                     let partial_c = partial.clone();
                     let _ = tokio::task::spawn_blocking(move || {
@@ -320,16 +321,16 @@
                     }
                 }
 
-                Ok::<_, SshCliError>(recebidos)
+                Ok::<_, SshCliError>(received)
             })
             .await;
 
             match result {
-                Ok(Ok(recebidos)) => {
+                Ok(Ok(received)) => {
                     let duration_ms =
                         u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
                     Ok(TransferResult {
-                        bytes_transferred: recebidos,
+                        bytes_transferred: received,
                         duration_ms,
                     })
                 }

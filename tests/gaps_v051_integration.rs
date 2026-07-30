@@ -18,12 +18,7 @@ fn cmd(tmp: &TempDir) -> Command {
 
 fn seed_host(tmp: &TempDir, name: &str) {
     cmd(tmp)
-        .args([
-            "secrets",
-            "init",
-            "--json",
-            "--allow-plaintext-secrets",
-        ])
+        .args(["secrets", "init", "--json", "--allow-plaintext-secrets"])
         .assert()
         .success();
     // force plaintext for simple roundtrips in this suite when needed
@@ -262,7 +257,10 @@ fn empty_command_english() {
         s.contains("empty command") || s.contains("invalid argument"),
         "expected EN empty command, got: {s}"
     );
-    assert!(!s.contains("comando vazio"), "must not contain PT hardcode: {s}");
+    assert!(
+        !s.contains("comando vazio"),
+        "must not contain PT hardcode: {s}"
+    );
 }
 
 #[test]
@@ -290,7 +288,10 @@ fn crud_add_json_success_event() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("vps-added").or(predicate::str::contains("secrets-key-auto-created")));
+        .stdout(
+            predicate::str::contains("vps-added")
+                .or(predicate::str::contains("secrets-key-auto-created")),
+        );
 }
 
 #[test]
@@ -321,13 +322,7 @@ fn health_check_all_empty_registry_exits_usage() {
     let tmp = TempDir::new().unwrap();
     // No hosts registered — fan-out path must reject before Semaphore work.
     cmd(&tmp)
-        .args([
-            "--max-concurrency",
-            "4",
-            "health-check",
-            "--all",
-            "--json",
-        ])
+        .args(["--max-concurrency", "4", "health-check", "--all", "--json"])
         .assert()
         .failure()
         .code(64)
@@ -341,14 +336,7 @@ fn health_check_all_empty_registry_exits_usage() {
 fn max_concurrency_with_exec_all_empty_registry() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
-        .args([
-            "--max-concurrency",
-            "2",
-            "exec",
-            "--all",
-            "true",
-            "--json",
-        ])
+        .args(["--max-concurrency", "2", "exec", "--all", "true", "--json"])
         .assert()
         .failure()
         .code(64);

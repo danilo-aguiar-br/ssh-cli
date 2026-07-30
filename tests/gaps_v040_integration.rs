@@ -463,11 +463,16 @@ fn gap_scp_023_comando_remoto_usa_p() {
         + &std::fs::read_to_string(root().join("src/ssh/client_real_tests_body.rs")).unwrap()
         + &std::fs::read_to_string(root().join("src/ssh/scp_wire.rs")).unwrap();
     assert!(
-        src.contains("modo_p") || src.contains("-tp") || src.contains("remote_scp_command") || src.contains("mode_p"),
+        src.contains("modo_p")
+            || src.contains("-tp")
+            || src.contains("remote_scp_command")
+            || src.contains("mode_p"),
         "remote scp must request -p (OpenSSH source emits T only with -p)"
     );
     assert!(
-        src.contains("apply_local_mode") || src.contains("aplicar_mode_local") || src.contains("set_permissions"),
+        src.contains("apply_local_mode")
+            || src.contains("aplicar_mode_local")
+            || src.contains("set_permissions"),
         "download must apply remote mode from C-header"
     );
 }

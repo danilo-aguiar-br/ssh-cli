@@ -341,11 +341,7 @@ impl ImportHostEntry {
     ///
     /// # Errors
     /// Returns a human-readable message when `port` is out of range.
-    pub fn into_record(
-        self,
-        map_key: &str,
-        defaults: ImportDefaults,
-    ) -> Result<VpsRecord, String> {
+    pub fn into_record(self, map_key: &str, defaults: ImportDefaults) -> Result<VpsRecord, String> {
         // G-TYPE-10: domain try_new — empty host/user rejected (no silent defaults).
         let port_u64 = self.port.unwrap_or(22);
         let port = match u16::try_from(port_u64) {
@@ -378,10 +374,7 @@ impl ImportHostEntry {
             self.key_path.as_deref(),
             key_passphrase,
             Some(self.timeout_ms.unwrap_or(defaults.timeout_ms)),
-            Some(
-                self.max_command_chars
-                    .unwrap_or(defaults.max_command_chars),
-            ),
+            Some(self.max_command_chars.unwrap_or(defaults.max_command_chars)),
             Some(self.max_output_chars.unwrap_or(defaults.max_output_chars)),
             sudo_password,
             su_password,
@@ -392,9 +385,7 @@ impl ImportHostEntry {
             record.added_at = crate::domain::Rfc3339Utc::try_new(a).map_err(|e| e.to_string())?;
         }
         if let Some(tags) = self.tags {
-            record
-                .set_tags_from_raw(tags)
-                .map_err(|e| e.to_string())?;
+            record.set_tags_from_raw(tags).map_err(|e| e.to_string())?;
         }
         record.tls = self.tls.unwrap_or(false);
         record.tls_sni = self.tls_sni;

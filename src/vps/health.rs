@@ -107,16 +107,8 @@ pub(super) async fn collect_health_check_batch(
     selection: &HostSelection,
     config_override: Option<PathBuf>,
 ) -> Result<(Vec<HostHealthResult>, usize)> {
-    collect_health_check_batch_with_opts(
-        selection,
-        config_override,
-        None,
-        None,
-        None,
-        None,
-        false,
-    )
-    .await
+    collect_health_check_batch_with_opts(selection, config_override, None, None, None, None, false)
+        .await
 }
 
 /// Parallel health-check fan-out (I/O-bound, map_bounded); returns results + limit.
@@ -166,8 +158,7 @@ async fn collect_health_check_batch_with_opts(
             let cfg = build_connection_config(&vps, Some(&path_c), replace_host_key);
             match <SshClient as SshClientTrait>::connect(cfg).await {
                 Ok(client) => {
-                    let latency_ms =
-                        u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+                    let latency_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
                     let _ = client.disconnect().await;
                     HostHealthResult {
                         name,
@@ -256,4 +247,3 @@ pub struct HostHealthResult {
     /// Error text when not ok.
     pub error: Option<String>,
 }
-

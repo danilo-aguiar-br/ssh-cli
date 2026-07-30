@@ -89,10 +89,7 @@ pub async fn run_scp(
 
     match action {
         ScpAction::Upload {
-            all,
-            hosts,
-            target,
-            ..
+            all, hosts, target, ..
         } => {
             let plan = crate::cli::parse_scp_target(all, hosts, target)
                 .map_err(SshCliError::InvalidArgument)?;
@@ -138,9 +135,7 @@ pub async fn run_scp(
                         .into());
                     }
                     if !local.is_file() {
-                        return Err(
-                            SshCliError::FileNotFound(local.display().to_string()).into()
-                        );
+                        return Err(SshCliError::FileNotFound(local.display().to_string()).into());
                     }
 
                     if selection.is_batch() {
@@ -176,16 +171,12 @@ pub async fn run_scp(
 
                     let client: Box<dyn SshClientTrait> =
                         <SshClient as SshClientTrait>::connect(cfg).await?;
-                    run_scp_upload_with_client(vps_key, &local, &remote, client, opts.json)
-                        .await?;
+                    run_scp_upload_with_client(vps_key, &local, &remote, client, opts.json).await?;
                 }
             }
         }
         ScpAction::Download {
-            all,
-            hosts,
-            target,
-            ..
+            all, hosts, target, ..
         } => {
             let plan = crate::cli::parse_scp_target(all, hosts, target)
                 .map_err(SshCliError::InvalidArgument)?;
@@ -262,10 +253,8 @@ pub async fn run_scp(
 
                     let client: Box<dyn SshClientTrait> =
                         <SshClient as SshClientTrait>::connect(cfg).await?;
-                    run_scp_download_with_client(
-                        vps_key, &remote, &local, client, opts.json,
-                    )
-                    .await?;
+                    run_scp_download_with_client(vps_key, &remote, &local, client, opts.json)
+                        .await?;
                 }
             }
         }
@@ -359,7 +348,6 @@ pub async fn run_scp_download_with_client(
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 #[path = "tests.rs"]

@@ -3,7 +3,7 @@
 > Copy executable recipes that solve real multi-host SSH agent problems.
 
 - Read this document in [Portuguese (pt-BR)](COOKBOOK.pt-BR.md).
-- Product line: 0.5.2.
+- Product line: 0.5.3.
 
 
 ## Latency Note
@@ -16,14 +16,15 @@
 - Timeout default: 60000 ms
 - max_command_chars default: 1000
 - max_output_chars default: 100000
-- Tracing default: error (`-v` → debug; ambient `RUST_LOG` is ignored)
+- Tracing default: error (`-v` → info, `-vv` → debug, `-vvv` → trace; crate-scoped; ambient `RUST_LOG` is ignored)
 - Empty password in list/show JSON: `null` (key-only hosts); non-empty masks as `***`
 - Telemetry: disabled
 - Secrets at rest: encrypted by default (auto `secrets.key`)
 - Install: `cargo install ssh-cli --locked`
 - Supply chain: russh 0.62.2; `cargo deny` with `yanked=deny`, `multiple-versions=warn`
 - SCP: regular files only (no `-r` / no directories). Directory trees and remote FS ops use **`sftp`** (`upload|download --recursive`, `ls`, `mkdir`, …). SCP download partial suffix `.ssh-cli.partial`; success JSON requires `event: "scp-transfer"`
-- SCP wire: use 0.4.0+ (prefer product line 0.5.2); never 0.3.9 (crates.io 0.3.9 advertised SCP but was inoperant)
+- SCP wire: use 0.4.0+ (prefer product line 0.5.3); never 0.3.9 (crates.io 0.3.9 advertised SCP but was inoperant)
+- SFTP: prefer **0.5.3+** (G1 upload integrity fix); verify destination with `sha256sum`; trees via `--recursive`
 - Redacted export: default body is TOML (even pipes); empty secrets stay `""`; non-empty redacted secrets → `***` (`FIXED_MASK`, never `""` for non-empty); never `sshcli-enc:` blobs on redacted path; JSON only with `vps export --json`
 - Host wire: schema v3 (English serialize; dual-read legacy Portuguese aliases)
 - Tunnel post-bind: one-shot deadline exits 0 after `tunnel_listening` (TUN-002); pre-bind timeout remains 74
@@ -35,6 +36,19 @@
 - Password on argv: stderr warning; prefer `--*-stdin`
 - CRUD/connect/import with `--json`: events `vps-added` / `vps-edited` / `vps-removed` / `vps-connected` / `vps-import`
 - First secret write may set `secrets_key_auto_created: true` on the same `vps-added` document when the primary-key is provisioned
+- Product notes (0.5.3 / G1–G19 user-facing):
+  - G1: SFTP upload integrity (prefer 0.5.3+; verify destination with `sha256sum`)
+  - G2/G14: graduated `-v`/`-vv`/`-vvv` crate-scoped; ambient `RUST_LOG` ignored
+  - G3: SFTP SETSTAT sends `atime`+`mtime` together
+  - G4: SFTP mutating `set_metadata` is fail-closed
+  - G5/G17: multi-file / batch cancel keeps `results.len() == input.len()` (cancelled remainder filled)
+  - G8: single-host `exec --json` emits exactly one JSON object
+  - G9: SCP download propagates `sync_data` failure before rename
+  - G12/G19: permission bits masked with `SFTP_PERM_MASK` (`0o7777`)
+  - G15: accept destination-effect proof (checksum), not client byte counts alone
+  - G18: SFTP download local `set_permissions` failures are surfaced
+  - G7: real-SSH E2E matrix includes SFTP checksum + recursive tree (**E17/E18**)
+  - G6/G11: test-isolation only (see E2E / TESTING) — not a runtime CLI contract
 
 
 ## How To Initialize Primary-Key Encryption
@@ -57,16 +71,18 @@ ssh-cli secrets reencrypt --json
 ```
 
 
-## How To Discover Contracts (schema / doctor)
+## How To Discover Contracts (schema / doctor / commands)
 
 ```bash
 ssh-cli schema
 ssh-cli schema vps-list
 ssh-cli doctor --json
+ssh-cli commands --json
 ```
 
-- Root `schema` lists agent contracts; `schema <name>` prints one schema document.
+- Root `schema` lists the agent schema catalog; `schema <name>` prints one schema document.
 - Root `doctor --json` (or `vps doctor --json`) reports paths, secrets mode, and runtime.
+- Root `commands --json` emits the full CLI command tree (`event: "commands"`) for agent discovery.
 
 
 ## How To Register a Password Host (stdin, no argv leak)
@@ -173,6 +189,8 @@ ssh-cli vps doctor --probe-ssh --json
 ```
 
 - Batch schemas: `docs/schemas/health-check-batch.schema.json`, `exec-batch.schema.json`, `scp-batch.schema.json` (envelope includes `max_concurrency`).
+- Cap fan-out with global `--max-concurrency` (1..=64; auto formula when omitted).
+- Multi-file / batch cancel keeps `results.len() == input.len()` with cancelled remainder filled (G5/G17).
 - Empty registry + `--all` / `--hosts` → usage exit **64**.
 - Unknown name in `--hosts` → usage exit **64** (`unknown host(s) for --hosts`).
 - Single-host commands remain valid when the target is one positional name (classic JSON).
@@ -197,9 +215,11 @@ ssh-cli health-check lab --timeout 15000 --json
 ```bash
 # default tracing is error: JSON/tunnel stderr stays free of INFO prose
 ssh-cli exec lab "true" --json
-# only when debugging:
-# ssh-cli -v exec lab "true" --json
-# ssh-cli -v exec lab "true" --json
+# only when debugging (crate-scoped; no password leak via russh — G2/G14):
+# ssh-cli -v exec lab "true" --json    # info
+# ssh-cli -vv exec lab "true" --json   # debug
+# ssh-cli -vvv exec lab "true" --json  # trace
+# ambient RUST_LOG is ignored
 ```
 
 
@@ -287,7 +307,7 @@ printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
 ## How To Transfer a Release Artifact (regular file only)
 
 ```bash
-# Use 0.4.0+ (prefer product line 0.5.2); never 0.3.9 — that SCP wire was broken
+# Use 0.4.0+ (prefer product line 0.5.3); never 0.3.9 — that SCP wire was broken
 # SCP: no directories / no -r (use `sftp --recursive` for trees)
 ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
   --timeout 120000 --json
@@ -304,6 +324,107 @@ ssh-cli exec prod "tar -tzf /opt/app/app.tar.gz | head"
 ssh-cli scp download prod /var/log/app.log ./app.log --json
 # on failure the final path is untouched; intermediate is ./app.log.ssh-cli.partial
 # mtime/mode preserved both directions (remote scp -tp/-fp)
+# sync_data failure is propagated before rename (G9)
+```
+
+
+## How To Upload via SFTP and Verify Checksum (prefer 0.5.3+)
+
+```bash
+# G1 fixed SFTP upload truncation in 0.5.3 — always prove destination effect
+ssh-cli sftp upload prod ./payload.bin /tmp/payload.bin --json
+ssh-cli exec prod "sha256sum /tmp/payload.bin" --json
+sha256sum ./payload.bin
+# download (partial + atomic rename; G18 surfaces local set_permissions failures):
+ssh-cli sftp download prod /tmp/payload.bin ./payload.remote.bin --json
+# recursive tree (no symlink follow):
+ssh-cli sftp upload --recursive prod ./dist/tree /opt/app/tree --json
+# multi-host fleet:
+ssh-cli sftp upload --all ./payload.bin /tmp/payload.bin --json
+```
+
+
+## How To Manage Remote Paths via SFTP
+
+```bash
+ssh-cli sftp ls prod /tmp --json
+ssh-cli sftp mkdir prod /tmp/app --json
+ssh-cli sftp stat prod /tmp/app --json
+ssh-cli sftp rename prod /tmp/app /tmp/app.bak --json
+ssh-cli sftp rm prod /tmp/file.bin --json
+ssh-cli sftp rmdir prod /tmp/empty --json
+# schemas: sftp-list / sftp-fs-op
+```
+
+- Prefer product line **0.5.3+** for all SFTP work (G1 upload integrity).
+- SETSTAT sends `atime`+`mtime` together (G3); mutating metadata is fail-closed (G4).
+- Permission bits use `SFTP_PERM_MASK` (`0o7777`; G12/G19).
+- Download local `set_permissions` failures are surfaced (G18).
+
+
+## How To Generate Shell Completions
+
+```bash
+ssh-cli completions bash
+ssh-cli completions zsh
+ssh-cli completions fish
+ssh-cli completions powershell
+ssh-cli completions elvish
+```
+
+
+## How To Diagnose With -vv Without Password Leak
+
+```bash
+# filters are crate-scoped (warn,ssh_cli=…) — never bare global debug (G2)
+ssh-cli -vv exec prod "true" --json
+# do NOT set RUST_LOG; ambient RUST_LOG is ignored
+```
+
+
+## How To Set UI Locale
+
+```bash
+ssh-cli locale show
+ssh-cli locale set pt-BR
+ssh-cli --lang en vps list
+ssh-cli locale clear
+```
+
+
+## How To Inspect TLS Provider and Paths
+
+```bash
+ssh-cli tls provider
+ssh-cli tls paths
+ssh-cli tls mtls list
+ssh-cli tls mtls import --name edge --cert ./client.pem --key ./client-key.pem
+ssh-cli tls mtls show edge
+ssh-cli tls mtls remove edge
+ssh-cli tls acme account create --contact mailto:ops@example.com
+ssh-cli tls acme account show
+ssh-cli tls acme issue example.com --print-challenge
+ssh-cli tls acme complete example.com
+ssh-cli tls acme status example.com
+ssh-cli tls acme list
+```
+
+- TLS stack is **rustls** + **aws_lc_rs** only (no OpenSSL runtime).
+- Material lives under XDG `tls/` (see `ssh-cli tls paths`).
+- ACME permanent validation failures (e.g. `invalidContact`) → exit **64** (do not retry as 74).
+
+
+## How To Full VPS CRUD
+
+```bash
+ssh-cli vps add --name web1 --host 203.0.113.10 --user deploy --key ~/.ssh/id_ed25519 --json
+ssh-cli vps list --json
+ssh-cli vps show web1 --json
+ssh-cli vps edit web1 --timeout 90000 --json
+ssh-cli connect web1
+ssh-cli vps path
+ssh-cli doctor --json
+ssh-cli vps remove web1 --json
 ```
 
 
@@ -340,6 +461,7 @@ bash scripts/e2e_real_ssh.sh --config-dir /tmp/ssh-cli-e2e-lab
 
 - Default binary: `target/release/ssh-cli` (override with harness `SSH_CLI_E2E_BIN` only).
 - Without a lab host / credentials, the script exits **0** with **SKIP** (offline-safe; do not treat SKIP as red gate).
-- Official matrix **E01–E16**; **E10–E14** = SCP upload, download, integrity (`cmp`), missing remote, preserve mode+mtime.
+- Official matrix **E01–E18**; **E10–E14** = SCP upload, download, integrity (`cmp`), missing remote, preserve mode+mtime; **E17/E18** = SFTP checksum + recursive tree (G7).
+- G6/G11 are test-isolation only (serial signal-flag tests / `reset_flags_for_tests`) — not product CLI surface.
 - Script prints only PASS/FAIL/SKIP labels — never host, user, or password.
 - Prefer local `sshd` / throwaway VPS; never auth-failure storms on production (fail2ban).

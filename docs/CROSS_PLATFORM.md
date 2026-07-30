@@ -3,7 +3,7 @@
 > Escape OS-specific SSH glue with one portable Rust binary.
 
 - Read this document in [Portuguese (pt-BR)](CROSS_PLATFORM.pt-BR.md).
-- Product line: 0.5.2.
+- Product line: 0.5.3.
 
 
 ## The Pain You Already Know
@@ -105,6 +105,34 @@
 - Override only in tests via `--config-dir` (product does not read `SSH_CLI_HOME`).
 - Keep `known_hosts`, `active`, and `secrets.key` as sibling files of `config.toml`.
 - Atomic writes + flock protect concurrent one-shot processes on the same config.
+- No product `.env` runtime store for secrets, language, or config home.
+- `locale show|set|clear` works on all platforms (XDG / ProjectDirs via `directories`).
+- `tls mtls/*` and `tls acme/*` material lives under the platform config dir `tls/` (XDG on Linux).
+
+
+## Full CLI surface (OS-agnostic)
+
+Command inventory is identical on every supported OS. Discover at runtime with `ssh-cli commands` / `ssh-cli schema`.
+
+| Surface | Commands |
+| --- | --- |
+| VPS registry | `vps add` `vps list` `vps remove` `vps edit` `vps show` `vps path` `vps doctor` `vps export` `vps import` |
+| Session | `connect` |
+| Remote exec | `exec` `sudo-exec` `su-exec` |
+| SCP | `scp upload` `scp download` (regular files only) |
+| SFTP | `sftp upload` `sftp download` `sftp ls` `sftp mkdir` `sftp rmdir` `sftp rm` `sftp stat` `sftp rename` |
+| Network | `tunnel` `health-check` |
+| Secrets | `secrets status` `secrets init` `secrets reencrypt` |
+| Discovery | `completions` `commands` `schema` `doctor` (root alias of `vps doctor`) |
+| Locale | `locale show` `locale set` `locale clear` |
+| TLS | `tls provider` `tls paths` |
+| TLS mTLS | `tls mtls list` `tls mtls import` `tls mtls show` `tls mtls remove` |
+| TLS ACME | `tls acme account create` `tls acme account show` `tls acme issue` `tls acme complete` `tls acme status` `tls acme list` |
+
+Globals (all platforms): `--lang`, `-v`/`-vv`/`-vvv` (crate-scoped G2/G14; ambient `RUST_LOG` ignored), `-q`, `--config-dir`, `--no-color`, `--output-format`/`--json`, `--disable-sudo`, `--replace-host-key`, `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`, `--timeout`, `--max-concurrency` (fleet fan-out 1..=64), `--fail-fast`, `--scp-file-concurrency`.
+
+- Prefer product line **0.5.3+** for SFTP (G1 upload integrity) on every platform; verify destination with checksum.
+- No product `.env` — XDG / ProjectDirs / `--config-dir` / CLI flags only.
 
 
 ## SCP portability
@@ -112,7 +140,8 @@
 - Failed or in-progress downloads use sibling path ending in `.ssh-cli.partial`, then rename into place (platform-agnostic atomic pattern).
 - Upload streams in 32 KiB chunks on every OS (avoids full-file RAM load).
 - mtime/mode preserve follows OpenSSH-style remote `-p` / `T` line; on Unix local permissions APIs apply modes; on Windows permission bits may not match Unix octal semantics — do not assume full POSIX ACL fidelity.
-- Real-SSH matrix E01–E16 (E10–E14 SCP) in `scripts/e2e_real_ssh.sh` is primarily validated on Linux hosts; prefer local `sshd` / throwaway VPS. Never run auth-failure storms on production hosts (fail2ban bans).
+- Prefer product line **0.5.3+** for SFTP on every platform (G1 upload integrity); verify destination with checksum.
+- Real-SSH matrix **E01–E18** (E10–E14 SCP; **E17/E18** SFTP checksum/tree) in `scripts/e2e_real_ssh.sh` is primarily validated on Linux hosts; prefer local `sshd` / throwaway VPS. Never run auth-failure storms on production hosts (fail2ban bans).
 
 
 ## Performance by Target
@@ -128,10 +157,11 @@
 - JSON contracts (`scp-transfer` event, `tunnel_listening`, auth flags for tunnel/health) are identical on every OS; see AGENTS.md and docs/schemas/.
 - Tunnel `--bind` defaults to `127.0.0.1` (loopback) on every platform; override only when intentionally exposing the listener.
 - Container agents must preserve exit codes and stdout/stderr separation.
-- Default tracing is error-level so agent stderr stays free of INFO prose unless `-v` is set (ambient `RUST_LOG` is ignored).
+- Default tracing is error-level so agent stderr stays free of INFO prose unless `-v`/`-vv`/`-vvv` is set (crate-scoped; ambient `RUST_LOG` is ignored).
 - Parse machine contracts from stdout only; treat stderr tracing as non-contract logs; JSON error envelopes use stderr when JSON mode is active.
-- Real SSH E2E helpers live in `scripts/e2e_real_ssh.sh` (anti-leak; local only; E01–E16; never production auth-failure storms / fail2ban policy).
+- Real SSH E2E helpers live in `scripts/e2e_real_ssh.sh` (anti-leak; local only; **E01–E18**; never production auth-failure storms / fail2ban policy).
 - `ssh-cli --version` stamp (`Cargo` version + git hash + optional `-dirty`) is OS-agnostic.
+- No product `.env` runtime store — XDG / `--config-dir` / CLI flags only.
 
 
 ## Multi-OS local matrix (G-E2E-18)

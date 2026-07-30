@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-07-30
+
+### Fixed
+- **G1** SFTP upload no longer truncates destination to zero bytes (`FileAttributes::empty()` instead of `Default`).
+- **G2** `-v` filter is crate-scoped (`warn,ssh_cli=…`); never bare global `debug` (no password leak via `russh::client::encrypted`).
+- **G3** SFTP SETSTAT sends `atime`+`mtime` together (no epoch atime).
+- **G4** SFTP `set_metadata` Result is propagated (mutating SETSTAT is not best-effort).
+- **G5/G17** Multi-file SCP/SFTP cancel fills cancelled remainder; `results.len() == input.len()`.
+- **G6/G11** Signal-flag tests stay serial; `reset_flags_for_tests` for isolation; cancel cardinality tests.
+- **G7** E2E real SSH covers SFTP upload/download checksum matrix + recursive tree (E17/E18).
+- **G8** `exec --json` single-step emits exactly one NDJSON object (multi-step guard on JSON path).
+- **G9** SCP download propagates `sync_data` failure before atomic rename.
+- **G10** Formatting debt addressed with release gate (`cargo fmt --check`).
+- **G12** Permission bits masked with `SFTP_PERM_MASK` (`0o7777`).
+- **G13** Removed circular test that asserted FIXED text in `gaps.md`.
+- **G14** Graduated verbosity: `-v`/`-vv`/`-vvv` via `ArgAction::Count` (info/debug/trace, always allowlisted).
+- **G15** Inventory criteria require destination effect proof (checksum), not structural self-cert.
+- **G16** English identifiers and channel errors in `client_real_scp.rs`.
+- **G18** SFTP download local `set_permissions` failures are surfaced.
+- **G19** Named `SFTP_PERM_MASK` constant (no bare magic mask).
+
+### Changed
+- Version **0.5.3**.
+
 ## [0.5.2] - 2026-07-19
 
 ### Added
@@ -589,7 +613,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release.
 
-[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/danilo-aguiar-br/ssh-cli/compare/v0.4.2...v0.5.0

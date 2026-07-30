@@ -182,11 +182,7 @@ pub(crate) async fn connect_authenticated(
     })
 }
 
-fn map_connect_err(
-    e: russh::Error,
-    outcome: &HostKeyOutcome,
-    prefix: &str,
-) -> SshCliError {
+fn map_connect_err(e: russh::Error, outcome: &HostKeyOutcome, prefix: &str) -> SshCliError {
     // G-SSH-01: prefer typed host-key errors over generic handshake text.
     if let Some(product) = take_host_key_error(outcome) {
         return product;

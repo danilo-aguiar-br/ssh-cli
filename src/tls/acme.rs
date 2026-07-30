@@ -18,12 +18,12 @@ use instant_acme::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::acme_error_map::map_acme_error;
 use super::paths::{
     acme_account_path, acme_domain_dir, cert_pem_path, ensure_dir, key_pem_path, order_json_path,
     write_secret_file,
 };
 use super::provider::ensure_provider;
-use super::acme_error_map::map_acme_error;
 use crate::domain::{AcmeOrderUrl, HttpsUrl, Rfc3339Utc};
 use crate::errors::{SshCliError, SshCliResult};
 
@@ -366,14 +366,14 @@ pub fn acme_status(
 
 /// Lists all domain directories under ACME storage.
 pub fn acme_list(config_override: Option<&Path>) -> SshCliResult<Vec<DomainCertStatus>> {
-    let root = super::paths::resolve_tls_root(config_override)?
-        .join(crate::constants::TLS_ACME_DIR_NAME);
+    let root =
+        super::paths::resolve_tls_root(config_override)?.join(crate::constants::TLS_ACME_DIR_NAME);
     if !root.exists() {
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(&root)
-        .map_err(|e| SshCliError::tls_msg(format!("list acme: {e}")))?
+    for entry in
+        std::fs::read_dir(&root).map_err(|e| SshCliError::tls_msg(format!("list acme: {e}")))?
     {
         let entry = entry.map_err(|e| SshCliError::tls_msg(format!("list acme entry: {e}")))?;
         if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {

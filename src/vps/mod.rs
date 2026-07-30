@@ -5,38 +5,38 @@
 //!
 //! No `.env` at runtime. Schema v3 English wire (dual-read PT legacy).
 
-pub mod model;
 /// Config path/load/save/permissions (SRP extract — G-UNSAFE-10).
 mod config_io;
-/// Multi-host selection resolution (SRP extract — G-COMP-01).
-pub mod selection;
-/// Local doctor + optional SSH probe (SRP extract — G-COMP-02).
-mod doctor;
-/// Inventory import/export (SRP extract — G-COMP-03).
-mod import_export;
-/// SSH health-check fan-out (SRP extract — G-COMP-04).
-mod health;
-/// Remote exec / sudo / su (SRP extract — G-COMP-05).
-mod exec_ops;
 /// VPS CRUD dispatcher (SRP extract — G-COMP-06).
 mod crud;
+/// Local doctor + optional SSH probe (SRP extract — G-COMP-02).
+mod doctor;
+/// Remote exec / sudo / su (SRP extract — G-COMP-05).
+mod exec_ops;
+/// SSH health-check fan-out (SRP extract — G-COMP-04).
+mod health;
+/// Inventory import/export (SRP extract — G-COMP-03).
+mod import_export;
+pub mod model;
 /// Secrets primary-key commands (SRP extract — G-COMP-07).
 mod secrets_cmd;
+/// Multi-host selection resolution (SRP extract — G-COMP-01).
+pub mod selection;
 
+pub(crate) use config_io::validate_key_path_exists;
 pub use config_io::{
     default_config_path, load, resolve_config_path, save, winning_layer, write_atomic, ConfigFile,
     ConfigLayer,
 };
-pub(crate) use config_io::validate_key_path_exists;
-pub use selection::{dedupe_host_names, resolve_host_jobs, HostSelection};
-pub use health::{run_health_check, HostHealthResult};
+pub use crud::run_vps_command;
 pub use exec_ops::{
-    run_exec, run_exec_with_client, run_sudo_exec, run_sudo_exec_with_client, run_su_exec,
+    run_exec, run_exec_with_client, run_su_exec, run_sudo_exec, run_sudo_exec_with_client,
     ExecOptions, HostExecResult,
 };
-pub use crud::run_vps_command;
-pub use secrets_cmd::run_secrets_command;
+pub use health::{run_health_check, HostHealthResult};
 pub use import_export::parse_import_payload;
+pub use secrets_cmd::run_secrets_command;
+pub use selection::{dedupe_host_names, resolve_host_jobs, HostSelection};
 
 use crate::cli::OutputFormat;
 use crate::errors::{SshCliError, SshCliResult};
@@ -203,10 +203,7 @@ pub async fn run_connect(
 ///
 /// Borrows the config override; returns an owned [`VpsRecord`] (cloned from the
 /// on-disk map) so the caller can mutate without holding the file open.
-pub fn find_by_name(
-    config_override: Option<&Path>,
-    name: &str,
-) -> SshCliResult<Option<VpsRecord>> {
+pub fn find_by_name(config_override: Option<&Path>, name: &str) -> SshCliResult<Option<VpsRecord>> {
     let path = resolve_config_path(config_override)?;
     let file = load(&path)?;
     Ok(file.hosts.get(name).cloned())
@@ -276,7 +273,6 @@ pub fn build_connection_config(
 // Exec family: see `exec_ops` module (G-COMP-05 + G-DRY-01).
 
 // Health-check: see `health` module (G-COMP-04).
-
 
 #[cfg(test)]
 #[path = "tests.rs"]

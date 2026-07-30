@@ -1,6 +1,6 @@
 # ssh-cli
 
-- Historical note: **0.4.2** closed TUN-003 / IO-010; **0.5.0** was the EN/API rename + secrets force-init reencrypt; current product line is **0.5.2** (export/import agent roundtrip, wire schema v3 dual-read, secrets CLI flags, tunnel `--bind`).
+- Historical note: **0.4.2** closed TUN-003 / IO-010; **0.5.0** was the EN/API rename + secrets force-init reencrypt; current product line is **0.5.3** (export/import agent roundtrip, wire schema v3 dual-read, secrets CLI flags, tunnel `--bind`). **0.5.3** also closes **G1–G19**: SFTP integrity (no zero-byte truncate), crate-scoped graduated verbosity `-v`/`-vv`/`-vvv` (no russh password dump), SETSTAT `atime`+`mtime`, batch cancel cardinality, single-step `exec` JSON, SCP `sync_data`, E2E SFTP checksum E17/E18.
 
 [![docs.rs](https://img.shields.io/docsrs/ssh-cli)](https://docs.rs/ssh-cli)
 [![crates.io](https://img.shields.io/crates/v/ssh-cli)](https://crates.io/crates/ssh-cli)
@@ -20,7 +20,7 @@
 - Follow first use in [docs/HOW_TO_USE.md](docs/HOW_TO_USE.md).
 - Copy recipes from [docs/COOKBOOK.md](docs/COOKBOOK.md).
 - Check platforms in [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md).
-- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.5.2**).
+- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.5.3**).
 - Run tests via [docs/TESTING.md](docs/TESTING.md).
 - Consume JSON contracts under [docs/schemas/README.md](docs/schemas/README.md).
 - Teach LLMs with [skills/ssh-cli-en/SKILL.md](skills/ssh-cli-en/SKILL.md).
@@ -59,8 +59,12 @@
 - Wire **schema v3**: serialize English TOML keys; dual-read EN + legacy PT aliases on load
 - `vps export` body is **TOML by default** (TTY and pipe); agent JSON envelope only with `--json`; redacted by default; empty secrets stay `""`; non-empty redacted secrets mask as `***` (`FIXED_MASK`); `--include-secrets` to pipe/non-TTY needs `-o`/`--output` or `--i-understand-secrets-on-stdout`
 - `vps import` accepts TOML (EN keys + PT aliases) **or** JSON `vps-export` envelopes; redacted skeletons need `--allow-incomplete`
-- SCP upload and download of **regular files only** (no recursive directories on SCP; first solid wire fix in **0.4.0**; prefer **0.5.2+** — avoid crates.io 0.3.9 SCP)
-- **SFTP** subsystem (`ssh-cli sftp`): upload/download (optional `--recursive` trees, symlink no-follow), `ls`/`mkdir`/`rmdir`/`rm`/`stat`/`rename`; JSON events `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`
+- SCP upload and download of **regular files only** (no recursive directories on SCP; first solid wire fix in **0.4.0**; prefer **0.5.3+** — avoid crates.io 0.3.9 SCP); SCP download propagates `sync_data` failure before atomic rename (G9)
+- **SFTP** subsystem (`ssh-cli sftp`, prefer **0.5.3+** for integrity): upload/download (optional `--recursive` trees, symlink no-follow), `ls`/`mkdir`/`rmdir`/`rm`/`stat`/`rename`; JSON events `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`
+- Graduated verbosity `-v`/`-vv`/`-vvv` (info/debug/trace) always crate-scoped (`warn,ssh_cli=*`) so russh never dumps passwords (G2/G14)
+- SFTP upload preserves payload bytes (G1); SETSTAT `atime`+`mtime` (G3); fail-closed metadata (G4); permission mask `SFTP_PERM_MASK` (G12)
+- Batch cancel pads cancelled remainder so results length matches input (G5/G17)
+- `exec --json` single-step emits exactly one NDJSON success object (G8)
 - SCP flag parity with exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (contract `docs/schemas/scp-transfer.schema.json`)
 - SCP download writes `{path}.ssh-cli.partial` then atomic rename; preserve remote mtime/mode bi-directional; upload streams 32 KiB chunks
 - SCP JSON success requires `event: "scp-transfer"` (0.4.1 IO-009); missing remote → `file not found: <path>` exit **66**
@@ -75,7 +79,7 @@
 - Master-key UX: `secrets status|init|reencrypt` with `--json` events `secrets-init` / `secrets-reencrypt`; first secret write folds `secrets_key_auto_created: true` into the same `vps-added` JSON (one document)
 - TOFU `known_hosts` and atomic config writes with flock
 - Key-only hosts: empty password serializes as JSON `null` (not `"***"`) in `vps list` / `show`
-- Default tracing filter is `error` (agent-first clean stderr); use `-v` for debug (ambient `RUST_LOG` is ignored)
+- Default tracing filter is `error` (agent-first clean stderr); ambient `RUST_LOG` is ignored (use `-v`/`-vv`/`-vvv`)
 - Install with russh 0.62.2 for clean `cargo install --locked`
 
 
@@ -98,7 +102,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Installation
 ### Choose the install path that matches your environment
-- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (**0.5.2+** on crates.io; avoid **0.3.9** for SCP).
+- Prefer crates.io with lockfile: `cargo install ssh-cli --locked` (**0.5.3+** preferred; avoid **0.3.9** for SCP).
 - Rebuild from a checkout: `cargo install --path . --locked`
 - Do **not** use install without `--locked` unless you verified the crypto pins resolve cleanly.
 - Force upgrade after a release: `cargo install ssh-cli --locked --force`
@@ -174,12 +178,19 @@ ssh-cli exec prod "hostname" --json
 | `ssh-cli sudo-exec <vps> <cmd>` / `--all` | One-shot sudo with safe packing (fleet with `--all`) |
 | `ssh-cli su-exec <vps> <cmd>` / `--all` | One-shot `su -` elevation (fleet with `--all`) |
 | `ssh-cli scp upload|download` | Regular files only (no `-r` on SCP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--use-agent`, `--json` → `scp-transfer` schema; missing remote → exit **66**; **`--all`** → `scp-batch` |
-| `ssh-cli sftp upload\|download\|ls\|mkdir\|rmdir\|rm\|stat\|rename` | SFTP v3 subsystem; `--recursive` trees (no symlink follow); auth parity with scp; JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch` |
+| `ssh-cli sftp upload\|download\|ls\|mkdir\|rmdir\|rm\|stat\|rename` | SFTP v3 subsystem (**0.5.3** integrity: no zero-byte truncate); `--recursive` trees (no symlink follow); auth parity with scp; JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch` |
 | `ssh-cli tunnel ... --timeout-ms N [--bind ADDR] [--json]` | Bounded local port forward; `--bind` default `127.0.0.1`; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`; `--json` emits `tunnel_listening` after bind; post-bind deadline exits **0** (pre-bind timeout still **74**); concurrent accepts gated by `--max-concurrency` |
 | `ssh-cli health-check [<vps>] [--timeout N]` / `--all` | Connectivity probe; optional `--timeout` ms; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`; **`--all`** → fleet probe (`health-check-batch`) |
-| `ssh-cli --max-concurrency N …` | Global cap (1..=64) for multi-host fan-out and tunnel forwards (auto CPUs×RAM formula when omitted) |
 | `ssh-cli secrets status|init|reencrypt` | Master-key and at-rest encryption (never prints key); `--json` emits `secrets-init` / `secrets-reencrypt`; first secret write folds `secrets_key_auto_created: true` into the same `vps-added` JSON (one document); flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` |
 | `ssh-cli completions <shell>` | Shell completion scripts |
+| `ssh-cli locale show\|set\|clear` | UI language resolution (`show` default; `set` persists XDG `lang`; `clear` removes preference) |
+| `ssh-cli tls provider` | rustls `CryptoProvider` status (`aws_lc_rs`) |
+| `ssh-cli tls paths` | XDG TLS directory layout |
+| `ssh-cli tls mtls list\|import\|show\|remove` | mTLS identity store under XDG `tls/mtls/` |
+| `ssh-cli tls acme account create\|show` | ACME account lifecycle |
+| `ssh-cli tls acme issue\|complete\|status\|list` | ACME DNS-01 cert lifecycle |
+| `ssh-cli --max-concurrency N …` | Global cap (1..=64) for multi-host fan-out and tunnel forwards (auto CPUs×RAM formula when omitted) |
+| `ssh-cli -v` / `-vv` / `-vvv` | Graduated verbosity: info / debug / trace; always crate-scoped (`warn,ssh_cli=*`); ambient `RUST_LOG` ignored (G2/G14) |
 
 
 ## Configuration (CLI-only product store)
@@ -191,6 +202,7 @@ ssh-cli exec prod "hostname" --json
 | Language | `--lang` or `ssh-cli locale set <code>` (XDG `lang`) | `ssh-cli --lang pt-BR …` |
 | Output format | `--json` / `--output-format json\|text` | `ssh-cli exec h uptime --json` |
 | Concurrency | `--max-concurrency N` (1..=64; auto formula when omitted) | `ssh-cli --max-concurrency 8 exec --all id --json` |
+| Verbosity | `-v` / `-vv` / `-vvv` (info / debug / trace; crate-scoped) | `ssh-cli -vv exec h id --json` |
 | Primary-key | `--secrets-key-file`, `--use-keyring`, or XDG `secrets.key` | `ssh-cli --secrets-key-file ./k secrets status` |
 | Plaintext opt-out | `--allow-plaintext-secrets` (**tests only**) | `ssh-cli --allow-plaintext-secrets …` |
 
@@ -205,9 +217,9 @@ ssh-cli exec prod "hostname" --json
 | `HOME` | OS home for XDG path resolution |
 | `TERM` / `NO_COLOR` / `CLICOLOR_FORCE` | Terminal / color capability |
 | `CI` / Flatpak-related markers | Runtime detection (`vps doctor` `runtime.*`) |
-| `RUST_LOG` | **Ignored** by product (not a config store); use `-v` for debug |
+| `RUST_LOG` | **Ignored** by product (not a config store); use `-v`/`-vv`/`-vvv` |
 
-- Default tracing filter is `error` so agent stderr stays clean; pass `-v` for debug (ambient `RUST_LOG` is ignored).
+- Default tracing filter is `error` so agent stderr stays clean; pass `-v`/`-vv`/`-vvv` for info/debug/trace (crate-scoped; ambient `RUST_LOG` is ignored).
 - Never put host passwords in environment variables; use registry + stdin.
 - Product does **not** read `SSH_CLI_HOME`, `SSH_CLI_LANG`, `SSH_CLI_FORCE_TEXT`, or `SSH_CLI_MAX_CONCURRENCY` as config stores.
 
@@ -216,7 +228,7 @@ ssh-cli exec prod "hostname" --json
 ### Wire agents with one-shot subprocesses only
 - Invoke `ssh-cli` as a subprocess with explicit argv.
 - Prefer `--json` or `--output-format json` for machine parsing.
-- Parse stdout only; default log level is `error` so stderr stays silent for JSON pipelines — pass `-v` when diagnosing (ambient `RUST_LOG` is ignored).
+- Parse stdout only; default log level is `error` so stderr stays silent for JSON pipelines — pass `-v`/`-vv`/`-vvv` when diagnosing (crate-scoped; ambient `RUST_LOG` is ignored).
 - Map non-zero exits with sysexits semantics before retry.
 - Store hosts once via `vps add` then call `exec` per task.
 - Pass secrets through `--password-stdin` when argv history is risky.
@@ -240,7 +252,7 @@ ssh-cli exec prod "hostname" --json
 | `143` | SIGTERM |
 
 - Prefer `--json` or auto JSON when stdout is not a TTY (`--output-format` overrides).
-- Default tracing is `error`, so exit handling and JSON stdout stay free of INFO noise; use `-v` only when diagnosing (ambient `RUST_LOG` is ignored).
+- Default tracing is `error`, so exit handling and JSON stdout stay free of INFO noise; use `-v`/`-vv`/`-vvv` only when diagnosing (crate-scoped; ambient `RUST_LOG` is ignored).
 - Retry only on transient IO/timeout (`74`), never on auth (`77`) or usage (`64`).
 
 
@@ -262,19 +274,22 @@ ssh-cli exec prod "hostname" --json
 
 ## Troubleshooting FAQ
 ### Fix common install and runtime failures
-- Install fails on crypto RC drift: rerun with `--locked` or use release **0.5.2+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
+- Install fails on crypto RC drift: rerun with `--locked` or use release **0.5.3+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
 - Auth fails on key-only hosts: set `--key` on `vps add` or pass `--key` / `--password-stdin` to `exec` (rejected auth exits **77**).
 - Auth fails with passphrase keys: use `--key-passphrase-stdin` (exit **77** on reject).
 - Host key changed: confirm legitimacy then rerun with `--replace-host-key`.
 - Command rejected as too long: raise `max_command_chars` or shorten the command.
 - Config has encrypted secrets but no key: run `ssh-cli secrets init` or restore `secrets.key` / env master-key / `--secrets-key-file`.
 - sudo-exec disabled: remove `--disable-sudo` and set `disable_sudo=false` on the host.
-- Unexpected stderr noise in JSON pipelines: default log level is already `error`; pass `-v` when diagnosing (ambient `RUST_LOG` is ignored).
-- SCP from crates.io **0.3.9** fails or writes 0-byte remotes: upgrade to **0.5.2+** (wire fix since 0.4.0); only regular files, not directories.
-- SCP remote missing: message is `file not found: <path>` and exit **66** (prefer **0.5.2+**; 0.4.2 IO-010).
+- Unexpected stderr noise in JSON pipelines: default log level is already `error`; pass `-v`/`-vv`/`-vvv` when diagnosing (crate-scoped; ambient `RUST_LOG` is ignored).
+- Need more logs without password leak: use `-v`/`-vv`/`-vvv` (crate-scoped `warn,ssh_cli=*`; G2/G14) — never rely on ambient `RUST_LOG` (ignored).
+- Ambient `RUST_LOG` ignored: product filter is CLI-only; setting `RUST_LOG=debug` has no effect.
+- SFTP upload wrote 0-byte remote on pre-**0.5.3**: upgrade to **0.5.3+** (G1 integrity fix).
+- SCP from crates.io **0.3.9** fails or writes 0-byte remotes: upgrade to **0.5.3+** (wire fix since 0.4.0; SFTP integrity fix in 0.5.3); only regular files, not directories.
+- SCP remote missing: message is `file not found: <path>` and exit **66** (prefer **0.5.3+**; 0.4.2 IO-010).
 - SCP download fails mid-transfer: destination stays absent or previous file intact (partial uses `.ssh-cli.partial`).
-- Redacted `vps export` on **0.4.0** wrote fake `sshcli-enc:` blobs for empty secrets: upgrade to **0.5.2+** (empty secrets stay empty strings since 0.4.1).
-- Tunnel emitted `ok: true` / `tunnel_listening` then process exit **74** when the post-bind deadline hit on **0.4.0**: upgrade to **0.5.2+** (post-bind deadline exits **0** since 0.4.1; pre-bind timeout still **74**).
+- Redacted `vps export` on **0.4.0** wrote fake `sshcli-enc:` blobs for empty secrets: upgrade to **0.5.3+** (empty secrets stay empty strings since 0.4.1).
+- Tunnel emitted `ok: true` / `tunnel_listening` then process exit **74** when the post-bind deadline hit on **0.4.0**: upgrade to **0.5.3+** (post-bind deadline exits **0** since 0.4.1; pre-bind timeout still **74**).
 - Import bad TOML: parse errors map to exit **65** (`TomlDe` / data error).
 - Import redacted skeleton without secrets: pass `--allow-incomplete`.
 - macOS Gatekeeper blocks binary: run `xattr -d com.apple.quarantine /path/to/ssh-cli`.

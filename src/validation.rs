@@ -87,7 +87,9 @@ pub fn validate_nonempty_trimmed(s: &str) -> Result<(), validator::ValidationErr
 pub fn validate_port_nonzero(port: u16) -> Result<(), validator::ValidationError> {
     if port == 0 {
         let mut e = validator::ValidationError::new("port");
-        e.message = Some(std::borrow::Cow::from("invalid SSH port: 0 (use 1..=65535)"));
+        e.message = Some(std::borrow::Cow::from(
+            "invalid SSH port: 0 (use 1..=65535)",
+        ));
         return Err(e);
     }
     Ok(())
@@ -144,11 +146,7 @@ pub fn from_json_str<'de, T: serde::Deserialize<'de>>(s: &'de str) -> SshCliResu
             path = %e.path(),
             "JSON deserialize failed"
         );
-        SshCliError::InvalidArgument(format!(
-            "JSON at `{}`: {}",
-            e.path(),
-            e.inner()
-        ))
+        SshCliError::InvalidArgument(format!("JSON at `{}`: {}", e.path(), e.inner()))
     })
 }
 

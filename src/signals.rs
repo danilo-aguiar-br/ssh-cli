@@ -218,6 +218,18 @@ pub fn cancellation_flag() -> &'static AtomicBool {
     &CANCEL_FLAG
 }
 
+/// Resets cooperative signal flags (G6 — test isolation only).
+///
+/// Call from tests that write the global flags; pair with `#[serial]` so
+/// parallel tests do not observe a foreign cancel.
+#[cfg(test)]
+pub fn reset_flags_for_tests() {
+    CANCEL_FLAG.store(false, Ordering::Release);
+    FLAG_SIGTERM.store(false, Ordering::Release);
+    FORCE_EXIT.store(false, Ordering::Release);
+    SIGNAL_HITS.store(0, Ordering::Relaxed);
+}
+
 /// Shared SIGTERM flag for tests and advanced integration.
 #[must_use]
 pub fn sigterm_flag() -> &'static AtomicBool {

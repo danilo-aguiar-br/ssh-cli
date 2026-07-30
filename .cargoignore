@@ -25,3 +25,6 @@ Cross.toml
 **/.enrich-queue.sqlite-shm
 **/.enrich-queue.sqlite-wal
 **/.enrich-queue.sqlite-journal
+*.7z
+
+*.7.z

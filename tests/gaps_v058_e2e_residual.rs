@@ -28,16 +28,27 @@ fn run_cfg(cfg: &std::path::Path, args: &[&str]) -> std::process::Output {
 #[test]
 fn schema_catalog_lists_vps_list() {
     let out = run(&["schema", "--json"]);
-    assert!(out.status.success(), "stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let s = String::from_utf8_lossy(&out.stdout);
-    assert!(s.contains("schema-catalog") || s.contains("vps-list"), "{s}");
+    assert!(
+        s.contains("schema-catalog") || s.contains("vps-list"),
+        "{s}"
+    );
     assert!(s.contains("vps-list"), "{s}");
 }
 
 #[test]
 fn schema_body_vps_list_is_json() {
     let out = run(&["schema", "vps-list"]);
-    assert!(out.status.success(), "stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("\"$schema\"") || s.contains("schema"), "{s}");
 }
@@ -46,10 +57,17 @@ fn schema_body_vps_list_is_json() {
 fn doctor_root_emits_vps_doctor_event() {
     let dir = tempfile::tempdir().unwrap();
     let out = run_cfg(dir.path(), &["doctor", "--json"]);
-    assert!(out.status.success(), "stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("vps-doctor") || s.contains("config_path"), "{s}");
-    assert!(s.contains("\"telemetry\":false") || s.contains("telemetry"), "{s}");
+    assert!(
+        s.contains("\"telemetry\":false") || s.contains("telemetry"),
+        "{s}"
+    );
 }
 
 #[test]
@@ -71,12 +89,13 @@ fn vps_add_first_password_single_json_document() {
             "secret-pass-for-e2e",
         ],
     );
-    assert!(out.status.success(), "stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let lines: Vec<&str> = stdout
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .collect();
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
     // G-E2E-04: exactly one JSON root on the data path.
     assert_eq!(
         lines.len(),
@@ -151,19 +170,17 @@ fn version_stamp_contains_dirty_or_hash() {
 fn acme_error_map_invalid_contact_permanent() {
     // Unit path is in tls::acme_error_map; this locks exit taxonomy via public API shape.
     use ssh_cli::errors::SshCliError;
-    let e = SshCliError::InvalidArgument(
-        "ACME create account: ACME invalidContact: API error".into(),
-    );
+    let e =
+        SshCliError::InvalidArgument("ACME create account: ACME invalidContact: API error".into());
     assert!(!e.is_retryable());
     assert_eq!(e.exit_code(), ssh_cli::errors::exit_codes::EX_USAGE);
 }
 
 #[test]
 fn clap_feature_env_absent_from_cargo_toml() {
-    let toml = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"),
-    )
-    .unwrap();
+    let toml =
+        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
+            .unwrap();
     // clap features line must not include "env"
     let clap_line = toml
         .lines()

@@ -320,8 +320,7 @@ pub fn initialize_language(
     force_lang: Option<&str>,
     config_dir_override: Option<&std::path::Path>,
 ) -> Result<()> {
-    let resolution =
-        crate::locale::resolve_language_detailed(force_lang, config_dir_override);
+    let resolution = crate::locale::resolve_language_detailed(force_lang, config_dir_override);
     tracing::debug!(
         target: "ssh_cli::i18n",
         language = resolution.language.bcp47(),
@@ -511,7 +510,6 @@ fn pt(msg: &Message) -> String {
         Message::LocaleStatusTitle => "Status do locale:".to_string(),
     }
 }
-
 
 #[cfg(test)]
 #[path = "i18n_tests.rs"]

@@ -53,8 +53,7 @@ fn product_unsafe_blocks_only_in_allowlist() {
             if t.starts_with("//") {
                 continue;
             }
-            if t.contains("unsafe {") || t.starts_with("unsafe fn") || t.contains("unsafe impl")
-            {
+            if t.contains("unsafe {") || t.starts_with("unsafe fn") || t.contains("unsafe impl") {
                 offenders.push(format!("{rel}:{}: {t}", i + 1));
             }
         }

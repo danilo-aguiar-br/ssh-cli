@@ -47,19 +47,29 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
 /// installs the global subscriber.
 static LOG_FILTER_RELOAD: OnceLock<reload::Handle<EnvFilter, Registry>> = OnceLock::new();
 
-/// Builds the process-local tracing filter from CLI `--verbose` only (G-AUD-22).
+/// Builds the process-local tracing filter from CLI `-v` count only (G-AUD-22 / G14).
 ///
-/// - `verbose == true` (`-v`) → `debug`
-/// - otherwise → `error`
+/// | level | filter |
+/// |-------|--------|
+/// | 0     | `error` |
+/// | 1 (`-v`) | `warn,ssh_cli=info` |
+/// | 2 (`-vv`) | `warn,ssh_cli=debug` |
+/// | ≥3 (`-vvv`) | `warn,ssh_cli=trace` |
 ///
 /// Ambient `RUST_LOG` is **ignored** (not an env store of product config).
 /// `--quiet` affects human stdout only ([`crate::output::set_quiet`]).
+///
+/// **G2 security:** never emit a bare global `debug`/`trace` directive — that
+/// enables `russh::client::encrypted`, which logs the raw userauth packet
+/// (SSH password in cleartext) to stderr.
 #[must_use]
-pub fn build_env_filter(verbose: bool) -> EnvFilter {
-    if verbose {
-        return EnvFilter::new("debug");
+pub fn build_env_filter(verbose: u8) -> EnvFilter {
+    match verbose {
+        0 => EnvFilter::new("error"),
+        1 => EnvFilter::new("warn,ssh_cli=info"),
+        2 => EnvFilter::new("warn,ssh_cli=debug"),
+        _ => EnvFilter::new("warn,ssh_cli=trace"),
     }
-    EnvFilter::new("error")
 }
 
 /// Installs stderr tracing **before** clap parse (one-shot lifecycle phase 1b).
@@ -102,16 +112,16 @@ pub fn bootstrap_logs() {
     }
 }
 
-/// Initializes or reloads `tracing-subscriber` from the verbose CLI flag.
+/// Initializes or reloads `tracing-subscriber` from the verbose CLI count (G14).
 ///
-/// GAP-SSH-LOG-001 / G-AUD-22: default **error** (agent-first). `-v` → debug.
+/// GAP-SSH-LOG-001 / G-AUD-22: default **error** (agent-first).
 /// Ambient `RUST_LOG` is ignored (CLI-only filter).
-pub fn initialize_logs(verbose: bool) {
+pub fn initialize_logs(verbose: u8) {
     let filter = build_env_filter(verbose);
     if let Some(handle) = LOG_FILTER_RELOAD.get() {
         match handle.reload(filter) {
             Ok(()) => {
-                // Visible only when the new filter admits `debug` (e.g. `-v`).
+                // Visible only when the new filter admits `debug` (e.g. `-vv`).
                 tracing::debug!(
                     verbose,
                     rust_log_set = std::env::var_os("RUST_LOG").is_some(),
@@ -154,7 +164,7 @@ mod tests {
         // Isolate from ambient RUST_LOG in the test runner.
         let prev = std::env::var_os("RUST_LOG");
         crate::test_util::env::remove_var("RUST_LOG");
-        let f = build_env_filter(false);
+        let f = build_env_filter(0);
         assert_eq!(f.to_string(), "error");
         match prev {
             Some(v) => crate::test_util::env::set_var("RUST_LOG", v),
@@ -163,11 +173,32 @@ mod tests {
     }
 
     #[test]
-    fn build_env_filter_verbose_is_debug() {
+    fn build_env_filter_verbose_scopes_levels_to_this_crate() {
         let prev = std::env::var_os("RUST_LOG");
         crate::test_util::env::remove_var("RUST_LOG");
-        let f = build_env_filter(true);
-        assert_eq!(f.to_string(), "debug");
+        let f1 = build_env_filter(1).to_string();
+        let f2 = build_env_filter(2).to_string();
+        let f3 = build_env_filter(3).to_string();
+        assert!(
+            f1.contains("ssh_cli=info"),
+            "-v must enable info for the product crate, got {f1:?}"
+        );
+        assert!(
+            f2.contains("ssh_cli=debug"),
+            "-vv must enable debug for the product crate, got {f2:?}"
+        );
+        assert!(
+            f3.contains("ssh_cli=trace"),
+            "-vvv must enable trace for the product crate, got {f3:?}"
+        );
+        // G2 security: never a bare global debug/trace directive.
+        for f in [&f1, &f2, &f3] {
+            assert!(
+                !f.split(',')
+                    .any(|d| d.trim() == "debug" || d.trim() == "trace" || d.trim() == "info"),
+                "verbose must NOT set a global level directive, got {f:?}"
+            );
+        }
         match prev {
             Some(v) => crate::test_util::env::set_var("RUST_LOG", v),
             None => crate::test_util::env::remove_var("RUST_LOG"),

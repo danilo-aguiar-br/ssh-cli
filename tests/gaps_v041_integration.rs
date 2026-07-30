@@ -288,7 +288,9 @@ fn gap_doc_041_root_honesty_aud_post() {
 fn gap_cli_005_tunnel_source_passphrase() {
     let src = std::fs::read_to_string(root().join("src/tunnel.rs")).unwrap();
     assert!(
-        src.contains("key_passphrase") || src.contains("apply_overrides") || src.contains("aplicar_overrides"),
+        src.contains("key_passphrase")
+            || src.contains("apply_overrides")
+            || src.contains("aplicar_overrides"),
         "tunnel must apply key_passphrase via overrides (CLI-005)"
     );
     let cli = std::fs::read_to_string(root().join("src/cli/mod.rs")).unwrap();

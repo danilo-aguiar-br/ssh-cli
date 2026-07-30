@@ -3,7 +3,7 @@
 > Copie receitas executáveis que resolvem problemas reais de SSH multi-host com agentes.
 
 - Leia este documento em [inglês](COOKBOOK.md).
-- Linha de produto: 0.5.2.
+- Linha de produto: 0.5.3.
 
 
 ## Nota de latência
@@ -16,14 +16,15 @@
 - Timeout padrão: 60000 ms
 - max_command_chars padrão: 1000
 - max_output_chars padrão: 100000
-- Tracing padrão: error (`-v` → debug; `RUST_LOG` ambiente é ignorado)
+- Tracing padrão: error (`-v` → info, `-vv` → debug, `-vvv` → trace; escopo na crate; `RUST_LOG` ambiente é ignorado)
 - Senha vazia em list/show JSON: `null` (hosts só-chave); não vazia mascara como `***`
 - Telemetria: desligada
 - Segredos at-rest: cifrados por padrão (auto `secrets.key`)
 - Instalação: `cargo install ssh-cli --locked`
 - Supply chain: russh 0.62.2; `cargo deny` com `yanked=deny`, `multiple-versions=warn`
 - SCP: somente arquivos regulares (sem `-r` / sem diretórios). Árvores e FS remoto usam **`sftp`** (`upload|download --recursive`, `ls`, `mkdir`, …). Sufixo partial de download `.ssh-cli.partial`; JSON exige `event: "scp-transfer"`
-- Wire SCP: use 0.4.0+ (prefira a linha de produto 0.5.2); nunca 0.3.9 (crates.io 0.3.9 anunciava SCP mas era inoperante)
+- Wire SCP: use 0.4.0+ (prefira a linha de produto 0.5.3); nunca 0.3.9 (crates.io 0.3.9 anunciava SCP mas era inoperante)
+- SFTP: prefira **0.5.3+** (correção de integridade de upload G1); verifique o destino com `sha256sum`; árvores via `--recursive`
 - Export redacted: corpo padrão é TOML (mesmo em pipes); secrets vazios como `""`; secrets não vazios redacted → `***` (`FIXED_MASK`, nunca `""` para não vazios); nunca blob `sshcli-enc:` no caminho redacted; JSON só com `vps export --json`
 - Wire de hosts: schema v3 (serialização em inglês; dual-read de aliases legados em português)
 - Tunnel pós-bind: deadline one-shot sai com exit 0 após `tunnel_listening` (TUN-002); timeout pré-bind permanece 74
@@ -35,6 +36,19 @@
 - Senha em argv: aviso em stderr; prefira `--*-stdin`
 - CRUD/connect/import com `--json`: eventos `vps-added` / `vps-edited` / `vps-removed` / `vps-connected` / `vps-import`
 - A primeira gravação de segredo pode definir `secrets_key_auto_created: true` no mesmo documento `vps-added` quando a primary-key é provisionada
+- Notas de produto (0.5.3 / G1–G19 voltadas ao usuário):
+  - G1: integridade de upload SFTP (prefira 0.5.3+; verifique o destino com `sha256sum`)
+  - G2/G14: `-v`/`-vv`/`-vvv` graduado com escopo na crate; `RUST_LOG` ambiente ignorado
+  - G3: SETSTAT SFTP envia `atime`+`mtime` juntos
+  - G4: `set_metadata` mutante SFTP é fail-closed
+  - G5/G17: cancelamento multi-arquivo / batch mantém `results.len() == input.len()` (resto cancelled preenchido)
+  - G8: `exec --json` de host único emite exatamente um objeto JSON
+  - G9: download SCP propaga falha de `sync_data` antes do rename
+  - G12/G19: bits de permissão mascarados com `SFTP_PERM_MASK` (`0o7777`)
+  - G15: aceite prova de efeito no destino (checksum), não só contagem de bytes do cliente
+  - G18: falhas de `set_permissions` local no download SFTP são sinalizadas
+  - G7: matriz E2E real-SSH inclui checksum SFTP + árvore recursiva (**E17/E18**)
+  - G6/G11: só isolamento de testes (veja E2E / TESTING) — não é contrato de CLI em runtime
 
 
 ## Como inicializar cifragem com primary-key
@@ -57,16 +71,18 @@ ssh-cli secrets reencrypt --json
 ```
 
 
-## Como descobrir contratos (schema / doctor)
+## Como descobrir contratos (schema / doctor / commands)
 
 ```bash
 ssh-cli schema
 ssh-cli schema vps-list
 ssh-cli doctor --json
+ssh-cli commands --json
 ```
 
-- Root `schema` lista contratos de agente; `schema <name>` imprime um documento de schema.
+- Root `schema` lista o catálogo de schemas de agente; `schema <name>` imprime um documento de schema.
 - Root `doctor --json` (ou `vps doctor --json`) reporta paths, modo de secrets e runtime.
+- Root `commands --json` emite a árvore completa de comandos CLI (`event: "commands"`) para descoberta por agentes.
 
 
 ## Como cadastrar host com senha (stdin, sem vazar em argv)
@@ -148,26 +164,37 @@ ssh-cli health-check lab --json
 
 ## Como rodar trabalho de frota em todos os hosts registrados
 
-Prefira **um processo** com `--all` (SSH concorrente com bound) a N processos single-host. Limite o fan-out com `--max-concurrency` global (1..=64; fórmula auto quando omitido).
+Prefira **um processo** com `--all` ou um subconjunto via `--hosts a,b` (SSH concorrente com bound) a N processos single-host. Limite o fan-out com `--max-concurrency` global (1..=64; fórmula auto quando omitido).
 
 ```bash
 # sonda todos os hosts do inventário (JSON batch: health-check-batch)
 ssh-cli --max-concurrency 8 health-check --all --json
+# subconjunto do inventário (ainda JSON batch)
+ssh-cli health-check --hosts web1,web2 --json
 
-# mesmo comando remoto em todos (exec-batch; também sudo-exec / su-exec --all)
+# mesmo comando remoto em todos ou em um subconjunto (exec-batch; também sudo-exec / su-exec)
 ssh-cli exec --all 'uptime' --json
+ssh-cli exec --hosts web1,web2 'uptime' --json
 ssh-cli --max-concurrency 4 sudo-exec --all 'systemctl is-active nginx' --json
 
 # copia um arquivo local para o mesmo path remoto em todos (scp-batch)
 ssh-cli scp upload --all ./app.tgz /tmp/app.tgz --json
+ssh-cli scp upload --hosts web1,web2 ./app.tgz /tmp/app.tgz --json
 
 # download: path local é prefixo → grava ./app.log.<vps>
 ssh-cli scp download --all /var/log/app.log ./app.log --json
+
+# doctor local + sonda SSH de frota opcional
+ssh-cli vps doctor --probe-ssh --json
 ```
 
 - Schemas batch: `docs/schemas/health-check-batch.schema.json`, `exec-batch.schema.json`, `scp-batch.schema.json` (envelope inclui `max_concurrency`).
-- Inventário vazio + `--all` → exit de uso **64** (`no hosts registered for --all`).
-- Comandos single-host permanecem válidos quando o alvo é um nome.
+- Limite o fan-out com `--max-concurrency` global (1..=64; fórmula auto quando omitido).
+- Cancelamento multi-arquivo / batch mantém `results.len() == input.len()` com o resto cancelled preenchido (G5/G17).
+- Inventário vazio + `--all` / `--hosts` → exit de uso **64**.
+- Nome desconhecido em `--hosts` → exit de uso **64** (`unknown host(s) for --hosts`).
+- Comandos single-host permanecem válidos quando o alvo é um nome posicional (JSON clássico).
+- `tunnel` é single-host por contrato (um bind + uma sessão); multi-host = N invocações.
 
 
 ## Como sondar com timeout customizado
@@ -188,9 +215,11 @@ ssh-cli health-check lab --timeout 15000 --json
 ```bash
 # tracing padrão é error: stderr de JSON/tunnel fica sem prosa INFO
 ssh-cli exec lab "true" --json
-# só ao diagnosticar:
-# ssh-cli -v exec lab "true" --json
-# ssh-cli -v exec lab "true" --json
+# só ao diagnosticar (escopo na crate; sem vazamento de senha via russh — G2/G14):
+# ssh-cli -v exec lab "true" --json    # info
+# ssh-cli -vv exec lab "true" --json   # debug
+# ssh-cli -vvv exec lab "true" --json  # trace
+# RUST_LOG ambiente é ignorado
 ```
 
 
@@ -278,7 +307,7 @@ printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
 ## Como transferir artefato de release (somente arquivo regular)
 
 ```bash
-# Use 0.4.0+ (prefira a linha de produto 0.5.2); nunca 0.3.9 — o wire SCP daquela release estava quebrado
+# Use 0.4.0+ (prefira a linha de produto 0.5.3); nunca 0.3.9 — o wire SCP daquela release estava quebrado
 # SCP: sem diretórios / sem -r (use `sftp --recursive` para árvores)
 ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
   --timeout 120000 --json
@@ -295,6 +324,107 @@ ssh-cli exec prod "tar -tzf /opt/app/app.tar.gz | head"
 ssh-cli scp download prod /var/log/app.log ./app.log --json
 # em falha o path final fica intacto; intermediário é ./app.log.ssh-cli.partial
 # mtime/mode preservados nos dois sentidos (remoto scp -tp/-fp)
+# falha de sync_data é propagada antes do rename (G9)
+```
+
+
+## Como fazer upload SFTP e verificar checksum (prefira 0.5.3+)
+
+```bash
+# G1 corrigiu truncamento de upload SFTP em 0.5.3 — sempre prove o efeito no destino
+ssh-cli sftp upload prod ./payload.bin /tmp/payload.bin --json
+ssh-cli exec prod "sha256sum /tmp/payload.bin" --json
+sha256sum ./payload.bin
+# download (partial + rename atômico; G18 sinaliza falhas de set_permissions local):
+ssh-cli sftp download prod /tmp/payload.bin ./payload.remote.bin --json
+# árvore recursiva (sem seguir symlink):
+ssh-cli sftp upload --recursive prod ./dist/tree /opt/app/tree --json
+# frota multi-host:
+ssh-cli sftp upload --all ./payload.bin /tmp/payload.bin --json
+```
+
+
+## Como gerenciar paths remotos via SFTP
+
+```bash
+ssh-cli sftp ls prod /tmp --json
+ssh-cli sftp mkdir prod /tmp/app --json
+ssh-cli sftp stat prod /tmp/app --json
+ssh-cli sftp rename prod /tmp/app /tmp/app.bak --json
+ssh-cli sftp rm prod /tmp/file.bin --json
+ssh-cli sftp rmdir prod /tmp/empty --json
+# schemas: sftp-list / sftp-fs-op
+```
+
+- Prefira a linha de produto **0.5.3+** para todo trabalho SFTP (integridade de upload G1).
+- SETSTAT envia `atime`+`mtime` juntos (G3); metadata mutante é fail-closed (G4).
+- Bits de permissão usam `SFTP_PERM_MASK` (`0o7777`; G12/G19).
+- Falhas de `set_permissions` local no download são sinalizadas (G18).
+
+
+## Como gerar completions de shell
+
+```bash
+ssh-cli completions bash
+ssh-cli completions zsh
+ssh-cli completions fish
+ssh-cli completions powershell
+ssh-cli completions elvish
+```
+
+
+## Como diagnosticar com -vv sem vazamento de senha
+
+```bash
+# filtros com escopo na crate (warn,ssh_cli=…) — nunca debug global nu (G2)
+ssh-cli -vv exec prod "true" --json
+# NÃO defina RUST_LOG; RUST_LOG ambiente é ignorado
+```
+
+
+## Como definir locale de UI
+
+```bash
+ssh-cli locale show
+ssh-cli locale set pt-BR
+ssh-cli --lang en vps list
+ssh-cli locale clear
+```
+
+
+## Como inspecionar provider e paths TLS
+
+```bash
+ssh-cli tls provider
+ssh-cli tls paths
+ssh-cli tls mtls list
+ssh-cli tls mtls import --name edge --cert ./client.pem --key ./client-key.pem
+ssh-cli tls mtls show edge
+ssh-cli tls mtls remove edge
+ssh-cli tls acme account create --contact mailto:ops@example.com
+ssh-cli tls acme account show
+ssh-cli tls acme issue example.com --print-challenge
+ssh-cli tls acme complete example.com
+ssh-cli tls acme status example.com
+ssh-cli tls acme list
+```
+
+- Stack TLS é só **rustls** + **aws_lc_rs** (sem runtime OpenSSL).
+- Material fica sob XDG `tls/` (veja `ssh-cli tls paths`).
+- Falhas permanentes de validação ACME (ex.: `invalidContact`) → exit **64** (não faça retry como 74).
+
+
+## Como fazer CRUD completo de VPS
+
+```bash
+ssh-cli vps add --name web1 --host 203.0.113.10 --user deploy --key ~/.ssh/id_ed25519 --json
+ssh-cli vps list --json
+ssh-cli vps show web1 --json
+ssh-cli vps edit web1 --timeout 90000 --json
+ssh-cli connect web1
+ssh-cli vps path
+ssh-cli doctor --json
+ssh-cli vps remove web1 --json
 ```
 
 
@@ -331,6 +461,7 @@ bash scripts/e2e_real_ssh.sh --config-dir /tmp/ssh-cli-e2e-lab
 
 - Binário padrão: `target/release/ssh-cli` (override só com harness `SSH_CLI_E2E_BIN`).
 - Sem host de lab / credenciais, o script sai **0** com **SKIP** (seguro offline; não trate SKIP como gate vermelho).
-- Matriz oficial **E01–E16**; **E10–E14** = SCP upload, download, integridade (`cmp`), remoto ausente, preserve mode+mtime.
+- Matriz oficial **E01–E18**; **E10–E14** = SCP upload, download, integridade (`cmp`), remoto ausente, preserve mode+mtime; **E17/E18** = SFTP checksum + árvore recursiva (G7).
+- G6/G11 são só isolamento de testes (testes de sinal serializados / `reset_flags_for_tests`) — não são superfície de CLI do produto.
 - O script imprime só rótulos PASS/FAIL/SKIP — nunca host, user ou password.
 - Prefira `sshd` local / VPS throwaway; nunca tempestade de auth falha em produção (fail2ban).

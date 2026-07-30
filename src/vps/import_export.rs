@@ -6,10 +6,8 @@
 //! Workload: **local disk + optional secret materialization**. Sequential justified:
 //! single atomic write path; concurrent import would race flock/rename.
 
-use super::{
-    load, save, validate_key_path_exists, write_atomic, ConfigFile,
-};
 use super::model;
+use super::{load, save, validate_key_path_exists, write_atomic, ConfigFile};
 use crate::cli::OutputFormat;
 use crate::errors::{SshCliError, SshCliResult};
 use anyhow::Result;
@@ -82,9 +80,7 @@ pub(super) fn run_export(
                 "include_secrets": include_secrets,
                 "format": if wants_json { "json" } else { "toml" },
             }),
-            &crate::i18n::t(crate::i18n::Message::ExportCompleted {
-                path: path_display,
-            }),
+            &crate::i18n::t(crate::i18n::Message::ExportCompleted { path: path_display }),
             format == OutputFormat::Json,
         )?;
     } else {
@@ -115,7 +111,7 @@ pub fn parse_import_payload(text: &str) -> SshCliResult<ConfigFile> {
 fn parse_import_json(text: &str) -> SshCliResult<ConfigFile> {
     // G-SERDE-08/14: path errors + warn on unknown fields (Must-Ignore).
     let envelope: crate::json_wire::ImportEnvelope =
-            crate::validation::from_json_str_warn_unused(text)?;
+        crate::validation::from_json_str_warn_unused(text)?;
     let defaults = crate::json_wire::ImportDefaults {
         timeout_ms: model::DEFAULT_TIMEOUT_MS,
         max_command_chars: model::DEFAULT_MAX_COMMAND_CHARS,

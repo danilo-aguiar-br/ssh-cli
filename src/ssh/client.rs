@@ -93,8 +93,8 @@ pub(crate) fn append_capped(buf: &mut Vec<u8>, data: &[u8], cap: usize, truncate
 }
 
 // G-TYPE-14: UTF-8 truncation lives in `session_io` (re-exported for callers).
-pub use super::session_io::truncate_utf8;
 pub(crate) use super::session_io::take_utf8_capped;
+pub use super::session_io::truncate_utf8;
 
 // =========================================================================
 // SshClientTrait enables real or mock SSH clients in tests.
@@ -130,18 +130,10 @@ pub trait SshClientTrait: Send + Sync + 'static {
     ) -> Result<ExecutionOutput, SshCliError>;
 
     /// Uploads a local file to the remote server via SCP.
-    async fn upload(
-        &self,
-        local: &Path,
-        remote: &Path,
-    ) -> Result<TransferResult, SshCliError>;
+    async fn upload(&self, local: &Path, remote: &Path) -> Result<TransferResult, SshCliError>;
 
     /// Downloads a remote file to the local filesystem via SCP.
-    async fn download(
-        &self,
-        remote: &Path,
-        local: &Path,
-    ) -> Result<TransferResult, SshCliError>;
+    async fn download(&self, remote: &Path, local: &Path) -> Result<TransferResult, SshCliError>;
 
     /// Opens a `direct-tcpip` channel for tunnel forwarding.
     async fn open_tunnel_channel(
@@ -187,7 +179,6 @@ pub mod mocks {
 // REAL SSH implementation (`ssh-real` feature).
 // =========================================================================
 
-
 #[cfg(feature = "ssh-real")]
 #[path = "client_real.rs"]
 mod real;
@@ -195,7 +186,7 @@ mod real;
 /// Real SSH client backed by `russh` (default feature `ssh-real`).
 #[cfg(feature = "ssh-real")]
 #[cfg_attr(docsrs, doc(cfg(feature = "ssh-real")))]
-pub use real::{SshClient, ClientHandler};
+pub use real::{ClientHandler, SshClient};
 
 #[cfg(not(feature = "ssh-real"))]
 #[path = "client_stub.rs"]
