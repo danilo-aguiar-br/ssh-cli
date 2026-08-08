@@ -72,6 +72,21 @@ Cross.toml
 
 *.7.z
 
+
+# `.commit_hash` DEVE permanecer RASTREADO: e o passo 2 da precedencia de
+# GAP-SSH-REL-007 em build.rs (env -> .commit_hash -> git -> unknown) e a unica fonte
+# de proveniencia de commit dentro do tarball do crates.io, onde nao existe checkout.
+#
+# Medido: dentro de um checkout o Cargo monta a lista do pacote a partir do INDICE do
+# git, entao o que exclui o arquivo do tarball e `git rm --cached`, nao a regra de
+# ignore. Com o arquivo rastreado o pacote traz `.commit_hash` mesmo havendo regra de
+# ignore vencendo. Estas negacoes sao defesa secundaria contra um `git add .` distraido
+# e podem perder a posicao, porque a ferramenta externa de higiene reescreve o bloco
+# gerenciado no FIM do arquivo. A protecao real e o gate em
+# tests/gaps_v042_integration.rs, que exige o arquivo no indice.
+!.commit_hash
+!**/.commit_hash
+
 # BEGIN GH_SKILL_HYGIENE
 # Managed by ~/.grok/skills/gh/scripts/pre-commit-hygiene.sh — do not hand-edit inside markers
 # Ensures agent residual, secrets, DBs, media dumps and temp dirs never enter git

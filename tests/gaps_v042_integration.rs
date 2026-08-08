@@ -286,6 +286,37 @@ fn gap_rel_007_build_rs_precedence() {
         !hash.trim().is_empty() && hash.trim() != "unknown",
         ".commit_hash must be non-empty real hash"
     );
+
+    // Existing on disk is not enough. Inside a git checkout Cargo builds the package
+    // file list from the index, so an untracked-and-ignored file is dropped from the
+    // tarball while every assertion above stays green.
+    //
+    // Measured both ways on this repository: an external hygiene tool ran
+    // `git rm --cached .commit_hash` and `cargo package --list` went 245 -> 244 with the
+    // file gone; re-adding it with `git add -f`, while the ignore rule was still winning
+    // by last-match, restored 245 with `.commit_hash` back at position 5. Tracking is
+    // therefore the load-bearing condition and the ignore rule is not — asserting the
+    // ignore ordering instead would fail permanently on a correctly packaged tree.
+    //
+    // Skipped when `.git` is absent, which is exactly the crates.io source build where
+    // this file is the surviving evidence rather than something to re-verify.
+    if root().join(".git").exists() {
+        let tracked = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root())
+            .args(["ls-files", "--error-unmatch", ".commit_hash"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if let Ok(st) = tracked {
+            assert!(
+                st.success(),
+                ".commit_hash exists on disk but is not tracked by git, so Cargo drops it \
+                 from the crates.io tarball and build.rs falls through to `unknown`. \
+                 Re-add it with `git add -f .commit_hash` (REL-007)."
+            );
+        }
+    }
 }
 
 // --- ENV-001 ---
