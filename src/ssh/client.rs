@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // G-SECDEV-05: pure module — no `unsafe` permitted (crate root allows only OS FFI / test env).
 #![forbid(unsafe_code)]
-//! Cliente SSH real via `russh` 0.62.2.
+//! Real SSH client over `russh` 0.62.5.
 //!
 //! One-shot connection: TCP + handshake + auth (password and/or key) + exec with
 //! timeout, output truncation, and best-effort remote abort.
-//! Host keys: TOFU em `known_hosts` XDG (ver [`super::known_hosts`]).
+//! Host keys: TOFU in the XDG `known_hosts` (see [`super::known_hosts`]).
 //!
 //! # Workload classification (resource economy)
 //!
@@ -15,11 +15,11 @@
 //! - **No Rayon / no process pool:** one-shot single session; coordination cost
 //!   exceeds any local CPU fan-out on the agent path.
 //! - **Capture RAM:** stdout/stderr bounded by `max_chars×4` bytes (UTF-8 worst
-//!   case) and hard-capped at [`EXEC_CAPTURE_HARD_MAX_BYTES`] per stream.
+//!   case) and hard-capped at `EXEC_CAPTURE_HARD_MAX_BYTES` per stream.
 //! - **SCP:** stream in 32 KiB chunks to/from disk (no full-file heap load);
 //!   disk I/O uses `tokio::fs` so the async worker is not blocked on syscalls.
 //! - **Latency:** RTT-bound; decode path reuses the capture `Vec` via
-//!   [`take_utf8_capped`] when remote bytes are valid UTF-8.
+//!   `take_utf8_capped` when remote bytes are valid UTF-8.
 
 use crate::errors::SshCliError;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -51,6 +51,43 @@ pub struct TransferResult {
     pub bytes_transferred: u64,
     /// Total duration in milliseconds.
     pub duration_ms: u64,
+    /// Whether the remote modification time was applied to the local file.
+    ///
+    /// G-SCP-R01: the product documented mtime preservation as a *guarantee* while the
+    /// implementation discarded the failure at two nesting levels. Destination
+    /// filesystems that cannot represent the operation — FAT32, exFAT, some bind
+    /// mounts, WSL interop paths — silently produced a file with the wrong timestamp,
+    /// and a build pipeline deciding whether to recompile by mtime comparison took the
+    /// wrong branch with the symptom appearing far from the cause. Reporting the
+    /// outcome resolves the contradiction without failing transfers that are otherwise
+    /// complete and correct.
+    ///
+    /// Always `true` for uploads and whenever the remote sent no timestamps: there was
+    /// nothing to preserve, so nothing was lost.
+    pub mtime_preserved: bool,
+    /// Whether the parent directory was successfully fsynced after the atomic rename.
+    ///
+    /// G-SCP-R02: the rename is atomic, but until the *directory* entry is flushed a
+    /// crash can leave the file missing even though the CLI already reported exit 0.
+    /// The fsync was best-effort by design and invisible by accident; an agent had no
+    /// way to know whether the success it received was durable.
+    pub durable: bool,
+}
+
+impl Default for TransferResult {
+    /// Defaults describe "nothing was attempted, so nothing failed".
+    ///
+    /// The booleans default to `true` because every non-SCP-download path either has
+    /// no local file to stamp or no rename to flush. Defaulting them to `false` would
+    /// have reported spurious durability loss on uploads.
+    fn default() -> Self {
+        Self {
+            bytes_transferred: 0,
+            duration_ms: 0,
+            mtime_preserved: true,
+            durable: true,
+        }
+    }
 }
 
 /// Hard upper bound (bytes) retained **per stream** while capturing remote exec output.
@@ -62,7 +99,7 @@ pub(crate) const EXEC_CAPTURE_HARD_MAX_BYTES: usize = 16 * 1024 * 1024;
 /// Bytes retained per stream while capturing remote output.
 ///
 /// Uses UTF-8 worst-case 4 bytes/codepoint (+4 slack for a trailing incomplete
-/// sequence), then clamps to [`EXEC_CAPTURE_HARD_MAX_BYTES`].
+/// sequence), then clamps to `EXEC_CAPTURE_HARD_MAX_BYTES`.
 #[must_use]
 pub(crate) fn exec_capture_byte_cap(max_chars: usize) -> usize {
     if max_chars == 0 {
@@ -143,6 +180,50 @@ pub trait SshClientTrait: Send + Sync + 'static {
         origin_addr: &str,
         origin_port: u16,
     ) -> Result<Box<dyn TunnelChannel>, SshCliError>;
+
+    /// Opens a `direct-streamlocal@openssh.com` channel to a remote Unix socket.
+    ///
+    /// Defaulted to "unsupported" rather than made mandatory: mock and stub clients
+    /// genuinely cannot forward a Unix socket, and forcing every one of them to
+    /// hand-write the same refusal only adds places for the refusal to drift.
+    ///
+    /// # Errors
+    /// [`SshCliError::ChannelFailed`] — always, for clients without streamlocal.
+    async fn open_streamlocal_channel(
+        &self,
+        _socket_path: &str,
+    ) -> Result<Box<dyn TunnelChannel>, SshCliError> {
+        Err(SshCliError::channel_msg(
+            "streamlocal forwarding is not available on this client",
+        ))
+    }
+
+    /// Requests a server-side listener, returning the port the server bound.
+    ///
+    /// # Errors
+    /// [`SshCliError::ChannelFailed`] — always, for clients without reverse forwarding.
+    async fn request_remote_forward(&self, _address: &str, _port: u16) -> Result<u16, SshCliError> {
+        Err(SshCliError::channel_msg(
+            "reverse forwarding is not available on this client",
+        ))
+    }
+
+    /// Cancels a server-side listener previously requested.
+    ///
+    /// # Errors
+    /// [`SshCliError::ChannelFailed`] — always, for clients without reverse forwarding.
+    async fn cancel_remote_forward(&self, _address: &str, _port: u16) -> Result<(), SshCliError> {
+        Err(SshCliError::channel_msg(
+            "reverse forwarding is not available on this client",
+        ))
+    }
+
+    /// Waits for the next channel opened by the server on an active reverse forward.
+    ///
+    /// `None` means no further channels can arrive, which ends the accept loop.
+    async fn accept_forwarded_channel(&self) -> Option<Box<dyn TunnelChannel>> {
+        None
+    }
 
     /// Cleanly closes the SSH connection.
     async fn disconnect(&self) -> Result<(), SshCliError>;

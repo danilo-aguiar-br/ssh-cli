@@ -86,12 +86,16 @@ fn vps_not_found_includes_name() {
 }
 
 #[test]
-fn tunnel_active_includes_all_fields() {
-    let msg = Message::TunnelActive {
-        local_port: 8080,
+fn tunnel_local_listening_includes_all_fields() {
+    // B2: `TunnelActive` was replaced by per-mode listening variants and its
+    // translations sat unreachable. This asserts the surviving variant instead.
+    let msg = Message::TunnelLocalListening {
+        bind: "127.0.0.1".to_string(),
+        port: 8080,
         remote_host: "1.2.3.4".to_string(),
         remote_port: 22,
-        vps_name: "meu-servidor".to_string(),
+        vps: "meu-servidor".to_string(),
+        timeout_ms: 1000,
     };
     let en = msg.text(Language::English);
     assert!(en.contains("8080"));
@@ -122,15 +126,7 @@ fn health_check_ok_includes_name() {
 fn all_unit_variants_en_nonempty() {
     let unit_variants = [
         Message::VpsRegistryEmpty,
-        Message::VpsListTitle,
-        Message::ConfigPathLabel,
-        Message::ConfigNoKeys,
-        Message::ErrorLoadConfig,
-        Message::ErrorSaveConfig,
-        Message::ErrorSshConnection,
-        Message::ErrorCommandFailed,
         Message::TunnelPressCtrlC,
-        Message::HealthCheckNoVps,
         Message::OperationCancelled,
         Message::ImportCompleted,
         Message::ScpUploadFileOnly,
@@ -148,15 +144,7 @@ fn all_unit_variants_en_nonempty() {
 fn all_unit_variants_pt_nonempty() {
     let unit_variants = [
         Message::VpsRegistryEmpty,
-        Message::VpsListTitle,
-        Message::ConfigPathLabel,
-        Message::ConfigNoKeys,
-        Message::ErrorLoadConfig,
-        Message::ErrorSaveConfig,
-        Message::ErrorSshConnection,
-        Message::ErrorCommandFailed,
         Message::TunnelPressCtrlC,
-        Message::HealthCheckNoVps,
         Message::OperationCancelled,
         Message::ImportCompleted,
         Message::ScpUploadFileOnly,
@@ -202,8 +190,7 @@ fn en_pt_parity_unit_variants_differ() {
 fn pt_translations_differ_from_en_for_units() {
     let pairs = [
         (Message::VpsRegistryEmpty, Message::VpsRegistryEmpty),
-        (Message::ErrorSshConnection, Message::ErrorSshConnection),
-        (Message::HealthCheckNoVps, Message::HealthCheckNoVps),
+        (Message::TunnelPressCtrlC, Message::TunnelPressCtrlC),
         (Message::OperationCancelled, Message::OperationCancelled),
     ];
     for (a, b) in &pairs {
@@ -213,28 +200,134 @@ fn pt_translations_differ_from_en_for_units() {
     }
 }
 
+/// B2: the error variants must reach the human branch through the real product
+/// API, not through a hand-built `Message`. `localized_error_text` is the seam
+/// that made six fully-translated variants reachable for the first time.
 #[test]
-fn health_check_failed_includes_name_and_detail() {
-    let msg = Message::HealthCheckFailed {
-        name: "prod-01".to_string(),
-        detail: "timeout".to_string(),
+fn localized_error_text_translates_and_keeps_the_detail() {
+    use crate::errors::SshCliError;
+
+    let err = SshCliError::SshConnection("connection refused".to_string());
+    let text = crate::i18n::localized_error_text(&err)
+        .expect("ssh_connection must have a localized rendering");
+
+    // The upstream detail survives translation — no diagnostic is lost.
+    assert!(
+        text.contains("connection refused"),
+        "detail must survive localization, got: {text}"
+    );
+}
+
+/// The translated sentence must not re-wrap a label the `Display` already added.
+///
+/// First cut of B2 fed `err.to_string()` into every `Message`, which produced
+/// `VPS 'vps 'x' not found in registry' not found.` — the English label smuggled
+/// inside the Portuguese one. Only the inner payload may cross the boundary.
+#[test]
+fn localized_error_text_does_not_double_wrap_the_english_label() {
+    use crate::errors::SshCliError;
+
+    let cases: &[(SshCliError, &[&str])] = &[
+        (
+            SshCliError::VpsNotFound("prod-01".to_string()),
+            &["not found in registry", "não encontrada em"],
+        ),
+        (
+            SshCliError::InvalidArgument("port out of range".to_string()),
+            &["invalid argument:", "Argumento inválido: Argumento"],
+        ),
+        (
+            SshCliError::FileNotFound("/tmp/x".to_string()),
+            &["file not found:"],
+        ),
+    ];
+
+    for (err, forbidden) in cases {
+        for lang in [Language::English, Language::Portuguese] {
+            crate::i18n::initialize_language(Some(lang.bcp47()), None).ok();
+            let text = crate::i18n::localized_error_text(err)
+                .unwrap_or_else(|| panic!("{err:?} must localize"));
+            for needle in *forbidden {
+                assert!(
+                    !text.contains(needle),
+                    "double-wrapped label for {err:?} in {lang:?}: {text}"
+                );
+            }
+        }
+    }
+}
+
+/// C2: the untyped failure branch must localize its label and keep the chain.
+///
+/// B2 wired every typed `SshCliError` through i18n and left `resolve_exit_code`'s
+/// last branch printing the raw English `anyhow` chain under `--lang pt-BR` —
+/// the one error a user is least equipped to interpret was the only one never
+/// translated.
+#[test]
+fn localized_unexpected_text_translates_the_label_and_keeps_the_chain() {
+    let chain = "config load failed: permission denied";
+
+    // The locale is process-global and initialized once, so a test that *switches*
+    // it is order-dependent under the parallel harness. Both arms are compared
+    // through `text()` directly; the public helper is exercised for the property
+    // that does not depend on which locale won the race.
+    let msg = Message::ErrorUnexpected {
+        detail: chain.to_string(),
     };
-    assert!(msg.text(Language::English).contains("prod-01"));
-    assert!(msg.text(Language::English).contains("timeout"));
-    assert!(msg.text(Language::Portuguese).contains("prod-01"));
-    assert!(msg.text(Language::Portuguese).contains("timeout"));
+    let en = msg.text(Language::English);
+    let pt = msg.text(Language::Portuguese);
+
+    assert_ne!(en, pt, "the label must differ between locales");
+    for text in [&en, &pt] {
+        assert!(
+            text.contains(chain),
+            "the upstream chain must survive verbatim, got: {text}"
+        );
+        // The chain is the payload, not a second label: never wrapped twice.
+        assert_eq!(
+            text.matches(chain).count(),
+            1,
+            "chain duplicated in the localized line: {text}"
+        );
+    }
+
+    let rendered = crate::i18n::localized_unexpected_text(chain);
+    assert!(
+        rendered == en || rendered == pt,
+        "the helper must render one of the two locale arms, got: {rendered}"
+    );
 }
 
 #[test]
-fn health_check_latency_includes_name_and_ms() {
-    let msg = Message::HealthCheckLatency {
-        name: "relay-01".to_string(),
-        latency_ms: 42,
-    };
-    assert!(msg.text(Language::English).contains("relay-01"));
-    assert!(msg.text(Language::English).contains("42"));
-    assert!(msg.text(Language::Portuguese).contains("relay-01"));
-    assert!(msg.text(Language::Portuguese).contains("42"));
+fn localized_error_text_is_none_for_untranslated_codes() {
+    use crate::errors::SshCliError;
+
+    // Machine-facing plumbing keeps the English Display: returning `None` here is
+    // what makes the human branch fail open instead of printing an empty line.
+    let err = SshCliError::Io(std::io::Error::other("disk"));
+    assert!(
+        crate::i18n::localized_error_text(&err).is_none(),
+        "io must fall back to the English Display"
+    );
+}
+
+#[test]
+fn localized_error_text_differs_between_locales() {
+    use crate::errors::SshCliError;
+
+    // The whole point of B2: before this seam existed, `--lang pt-BR` produced
+    // byte-identical English output for every error.
+    let err = SshCliError::AuthenticationFailed;
+    let en = Message::ErrorAuthentication {
+        detail: err.to_string(),
+    }
+    .text(Language::English);
+    let pt = Message::ErrorAuthentication {
+        detail: err.to_string(),
+    }
+    .text(Language::Portuguese);
+
+    assert_ne!(en, pt, "EN and pt-BR error prose must differ");
 }
 
 #[test]

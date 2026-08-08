@@ -180,6 +180,11 @@ impl VpsRecord {
     ///
     /// # Errors
     /// Returns a message when any field fails domain parse.
+    // B3: kept deliberately. These parameters are the record's own fields, so a
+    // params struct would be a second, structurally identical copy of
+    // `VpsRecord` whose only job is to be converted into it. Each argument is
+    // already a distinct refined domain type, which is what makes a transposition
+    // a compile error rather than a runtime surprise.
     #[allow(clippy::too_many_arguments)]
     pub fn try_new(
         name: impl AsRef<str>,
@@ -232,6 +237,7 @@ impl VpsRecord {
 
     /// Test/helper constructor that panics on invalid input (not public API).
     #[cfg(test)]
+    // B3: mirrors `try_new` by design — same reasoning applies.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn test_new(
         name: impl AsRef<str>,
@@ -292,7 +298,7 @@ impl VpsRecord {
     /// Validates primary authentication: **exactly one** of password / key / agent (G-AUD-07).
     ///
     /// # Errors
-    /// [`DomainError`] when zero or more than one primary method is set.
+    /// [`crate::domain::DomainError`] when zero or more than one primary method is set.
     pub fn validate_credentials(&self) -> Result<(), crate::domain::DomainError> {
         let n = u8::from(self.has_password()) + u8::from(self.has_key()) + u8::from(self.use_agent);
         if n == 0 {
@@ -313,7 +319,7 @@ impl VpsRecord {
     /// Structural validation (G-SERDE-04 / G-TYPE): tags cardinality + field proofs already in types.
     ///
     /// # Errors
-    /// [`DomainError`] when tag cardinality exceeds the limit.
+    /// [`crate::domain::DomainError`] when tag cardinality exceeds the limit.
     pub fn validate_structure(&self) -> Result<(), crate::domain::DomainError> {
         if self.tags.len() > MAX_TAGS {
             return Err(crate::domain::DomainError::new(
@@ -328,7 +334,7 @@ impl VpsRecord {
     /// Full record validation at the write boundary (add/edit/import).
     ///
     /// # Errors
-    /// Propagates [`DomainError`] from structure or credentials checks.
+    /// Propagates [`crate::domain::DomainError`] from structure or credentials checks.
     pub fn validate(&self) -> Result<(), crate::domain::DomainError> {
         self.validate_structure()?;
         self.validate_credentials()

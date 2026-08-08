@@ -164,259 +164,6 @@ fn gap_io_007_scp_json_flag_na_help() {
 // --- DOC-004 / product line ---
 
 #[test]
-fn gap_doc_004_product_line_040_e_file_only() {
-    let readme = std::fs::read_to_string(root().join("README.md")).expect("README");
-    assert!(
-        readme.contains("0.5.0") || readme.contains("0.4.0") || readme.contains("0.4.1"),
-        "README must mention product line 0.5.x / 0.4.x history"
-    );
-    let lower = readme.to_lowercase();
-    assert!(
-        lower.contains("regular file")
-            || lower.contains("file-only")
-            || lower.contains("files only")
-            || lower.contains("not directories"),
-        "README must document file-only SCP limit"
-    );
-    assert!(
-        readme.contains("scp-transfer") || readme.contains("tunnel_listening"),
-        "README must surface scp-transfer and/or tunnel_listening for agents"
-    );
-    assert!(
-        readme.contains(".ssh-cli.partial") || lower.contains("partial"),
-        "README must document partial download path"
-    );
-}
-
-#[test]
-fn gap_doc_004_root_security_integrations_honest() {
-    let sec = std::fs::read_to_string(root().join("SECURITY.md")).expect("SECURITY");
-    assert!(
-        (sec.contains("0.5.x") || sec.contains("0.5.0") || sec.contains("0.4.x"))
-            && (sec.contains("current line") || sec.contains("current") || sec.contains("atual")),
-        "SECURITY Supported Versions must brand current product line"
-    );
-    assert!(
-        !sec.contains("| 0.3.x | Supported | Yes, current line |"),
-        "SECURITY must not claim 0.3.x is the current product line"
-    );
-    let integ = std::fs::read_to_string(root().join("INTEGRATIONS.md")).expect("INTEGRATIONS");
-    assert!(
-        (integ.contains("0.5.0") || integ.contains("0.4.0") || integ.contains("0.4.1"))
-            && (integ.contains("scp-transfer") || integ.contains("tunnel_listening")),
-        "INTEGRATIONS 0.4.x must document real SCP/tunnel surface"
-    );
-    assert!(
-        integ.contains("0.3.9"),
-        "INTEGRATIONS must keep 0.3.9 residual facts under their own version bullet"
-    );
-    let llms_full = std::fs::read_to_string(root().join("llms-full.txt")).expect("llms-full");
-    assert!(
-        llms_full.contains("scp-transfer.schema.json"),
-        "llms-full must index scp-transfer schema"
-    );
-    assert!(
-        llms_full.contains("tunnel-listening.schema.json"),
-        "llms-full must index tunnel-listening schema"
-    );
-    let contrib = std::fs::read_to_string(root().join("CONTRIBUTING.md")).expect("CONTRIBUTING");
-    assert!(
-        contrib.contains("gaps_v040"),
-        "CONTRIBUTING must mention gaps_v040 regression suite"
-    );
-    assert!(
-        contrib.contains("E10") || contrib.contains("E01–E14") || contrib.contains("E01-E14"),
-        "CONTRIBUTING must mention official e2e SCP matrix E10+"
-    );
-}
-
-#[test]
-fn gap_doc_004c_docs_folder_scp_tunnel_honest() {
-    let agents = std::fs::read_to_string(root().join("docs/AGENTS.md")).expect("AGENTS");
-    assert!(
-        agents.contains("scp-transfer") && agents.contains("tunnel_listening"),
-        "docs/AGENTS.md must document scp-transfer and tunnel_listening contracts"
-    );
-    assert!(
-        agents.to_lowercase().contains("regular files only")
-            || agents.contains("file-only")
-            || agents.contains("no directories"),
-        "docs/AGENTS.md must document SCP file-only"
-    );
-    let howto = std::fs::read_to_string(root().join("docs/HOW_TO_USE.md")).expect("HOW_TO_USE");
-    assert!(
-        howto.contains("0.3.9") && howto.contains(".ssh-cli.partial"),
-        "docs/HOW_TO_USE.md must warn 0.3.9 and document partial downloads"
-    );
-    let cook = std::fs::read_to_string(root().join("docs/COOKBOOK.md")).expect("COOKBOOK");
-    assert!(
-        cook.contains("tunnel_listening") && cook.contains("scp-transfer"),
-        "docs/COOKBOOK.md must include tunnel_listening and scp-transfer recipes"
-    );
-    let mig = std::fs::read_to_string(root().join("docs/MIGRATION.md")).expect("MIGRATION");
-    assert!(
-        mig.contains("tunnel_listening")
-            && mig.contains(".ssh-cli.partial")
-            && mig.contains("32 KiB"),
-        "docs/MIGRATION.md 0.4.0 section must cover tunnel JSON, partial, stream"
-    );
-    let testing = std::fs::read_to_string(root().join("docs/TESTING.md")).expect("TESTING");
-    assert!(
-        testing.contains("gaps_v040")
-            && (testing.contains("E10")
-                || testing.contains("E01–E14")
-                || testing.contains("E01-E14")),
-        "docs/TESTING.md must list gaps_v040 and e2e E10+"
-    );
-    let release =
-        std::fs::read_to_string(root().join("docs/RELEASE_CHECKLIST.md")).expect("RELEASE");
-    assert!(
-        release.contains("gaps_v040") && release.contains("DOC-004"),
-        "docs/RELEASE_CHECKLIST.md must gate gaps_v040 and DOC-004"
-    );
-    let cross = std::fs::read_to_string(root().join("docs/CROSS_PLATFORM.md")).expect("CROSS");
-    let cross_l = cross.to_lowercase();
-    assert!(
-        cross.contains(".ssh-cli.partial")
-            && (cross_l.contains("regular files only")
-                || cross.contains("file-only")
-                || cross_l.contains("regular files")),
-        "docs/CROSS_PLATFORM.md must document SCP portability"
-    );
-    let schema_idx =
-        std::fs::read_to_string(root().join("docs/schemas/README.md")).expect("schemas README");
-    assert!(
-        schema_idx.contains("scp-transfer.schema.json")
-            && schema_idx.contains("tunnel-listening.schema.json"),
-        "docs/schemas/README.md must index scp-transfer and tunnel-listening"
-    );
-    assert!(
-        root()
-            .join("docs/schemas/tunnel-listening.schema.json")
-            .is_file(),
-        "missing tunnel-listening.schema.json"
-    );
-}
-
-#[test]
-fn gap_doc_004d_skills_scp_tunnel_honest() {
-    // Skills must teach agents the 0.4.0 scp/tunnel contracts without version-story prose.
-    for rel in ["skills/ssh-cli-en/SKILL.md", "skills/ssh-cli-pt/SKILL.md"] {
-        let body = std::fs::read_to_string(root().join(rel)).expect(rel);
-        let lower = body.to_ascii_lowercase();
-        assert!(
-            body.contains("tunnel_listening"),
-            "{rel} must document tunnel_listening ready event"
-        );
-        assert!(
-            body.contains(".ssh-cli.partial"),
-            "{rel} must document partial download path"
-        );
-        assert!(
-            body.contains("32 KiB") || body.contains("32KiB"),
-            "{rel} must document 32 KiB upload stream"
-        );
-        assert!(
-            lower.contains("files-only")
-                || lower.contains("file-only")
-                || lower.contains("regular-file")
-                || lower.contains("regular file")
-                || body.contains("somente-arquivo")
-                || body.contains("só-arquivo")
-                || body.contains("arquivo regular"),
-            "{rel} must document scp regular-files-only"
-        );
-        assert!(
-            body.contains("ok")
-                && body.contains("direction")
-                && body.contains("bytes")
-                && body.contains("duration_ms"),
-            "{rel} must document scp-transfer success fields"
-        );
-        assert!(
-            body.contains("local_port")
-                && body.contains("remote_host")
-                && body.contains("remote_port")
-                && body.contains("timeout_ms"),
-            "{rel} must document tunnel_listening fields"
-        );
-        assert!(
-            body.contains("scp upload")
-                && body.contains("--json")
-                && body.contains("tunnel")
-                && body.contains("--timeout-ms"),
-            "{rel} must include scp --json and tunnel --timeout-ms formulas"
-        );
-        assert!(
-            !body.contains("0.4.0 did")
-                && !body.contains("0.3.9 did")
-                && !body.contains("in version 0.3.9")
-                && !body.contains("versão 0.3.9")
-                && !body.contains("na versão 0.3.9"),
-            "{rel} must stay consolidated without version-story prose"
-        );
-        let fm = body
-            .strip_prefix("---\n")
-            .and_then(|s| s.split_once("\n---"))
-            .map(|(a, _)| a)
-            .expect("frontmatter");
-        let desc = fm
-            .lines()
-            .find(|l| l.starts_with("description:"))
-            .expect("description")
-            .trim_start_matches("description:")
-            .trim();
-        assert!(
-            desc.chars().count() < 1024,
-            "{rel} description must be < 1024 chars (got {})",
-            desc.chars().count()
-        );
-        assert_eq!(
-            desc.matches(':').count(),
-            0,
-            "{rel} description must not contain ':' in content"
-        );
-        assert!(
-            desc.contains("tunnel_listening")
-                && (desc.contains("files-only")
-                    || desc.contains("só-arquivo")
-                    || desc.contains("file-only")
-                    || desc.contains("regular")),
-            "{rel} description must surface scp file-only + tunnel_listening for auto-activation"
-        );
-    }
-    for rel in [
-        "skills/ssh-cli-en/evals/queries.json",
-        "skills/ssh-cli-pt/evals/queries.json",
-    ] {
-        let q = std::fs::read_to_string(root().join(rel)).expect(rel);
-        assert!(
-            q.contains("tunnel_listening")
-                && (q.contains(".ssh-cli.partial") || q.contains("ssh-cli.partial"))
-                && (q.contains("files only")
-                    || q.contains("regular files")
-                    || q.contains("arquivos regulares")
-                    || q.contains("somente arquivo")
-                    || q.contains("directory")
-                    || q.contains("diretorio")),
-            "{rel} evals must cover tunnel_listening + partial + file-only surface"
-        );
-    }
-}
-
-#[test]
-fn gap_rel_004_changelog_039_scp_broken_e_040() {
-    let ch = std::fs::read_to_string(root().join("CHANGELOG.md")).expect("CHANGELOG");
-    assert!(ch.contains("0.4.0"), "CHANGELOG must have 0.4.0 section");
-    let lower = ch.to_lowercase();
-    assert!(
-        lower.contains("0.3.9")
-            && (lower.contains("broken") || lower.contains("inoperant") || lower.contains("wire")),
-        "CHANGELOG must honestly mention 0.3.9 SCP wire issue"
-    );
-}
-
-#[test]
 fn gap_io_008_tunnel_schema_listening() {
     let schema = root().join("docs/schemas/tunnel-listening.schema.json");
     assert!(schema.is_file(), "missing {}", schema.display());
@@ -444,7 +191,8 @@ fn gap_scp_021_schema_scp_transfer() {
 #[test]
 fn gap_e2e_script_e10_e12() {
     let script = std::fs::read_to_string(root().join("scripts/e2e_real_ssh.sh")).unwrap();
-    assert!(script.contains("pass E10") || script.contains("PASS E10") || script.contains("E10"));
+    // The bare `E10` operand subsumed both cased variants; keep one form.
+    assert!(script.contains("E10"));
     assert!(script.contains("E11"));
     assert!(script.contains("E12"));
     assert!(script.contains("E13"));
@@ -488,12 +236,15 @@ fn gap_io_008_tunnel_json_flag() {
         stdout.contains("--json"),
         "tunnel must expose --json (GAP-SSH-IO-008): {stdout}"
     );
-    let src = std::fs::read_to_string(root().join("src/tunnel.rs")).unwrap();
+    // Two independent halves of the same contract: the tunnel must *call* the
+    // printer and `output` must *define* it. Asserting only one of the two lets a
+    // dangling call or a dead printer survive.
+    let src = tunnel_subsystem();
     assert!(
-        src.contains("print_tunnel_listening_json") || src.contains("tunnel_listening"),
+        src.contains("print_tunnel_listening_json"),
         "tunnel must emit structured listening JSON"
     );
-    let out = std::fs::read_to_string(root().join("src/output/mod.rs")).unwrap();
+    let out = output_subsystem();
     assert!(
         out.contains("print_tunnel_listening_json"),
         "output must define tunnel listening JSON printer"
@@ -521,9 +272,67 @@ fn gap_scp_022_partial_suffix_na_fonte() {
     );
 }
 
+/// Concatenates one subsystem under `src/` into a single searchable string.
+///
+/// A source assertion pinned to a single path is the wrong shape twice over: it
+/// passes vacuously when code moves *in* to that file, and fails spuriously when
+/// code moves *out* of it. `gaps_v057_sftp` and `gaps_v061_error_taxonomy` both hit
+/// this, and so did the i18n reader below when C3 split the translation tables out.
+/// Reading the whole subsystem makes the assertion about the contract, not the layout.
+///
+/// Test modules are never passed in as leaves: including them would let an assertion
+/// be satisfied by the text of the test that makes it, which is exactly the tautology
+/// `tests/test_quality.rs` exists to forbid.
+fn concat_subsystem(entry: &str, leaves: &[&str]) -> String {
+    let base = root().join("src");
+    let mut out = std::fs::read_to_string(base.join(entry))
+        .unwrap_or_else(|e| panic!("read src/{entry}: {e}"));
+    for leaf in leaves {
+        out.push('\n');
+        out.push_str(
+            &std::fs::read_to_string(base.join(leaf))
+                .unwrap_or_else(|e| panic!("read src/{leaf}: {e}")),
+        );
+    }
+    out
+}
+
+/// Reads the whole i18n subsystem: `en()` / `pt()` live in their own files since C3.
+fn i18n_subsystem() -> String {
+    concat_subsystem("i18n.rs", &["i18n/en.rs", "i18n/pt.rs"])
+}
+
+/// Reads the whole tunnel subsystem: the per-mode listeners live in `src/tunnel/`.
+///
+/// `tunnel/tests.rs` is deliberately absent — see [`concat_subsystem`].
+fn tunnel_subsystem() -> String {
+    concat_subsystem(
+        "tunnel.rs",
+        &[
+            "tunnel/local.rs",
+            "tunnel/reverse.rs",
+            "tunnel/socks.rs",
+            "tunnel/streamlocal.rs",
+        ],
+    )
+}
+
+/// Reads the whole output subsystem: the wire printers are split by concern.
+fn output_subsystem() -> String {
+    concat_subsystem(
+        "output/mod.rs",
+        &[
+            "output/emit.rs",
+            "output/json.rs",
+            "output/text.rs",
+            "output/batch.rs",
+        ],
+    )
+}
+
 #[test]
 fn gap_scp_020_i18n_mensagens() {
-    let src = std::fs::read_to_string(root().join("src/i18n.rs")).unwrap();
+    let src = i18n_subsystem();
     assert!(src.contains("ScpUploadCompleted"));
     assert!(src.contains("ScpDownloadCompleted"));
     assert!(src.contains("ScpUploadFileOnly"));

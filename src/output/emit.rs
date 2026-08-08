@@ -313,7 +313,7 @@ pub fn print_warning(message: &str) {
 
 /// Warning with dynamic body via `format_args!` (G-MAC-01 residual close).
 ///
-/// `fmt::Arguments` implements [`Display`], so the `"warning: "` prefix composes
+/// `fmt::Arguments` implements [`std::fmt::Display`], so the `"warning: "` prefix composes
 /// without a second allocation.
 pub fn print_warning_fmt(args: fmt::Arguments<'_>) {
     let _ = write_stderr_fmt(format_args!("warning: {args}"));

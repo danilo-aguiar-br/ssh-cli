@@ -50,6 +50,12 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
     // GAP-AUD-010 / G-AUD-08: warn only when secrets appear on argv (visible in `ps`).
     warn_if_password_argv(&args);
 
+    // C2: rejected before any registry read or socket, but *after* the error
+    // channel knows whether the caller wants JSON — rejecting earlier produced a
+    // prose refusal on stdout-for-agents, so the one command that fails this
+    // check was also the one an agent could not parse.
+    super::guard_dry_run_supported(&args.command)?;
+
     match args.command {
         Command::Vps { action } => {
             // Sequential: local TOML CRUD (work ≪ SSH RTT; no multi-host I/O)
@@ -317,6 +323,27 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             if json_efetivo {
                 crate::output::set_json_errors(true);
             }
+            // A6: without `ssh-real` there is no SFTP subsystem to dispatch into. Failing
+            // with a typed error keeps the diagnostic build honest — the subcommand still
+            // parses, and the caller is told the binary was built without the stack
+            // instead of hitting a link error or a silent no-op.
+            #[cfg(not(feature = "ssh-real"))]
+            {
+                let _ = (
+                    action,
+                    config_override,
+                    password,
+                    key,
+                    key_passphrase,
+                    timeout,
+                );
+                return Err(crate::errors::SshCliError::InvalidArgument(
+                    "this binary was built without the `ssh-real` feature; sftp is unavailable"
+                        .to_string(),
+                )
+                .into());
+            }
+            #[cfg(feature = "ssh-real")]
             crate::sftp::run_sftp(
                 action,
                 config_override,
@@ -343,10 +370,14 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             local_port,
             remote_host,
             remote_port,
+            socks5,
+            remote_socket,
+            reverse,
             timeout_ms,
             auth,
             json,
             bind,
+            i_accept_network_exposure,
         } => {
             // GAP-SSH-IO-008: --json local or global format.
             let json_efetivo = json || formato == OutputFormat::Json;
@@ -359,20 +390,37 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             let key = auth.key_path_string();
             let password = read_stdin_if(auth.password_stdin, auth.password)?;
             let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
-            crate::tunnel::run_tunnel(
-                &vps_name,
-                local_port,
-                &remote_host,
+            // E3: `--use-agent` / `--agent-socket` were accepted by clap here and then
+            // dropped on the floor, so a host registered for agent auth simply could
+            // not open a tunnel. Forwarded now, at parity with exec/scp.
+            let mode = super::resolve_tunnel_mode(
+                socks5,
+                remote_socket,
+                reverse,
+                remote_host,
                 remote_port,
+            )?;
+            crate::tunnel::run_tunnel(crate::tunnel::TunnelRequest {
+                vps_name,
+                local_port,
+                mode,
                 config_override,
-                password,
-                key,
-                key_passphrase,
+                auth: crate::tunnel::TunnelAuth {
+                    password,
+                    key,
+                    key_passphrase,
+                    use_agent: auth.use_agent,
+                    agent_socket: auth
+                        .agent_socket
+                        .as_ref()
+                        .map(|p| p.to_string_lossy().into_owned()),
+                },
                 timeout_ms,
                 replace_host_key,
-                json_efetivo,
-                &bind,
-            )
+                json: json_efetivo,
+                bind_addr: bind.to_string(),
+                accept_network_exposure: i_accept_network_exposure,
+            })
             .await
         }
         Command::HealthCheck {
@@ -416,18 +464,18 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
                     .map_err(|e| crate::errors::SshCliError::InvalidArgument(e.to_string()))?;
                 crate::vps::HostSelection::Single(name)
             };
-            crate::vps::run_health_check(
+            crate::vps::run_health_check(crate::vps::HealthCheckRequest {
                 selection,
                 config_override,
-                formato,
-                json,
-                password,
-                effective_timeout_ms(timeout, global_timeout)
+                format: formato,
+                json_local: json,
+                password_override: password,
+                timeout_override: effective_timeout_ms(timeout, global_timeout)
                     .map_err(crate::errors::SshCliError::InvalidArgument)?,
-                key,
-                key_passphrase,
+                key_override: key,
+                key_passphrase_override: key_passphrase,
                 replace_host_key,
-            )
+            })
             .await
         }
         Command::Secrets { action } => {
@@ -475,7 +523,7 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             {
                 let _ = (action, json);
                 Err(crate::errors::SshCliError::tls_msg(
-                    "TLS feature disabled; rebuild with --features tls (default)".into(),
+                    "TLS feature disabled; rebuild with --features tls (default)",
                 )
                 .into())
             }

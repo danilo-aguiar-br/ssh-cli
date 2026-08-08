@@ -12,16 +12,20 @@
     },
     "message": {
       "type": "string",
-      "description": "Human-readable error text carried inside the JSON envelope on stderr"
+      "description": "Error text carried inside the JSON envelope on stderr. Always English, regardless of --lang or the host locale: this is a stable contract, not a localized string. Branch on error_code, never on this prose. Localization applies only to human text mode (--output-format text), where the label is translated and this same detail is preserved verbatim."
     },
     "remote_exit_code": {
       "type": "integer",
       "description": "Optional remote shell exit when process exit is EX_GENERAL (1) after non-zero remote command"
     },
+    "error_code": {
+      "type": "string",
+      "description": "Stable machine-oriented discriminator (`partial_failure`, `unavailable`, `software`, `io`, `authentication_failed`, …). Branch on this, never on `message`. Present on every failure envelope; it was emitted long before it was contracted here."
+    },
     "error_class": {
       "type": "string",
-      "enum": ["transient", "permanent", "cancelled"],
-      "description": "High-level class: transient (agent may re-invoke with backoff), permanent (fix inputs), cancelled (signal/pipe)"
+      "enum": ["transient", "permanent", "cancelled", "partial"],
+      "description": "High-level class: transient (agent may re-invoke with backoff), permanent (fix inputs), cancelled (signal/pipe), partial (multi-host fan-out where some targets succeeded — re-running the whole batch repeats the work that already landed, so inspect per-host detail instead). `partial` shipped with G-ERR-R02 and was missing from this enum, which meant a strict validator rejected the very envelope the CLI emits."
     },
     "retryable": {
       "type": "boolean",

@@ -1,5 +1,8 @@
 # Agents Guide for ssh-cli
 
+> **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
+
+
 > **G-E2E-16:** Prefer GraphRAG `list` / `read` by exact memory name over `hybrid-search` under load.
 >
 > **G-E2E-04 / G8 wire:** REQUIRED one JSON document per one-shot success on the data path.
@@ -13,7 +16,7 @@
 
 - Read this document in [Portuguese (pt-BR)](AGENTS.pt-BR.md).
 - Pair with [../INTEGRATIONS.md](../INTEGRATIONS.md) and [../skills/ssh-cli-en/SKILL.md](../skills/ssh-cli-en/SKILL.md).
-- Product line: 0.5.3.
+- Product line: 0.5.4.
 
 
 ## Why
@@ -53,26 +56,50 @@
 
 ## Command inventory (full tree)
 
-| Surface | Subcommands |
+All 47 leaves are written out in full, not in brace notation: an agent that greps for
+`tls acme account create` must find that exact string. Discover the same tree at runtime
+with `ssh-cli commands` (`event: "commands"`).
+
+| Surface | Commands |
 | --- | --- |
-| `vps` | `add` `list` `remove` `edit` `show` `path` `doctor` `export` `import` |
+| `vps` | `vps add` `vps list` `vps remove` `vps edit` `vps show` `vps path` `vps doctor` `vps export` `vps import` |
 | Session | `connect` |
 | Exec | `exec` `sudo-exec` `su-exec` |
-| `scp` | `upload` `download` (regular files only) |
-| `sftp` | `upload` `download` `ls` `mkdir` `rmdir` `rm` `stat` `rename` |
-| Network | `tunnel` `health-check` |
-| `secrets` | `status` `init` `reencrypt` |
-| Discovery | `completions` `commands` `schema [NAME]` `doctor` (root) |
-| `locale` | `show` `set` `clear` |
-| `tls` | `provider` `paths` |
-| `tls mtls` | `list` `import` `show` `remove` |
-| `tls acme` | `account create` `account show` `issue` `complete` `status` `list` |
+| `scp` | `scp upload` `scp download` (regular files only) |
+| `sftp` | `sftp upload` `sftp download` `sftp ls` `sftp mkdir` `sftp rmdir` `sftp rm` `sftp stat` `sftp rename` |
+| Network | `tunnel` (four modes: local, `--reverse`, `--socks5`, `--remote-socket`) `health-check` |
+| `secrets` | `secrets status` `secrets init` `secrets reencrypt` |
+| Discovery | `completions` `commands` `schema` `doctor` (root alias of `vps doctor`) |
+| `locale` | `locale show` `locale set` `locale clear` |
+| `tls` | `tls provider` `tls paths` |
+| `tls mtls` | `tls mtls list` `tls mtls import` `tls mtls show` `tls mtls remove` |
+| `tls acme` | `tls acme account create` `tls acme account show` `tls acme issue` `tls acme complete` `tls acme status` `tls acme list` |
 
 ### Global flags of note
 - `--lang`, `-v`/`-vv`/`-vvv` (G14 graduated; G2 crate-scoped `warn,ssh_cli=*`), `-q`, `--config-dir`, `--no-color`, `--output-format`, `--json`
 - `--disable-sudo`, `--replace-host-key`
 - `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`
 - `--timeout`, `--max-concurrency`, `--fail-fast`, `--scp-file-concurrency`
+
+### Payload shaping (0.5.4) — spend no tokens on data you will discard
+- Eight global flags shape the response **before** serialization, so the oversized envelope is never built.
+- `--select <PATHS>` (alias `--fields`) keeps only these dotted paths in each record.
+- `--filter key=value` | `key!=value` | `key~substring` keeps matching records; repeatable, combined with AND.
+- A malformed predicate is rejected at parse time rather than silently matching nothing, so a typo can never be mistaken for an empty result.
+- `--limit N` emits at most N records and is distinct from per-command query limits.
+- `--sort <PATH>` sorts ascending by dotted path, comparing numbers numerically.
+- `--dedupe-by <PATH>` drops later records repeating that path's value.
+- `--count-only` replaces the record collection with `{"count": N}`, counted after all filtering.
+- `--truncate-content <CHARS>` shortens long strings by **characters**, never bytes, so UTF-8 stays valid.
+- `--max-output-bytes <BYTES>` caps the envelope by dropping trailing records, never by slicing the JSON text.
+- REQUIRED: prefer these flags over piping stdout through an external JSON tool. Piping pays the full token cost first and shrinks the payload afterwards; the flag never writes it.
+
+### Refusal and rehearsal flags
+- `--no-input` refuses to read stdin and fails fast instead of blocking on an absent human.
+- REQUIRED: pass `--no-input` in any unattended run, because a prompt with no operator is an indefinite hang, not an error.
+- `--dry-run` prints the plan for a destructive operation and exits without executing it.
+- `--dry-run` is accepted only by `vps remove`, `vps import`, `sftp rm`, `sftp rmdir`, `secrets init` and `secrets reencrypt`.
+- Anywhere else `--dry-run` is rejected with exit **64** instead of accepted and ignored, so a rehearsal can never be mistaken for a no-op that already ran.
 
 
 ## Agent Integration Details
@@ -94,7 +121,7 @@
 - REQUIRED: never depend on crates.io 0.3.9 for SCP; that wire was broken — require 0.5.3+.
 - REQUIRED: parse SCP success with `docs/schemas/scp-transfer.schema.json` (`ok`, `event` (`scp-transfer`), `direction`, `vps`, `local`, `remote`, `bytes`, `duration_ms`) on **stdout**.
 - REQUIRED: missing SCP local/remote file exits 66 with message `file not found: <path>` (canonical/normalized path; no stacked `SCP:` prefixes).
-- REQUIRED: `vps export` default body is TOML even on pipe/non-TTY; JSON agent envelope only with `vps export --json` → `event: "vps-export"` (auto JSON non-TTY does **not** apply to export).
+- REQUIRED: `vps export` body follows the resolved output format, so an agent, whose stdout is never a TTY, gets the JSON envelope `event: "vps-export"` even without `--json` and even when `-o` names a `.toml` file; a TOML body requires `--output-format text`. Auto JSON non-TTY DOES apply to export.
 - REQUIRED: redacted `vps export` empty secrets are empty strings, never `sshcli-enc:` ciphertext of empty (EXP-001).
 - REQUIRED: `--include-secrets` requires `-o`/`--output` or `--i-understand-secrets-on-stdout`.
 - REQUIRED: `vps import` accepts TOML (EN keys + legacy PT load aliases) or JSON `vps-export`; use `--allow-incomplete` for redacted/skeleton hosts.
@@ -107,6 +134,7 @@
 - ALLOWED: `tunnel` / `health-check` may use `--password-stdin` / `--key` / `--key-passphrase` / `--key-passphrase-stdin` (CLI-005/006 parity with exec/scp).
 - ALLOWED: may pass `health-check --timeout <ms>` when host default timeout is too long or short.
 - REQUIRED: prefer multi-host fan-out for fleet work — `exec|sudo-exec|su-exec|scp|sftp|health-check --all` **or** `--hosts a,b,c` runs **bounded concurrent** sessions (`Semaphore` + `JoinSet`), not one host per process spawn. Batch JSON applies to both multi modes (even if `--hosts` lists one name).
+- REQUIRED: a third selector exists on the exec family only — `exec|sudo-exec|su-exec --tags t1,t2` addresses every host carrying any of those tags (`vps add --tag`). `--all`, `--hosts` and `--tags` are mutually exclusive; clap rejects any pair. `scp`, `sftp` and `health-check` accept `--all` and `--hosts` but **not** `--tags`.
 - REQUIRED: parse multi-host JSON via batch schemas: `health-check-batch` / `exec-batch` / `scp-batch` / `sftp-batch` (`docs/schemas/*-batch.schema.json`); field `max_concurrency` is present in the envelope.
 - ALLOWED: cap fan-out with global `--max-concurrency N` (1..=64; auto = CPUs×4 vs free RAM/2 / 16 MiB, clamp 1..=64). Same gate limits tunnel accept forwards.
 - FORBIDDEN: assume sequential multi-host by default when `--all` is available — wall-clock is dominated by SSH RTT; concurrent sessions are the product modus operandi.
@@ -126,7 +154,7 @@
   `ssh-cli` is pure Rust (`russh`); no local `ssh`/`scp`/`ssh-keygen` spawn at runtime.
 - REQUIRED: treat remote command strings as hostile input; NUL bytes are rejected
   with invalid-argument before the SSH channel exec (G-PROC-03).
-- REQUIRED: SFTP SETSTAT sends atime+mtime together (G3); set_metadata is fail-closed (G4); perms masked with named `SFTP_PERM_MASK` `0o7777` (G12/G19).
+- REQUIRED: SFTP SETSTAT sends atime+mtime together (G3); set_metadata is fail-closed (G4); permission bits are masked **directionally** — outbound upload uses `SFTP_PERM_MASK` `0o7777` and keeps setuid/setgid/sticky on a file you already own (G12/G19), inbound download uses `SFTP_PERM_MASK_UNTRUSTED` `0o0777` so server-sent elevation bits cannot land on the local file (A3).
 - REQUIRED: SFTP download local `set_permissions` failures are errors, not silent (G18).
 - REQUIRED: SCP client wire path (`client_real_scp.rs`) uses English identifiers and English channel errors (G16).
 - NOTE: G6 (`serial_test` isolation for signal/cancel global state) is a **test harness** concern, not agent runtime.
@@ -157,12 +185,16 @@
 - Health (fleet): `ssh-cli health-check --all --json` or `--hosts a,b --json` → `event: "health-check-batch"` (`health-check-batch.schema.json`).
 - SCP (single): `ssh-cli scp upload|download <vps> <local> <remote> --json` returns transfer success on stdout (`scp-transfer.schema.json` with required `event: "scp-transfer"`); failures use error envelope on stderr; missing file → exit 66 `file not found: <path>` (canonical/normalized path).
 - SCP (fleet / multi-file batch): `event: "scp-batch"` (`scp-batch.schema.json`); one-file fleet download writes `local.<vps>`; multi-file fleet download uses host subdirs; multi-host×multi-file result `name` may be `host:path`.
-- SCP operational facts: require 0.5.3+; upload streams 32 KiB; download writes `{path}.ssh-cli.partial` then renames; `sync_data` failure is propagated before rename (G9); mtime/mode preserved both directions.
+- SCP operational facts: require 0.5.3+; upload streams 32 KiB; download writes `{path}.ssh-cli.partial` then renames; `sync_data` failure is propagated before rename (G9); mtime/mode preservation is best-effort and reported as `mtime_preserved`, parent-dir fsync as `durable` (G-SCP-R01/R02).
 - SFTP: `ssh-cli sftp upload|download|ls|mkdir|rmdir|rm|stat|rename` with schemas `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`; prefer 0.5.3+ (G1 integrity).
 - Locale: `ssh-cli locale show|set|clear`; one-shot `--lang`.
 - TLS: `ssh-cli tls provider|paths`; `tls mtls list|import|show|remove`; `tls acme account create|show`; `tls acme issue|complete|status|list`.
-- Tunnel: `ssh-cli tunnel <vps> <local_port> <remote_host> <remote_port> --timeout-ms <ms> [--bind 127.0.0.1] [--password-stdin|--key|--key-passphrase[-stdin]] --json` emits `tunnel_listening` on stdout after bind; `--bind` defaults to `127.0.0.1`; post-bind deadline exits 0; pre-bind timeout remains 74.
-- Export: default `ssh-cli vps export` body is TOML (even pipes); empty secrets serialize as `""` (never `sshcli-enc:`). Use `vps export --json` for agent envelope `event: "vps-export"`. `--include-secrets` needs `-o` or `--i-understand-secrets-on-stdout`.
+- Tunnel: `ssh-cli tunnel <vps> <local_port> [remote_host] [remote_port] --timeout-ms <ms> [--bind 127.0.0.1] [--password-stdin|--key|--key-passphrase[-stdin]] --json` emits `tunnel_listening` on stdout after bind; `--bind` defaults to `127.0.0.1`; post-bind deadline exits 0; pre-bind timeout remains 74.
+- Tunnel modes (0.5.4): `--socks5` serves an RFC 1928 no-auth `CONNECT` proxy, `--remote-socket <PATH>` forwards to a remote Unix socket, `--reverse` asks the server to listen and delivers back to `<local_port>`. The three are mutually exclusive. `remote_host`/`remote_port` are omitted under `--socks5` and `--remote-socket` (passing them is exit 64) and mean the **server's** bind under `--reverse`, where `remote_port 0` lets the server allocate and report the port in `local_port`.
+- Both tunnel events carry `mode` (`local` / `socks5` / `streamlocal` / `reverse`); read it before interpreting the sibling fields, since `local_port` is the server's port under `--reverse` and there is no single destination under `--socks5`.
+- `--i-accept-network-exposure` guards the local `--bind` in the three local modes and the **remote** bind under `--reverse`, which is the exposed end in that direction. The local bind is IP-parsed by clap (typo → exit 2); the remote bind is compared as text, since RFC 4254 admits names and the empty string (typo → exit 64 from the guard).
+- FORBIDDEN: pass `--bind` together with `--reverse` and expect it to matter — the flag is accepted by clap and then discarded, silently, because reverse delivery is forced to loopback. Address the server-side listener through the positional `<remote_host>`.
+- Export: the `ssh-cli vps export` body follows the resolved format, so it is the JSON envelope `event: "vps-export"` on any non-TTY stdout and `--output-format text` is the only route to TOML; empty secrets serialize as `""` (never `sshcli-enc:`). `--include-secrets` needs `-o` or `--i-understand-secrets-on-stdout`.
 - Import: `ssh-cli vps import --file <path> [--allow-incomplete]` accepts TOML (EN serialize / PT load aliases) or JSON `vps-export`; `added_at` / `adicionado_em` optional (default now).
 - Empty password fields serialize as JSON `null`; non-empty secrets mask as `***` (`FIXED_MASK`). Redacted `vps export` non-empty → `***`; empty → `""`.
 - Validate payloads against schemas under `docs/schemas/`; index: [docs/schemas/README.md](schemas/README.md).
@@ -182,6 +214,10 @@
 
 ## Retry Strategy
 - Prefer JSON error envelope fields `retryable` + `error_class` over exit-only heuristics (`docs/schemas/error-envelope.schema.json`).
+- Branch on `error_code`, never on `message`: B2 made the human error line localizable, and `--lang pt-BR` now renders it in Portuguese in **text** mode.
+- The JSON envelope's `message` stays **stable English** by contract, so an agent's parsing never depends on the host locale.
+- The seam lives in `emit_resolved_ssh_error`: the `--json` branch keeps `SshCliError`'s English `Display`, the human branch consults `i18n::localized_error_text`.
+- Error codes without a translation fall back to the English `Display` — the localization is fail-open and can never blank an error line.
 - Retry at most twice on `retryable: true` / exit 74 with **exponential full-jitter** backoff (base 200ms, cap 5s; see `ssh_cli::retry::RetryConfig::agent_default`).
 - Never retry on `retryable: false` or exits 64, 65, 66, 77, 1 (remote command), 130/143/141 without changing inputs.
 - ACME permanent validation (`invalidContact` / 4xx) is exit **64**, not exit 74 — do **not** treat it as retryable network IO.

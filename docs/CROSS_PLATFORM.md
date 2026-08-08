@@ -1,9 +1,12 @@
 # Cross Platform
 
+> **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
+
+
 > Escape OS-specific SSH glue with one portable Rust binary.
 
 - Read this document in [Portuguese (pt-BR)](CROSS_PLATFORM.pt-BR.md).
-- Product line: 0.5.3.
+- Product line: 0.5.4.
 
 
 ## The Pain You Already Know
@@ -19,8 +22,8 @@
 | --- | --- | --- |
 | Linux gnu | Supported | Primary development target |
 | Linux musl | Supported | Use `--features musl-allocator` when needed |
-| macOS | Supported | arm64 + x86_64; may need Gatekeeper quarantine removal |
-| Windows | Supported | UTF-8 CP 65001 + VT processing at boot; ProjectDirs config |
+| macOS | Supported (type-checked) | arm64 + x86_64; may need Gatekeeper quarantine removal; verified by `scripts/check_cross_targets.sh` |
+| Windows | Supported (type-checked) | UTF-8 CP 65001 + VT processing at boot; ProjectDirs config; verified by `scripts/check_cross_targets.sh` |
 | WSL1 / WSL2 | Supported | Detected via `WSL_*` / `/proc/version`; treat as Linux |
 | Containers | Supported | Mount config dir or pass `--config-dir`; doctor reports `runtime.is_container` |
 | Termux (Android) | Best-effort | Detected via `TERMUX_*`; bionic libc when target available |
@@ -121,7 +124,7 @@ Command inventory is identical on every supported OS. Discover at runtime with `
 | Remote exec | `exec` `sudo-exec` `su-exec` |
 | SCP | `scp upload` `scp download` (regular files only) |
 | SFTP | `sftp upload` `sftp download` `sftp ls` `sftp mkdir` `sftp rmdir` `sftp rm` `sftp stat` `sftp rename` |
-| Network | `tunnel` `health-check` |
+| Network | `tunnel` (local, `--reverse`, `--socks5`, `--remote-socket`) `health-check` |
 | Secrets | `secrets status` `secrets init` `secrets reencrypt` |
 | Discovery | `completions` `commands` `schema` `doctor` (root alias of `vps doctor`) |
 | Locale | `locale show` `locale set` `locale clear` |
@@ -133,6 +136,17 @@ Globals (all platforms): `--lang`, `-v`/`-vv`/`-vvv` (crate-scoped G2/G14; ambie
 
 - Prefer product line **0.5.3+** for SFTP (G1 upload integrity) on every platform; verify destination with checksum.
 - No product `.env` — XDG / ProjectDirs / `--config-dir` / CLI flags only.
+
+
+## Tunnel mode portability
+- All four `tunnel` modes are available on every supported OS: default local forward, `--reverse`, `--socks5` and `--remote-socket`.
+- `--remote-socket <PATH>` names a Unix socket on the **server**, not on this machine, so the **client may run on Windows**: locally it only ever speaks TCP and asks the server to reach the socket.
+- The gate that matters for `--remote-socket` is the server's support for the `direct-streamlocal@openssh.com` extension, detected on the wire rather than guessed from the local platform. A Windows client against an OpenSSH Linux server works; a Linux client against a server without the extension does not.
+- `--remote-socket` validates only what cannot be valid on any POSIX host: empty path, relative path, or embedded NUL, each exit **64**. Checking local existence would be actively wrong, because the path belongs to a filesystem this machine cannot see.
+- `--socks5` binds a local TCP listener and speaks RFC 1928 no-auth CONNECT, so it has no platform-specific dependency at all.
+- `--reverse` asks the server to listen; whether the server permits that bind is governed by its `GatewayPorts` and `AllowTcpForwarding`, which are server-side settings and not a client platform trait.
+- The **local** `--bind` is parsed as an IP address by clap on every OS, so a typo fails at exit **2** before any SSH handshake; any routable bind requires `--i-accept-network-exposure` on every platform.
+- The **remote** bind under `--reverse` is compared as text rather than parsed as an IP (RFC 4254 allows names and the empty string), so a typo there is exit **64** from the exposure guard. Both behaviours are identical on every platform, because neither check consults the host OS. Note also that `--bind` is accepted and then ignored under `--reverse` on every platform.
 
 
 ## SCP portability

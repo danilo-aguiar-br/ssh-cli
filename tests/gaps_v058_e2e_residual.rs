@@ -50,7 +50,9 @@ fn schema_body_vps_list_is_json() {
         String::from_utf8_lossy(&out.stderr)
     );
     let s = String::from_utf8_lossy(&out.stdout);
-    assert!(s.contains("\"$schema\"") || s.contains("schema"), "{s}");
+    // The bare `schema` operand matched the command name echoed anywhere in the
+    // output, so the disjunction could not fail. Keep the JSON Schema key.
+    assert!(s.contains("\"$schema\""), "{s}");
 }
 
 #[test]
@@ -63,11 +65,11 @@ fn doctor_root_emits_vps_doctor_event() {
         String::from_utf8_lossy(&out.stderr)
     );
     let s = String::from_utf8_lossy(&out.stdout);
-    assert!(s.contains("vps-doctor") || s.contains("config_path"), "{s}");
-    assert!(
-        s.contains("\"telemetry\":false") || s.contains("telemetry"),
-        "{s}"
-    );
+    // Both disjunctions degenerated: `config_path` is present in every doctor
+    // envelope, and `telemetry` is subsumed by the qualified field. Assert the
+    // event name and the field value, which is what the contract actually says.
+    assert!(s.contains("vps-doctor"), "{s}");
+    assert!(s.contains("\"telemetry\":false"), "{s}");
 }
 
 #[test]
@@ -157,7 +159,11 @@ fn version_stamp_contains_dirty_or_hash() {
     let out = run(&["--version"]);
     assert!(out.status.success());
     let s = String::from_utf8_lossy(&out.stdout);
-    assert!(s.contains("0.5.2"), "{s}");
+    // Derived from the manifest, never a literal: a hardcoded `0.5.2` turned every
+    // version bump into a red test that says nothing about the version *stamp*, which
+    // is what this test actually guards.
+    let version = env!("CARGO_PKG_VERSION");
+    assert!(s.contains(version), "expected {version} in: {s}");
     // Working tree is dirty in this residual close → expect -dirty when .git present.
     // Allow either form so crates.io packs without git still pass.
     assert!(

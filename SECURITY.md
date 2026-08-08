@@ -15,6 +15,13 @@
 | 0.1.x | Unsupported | No patches |
 | < 0.1 | Unsupported | No patches |
 
+## Security Fixes in 0.5.4
+- **A1 — remotely triggerable abort while logging the pre-auth banner.** The SSH banner is remote input that arrives *before* authentication, and it is retained for diagnostic logging. The `AUTH_BANNER_MAX_CHARS` (512) log cap already existed (G-SSH-14); the defect was that the cut was applied by **byte index**, which panics whenever it lands inside a multi-byte character. The release profile sets `panic = "abort"`, so there is no unwind: an unauthenticated peer could kill the process outright with a banner containing a single well-placed non-ASCII character, taking a whole multi-host fan-out down with it. Truncation now happens on character boundaries. Note the residual limit of the fix: russh materialises the complete banner and hands it to the callback, so the client still holds the full string in memory — what A1 bounds is the panic, not the allocation. This is the highest-severity class here because it needs no credentials.
+- **A2 — world-readable window on ACME and mTLS private keys.** Key material under XDG `tls/acme/` and `tls/mtls/` was written with `std::fs::write`, which creates the file readable by any local user and only then tightens the mode — leaving a window a co-tenant could read. Writes now go through the shared helper that *creates* at `0600`, so the window does not exist. Fixing the mode after the fact only shortens exposure; it never removes it.
+- **A3 — server-sent elevation bits landing on downloaded files.** The SCP `C` header and SFTP attributes are produced by the *server*, so the mode they carry is untrusted. Masking with `0o7777` let a hostile peer put setuid, setgid or sticky on the local file. Inbound modes are now masked with `SFTP_PERM_MASK_UNTRUSTED` (`0o0777`), so only plain `rwx` triples cross the network inbound. The remote end has no authority to decide what is privileged on your machine.
+- **Non-loopback bind now requires acknowledgement.** `tunnel --bind` outside loopback requires `--i-accept-network-exposure` (G-TUN-R13). Before this, `--bind 0.0.0.0` silently published the forwarded remote service to the whole local network. Under `--reverse` the same flag guards the **server's** bind address, because that is the exposed end in that direction.
+- Upgrade to **0.5.4** for all four. A1 and A3 are reachable by a remote peer; A2 is reachable by a local co-tenant.
+
 ## Reporting a Vulnerability
 - Report security issues through GitHub Security Advisories in the public `ssh-cli` repository as the preferred private channel.
 - Use email at daniloaguiarbr@proton.me only as fallback when GitHub private reporting is unavailable.
@@ -115,8 +122,11 @@
 - Real-SSH E2E (G-E2E-05) must keep credentials outside the tree: prefer `--config-dir` / pre-registered hosts, or `$HOME/.grok/config.toml` via `--from-grok-config`; harness-only `SSH_CLI_E2E_*` is accepted by the script only (not product runtime). Offline / no lab → **SKIP** exit 0. The script refuses grok configs under the repo root.
 - Demo passwords in public docs are placeholders only (e.g. `demo-password-not-real`); never reuse them on live hosts.
 - Disable elevation with `--disable-sudo` when a workflow must not escalate.
+- Keep `tunnel --bind` on loopback unless a second machine genuinely must reach the forward; any routable bind requires `--i-accept-network-exposure`, which is the acknowledgement of that exposure rather than a formality.
+- Treat `tunnel --remote-socket /var/run/docker.sock` as privilege delegation: forwarding a Docker or systemd socket hands the local port whatever authority that socket grants on the remote host.
+- Prefer `tunnel --socks5` bound to loopback over a routable fixed forward when an agent needs several destinations; one acknowledged local bind beats N exposed ones.
 - Run one-shot commands only; never expect a long-lived SSH daemon from this CLI.
 - Install with `--locked` to avoid accidental crypto re-resolve drift.
-- Prefer current **0.5.3+** for SFTP integrity (G1 closed 0-byte upload truncation), crate-scoped verbosity (G2/G14 — no russh password dumps), the supply-chain floor (russh 0.62.2), working SCP/SFTP wire, ACME permanent classification (`invalidContact` → exit **64**), and redacted export mask `***` (`FIXED_MASK`).
+- Prefer current **0.5.3+** for SFTP integrity (G1 closed 0-byte upload truncation), crate-scoped verbosity (G2/G14 — no russh password dumps), the supply-chain floor (russh 0.62.5), working SCP/SFTP wire, ACME permanent classification (`invalidContact` → exit **64**), and redacted export mask `***` (`FIXED_MASK`).
 - Historical honesty: **0.4.1** fixed empty-secret redacted export (never `sshcli-enc:` of empty) and tunnel post-bind exit 0.
 - Default redacted `vps export` clears secrets; empty secrets must serialize as empty strings, never encrypted `sshcli-enc:` blobs of empty values (0.4.2 EXP-001).

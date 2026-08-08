@@ -31,7 +31,8 @@ pub mod scp {
     pub use crate::scp::{run_scp as run, ScpOptions};
 }
 
-/// SFTP handlers (G-SFTP).
+/// SFTP handlers (G-SFTP). Present only with the real SSH stack (A6).
+#[cfg(feature = "ssh-real")]
 pub mod sftp {
     pub use crate::sftp::{run_sftp as run, SftpOptions};
 }

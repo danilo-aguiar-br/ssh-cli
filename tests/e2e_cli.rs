@@ -379,7 +379,13 @@ fn secrets_init_force_reencrypts_hosts() {
 
     let cfg = tmp.path().join("config.toml");
     let before = std::fs::read_to_string(&cfg).unwrap();
-    assert!(before.contains("sshcli-enc:v1:"));
+    // A7: fresh writes use `v2`, which binds the ciphertext to its host and field via
+    // AEAD associated data. `v1` (no AAD) stays readable for existing configs, so this
+    // accepts either rather than pinning the test to one on-disk generation.
+    assert!(
+        before.contains("sshcli-enc:v2:") || before.contains("sshcli-enc:v1:"),
+        "secret must be stored encrypted at rest"
+    );
 
     cmd(&tmp)
         .args(["secrets", "init", "--force"])
@@ -400,7 +406,11 @@ fn secrets_init_force_reencrypts_hosts() {
         .stdout(predicate::str::contains("rotate-secret-password-zzz-999").not());
 
     let after = std::fs::read_to_string(&cfg).unwrap();
-    assert!(after.contains("sshcli-enc:v1:"));
+    // Re-encryption always writes the current generation (A7: `v2`, AAD-bound).
+    assert!(
+        after.contains("sshcli-enc:v2:"),
+        "re-encryption must write the current envelope generation"
+    );
     // Ciphertext must change under new key (nonce+key differ).
     assert_ne!(before, after);
 

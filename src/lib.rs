@@ -62,6 +62,11 @@
 //!   (platform console / Unix permissions) are documented at the call site.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+// A6: without `ssh-real` the SCP/exec wire helpers have no caller — the stub client
+// answers every method with a typed refusal. They are not dead code in any shipped
+// build, so silencing the lint only in the diagnostic configuration keeps
+// `--no-default-features` usable without weakening the default build's warnings.
+#![cfg_attr(not(feature = "ssh-real"), allow(dead_code, unused_imports))]
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
 // G-SECDEV-05: crate root cannot `forbid(unsafe_code)` — Windows console FFI and
@@ -80,6 +85,8 @@
 #![deny(clippy::declare_interior_mutable_const)]
 #![deny(clippy::borrow_interior_mutable_const)]
 
+/// Agent-native payload shaping applied at the JSON serialization funnel.
+pub mod agent_shape;
 pub mod cli;
 pub mod commands;
 /// Bounded multi-host / tunnel fan-out (Semaphore + JoinSet).
@@ -107,6 +114,14 @@ pub mod platform;
 pub mod retry;
 pub mod scp;
 pub mod secrets;
+/// SFTP subsystem (requires the real SSH stack).
+///
+/// A6: this module calls `russh_sftp` directly through `crate::ssh::sftp_session`,
+/// which is itself gated behind `ssh-real`. Leaving it ungated meant the
+/// `--no-default-features` build documented in `Cargo.toml` — the one used to diagnose
+/// dependency problems — failed with 62 errors instead of producing a stack-free
+/// binary. Gating the module is what makes that documented configuration real again.
+#[cfg(feature = "ssh-real")]
 pub mod sftp;
 pub mod signals;
 pub mod ssh;
@@ -338,8 +353,34 @@ pub async fn run_with_args(args: cli::CliArgs) -> Result<()> {
     telemetry::initialize_logs(args.verbose);
     terminal::initialize(args.no_color)?;
     i18n::initialize_language(args.lang.as_deref(), args.config_dir.as_deref())?;
+    // Shaping is installed before any command runs so every payload leaving the
+    // JSON funnel is already reduced. A malformed `--filter` fails here, not silently
+    // as an empty result set.
+    install_agent_shape(&args)?;
+    cli::set_no_input(args.no_input);
+    cli::set_dry_run(args.dry_run);
     // Phase 5: execute
     commands::run(args).await
+}
+
+/// Builds the shaping config from global flags and installs it process-wide.
+fn install_agent_shape(args: &cli::CliArgs) -> Result<()> {
+    let mut filters = Vec::with_capacity(args.filter.len());
+    for raw in &args.filter {
+        filters
+            .push(agent_shape::Filter::parse(raw).map_err(errors::SshCliError::InvalidArgument)?);
+    }
+    agent_shape::set_shape(agent_shape::ShapeConfig {
+        select: args.select.clone(),
+        filters,
+        limit: args.limit,
+        sort: args.sort.clone(),
+        dedupe_by: args.dedupe_by.clone(),
+        count_only: args.count_only,
+        truncate_content: args.truncate_content,
+        max_output_bytes: args.max_output_bytes,
+    });
+    Ok(())
 }
 
 /// Prints a product error envelope and returns its exit code.
@@ -361,8 +402,13 @@ fn emit_resolved_ssh_error(ssh_err: &errors::SshCliError, wants_json: bool) -> i
             ssh_err.is_retryable(),
             ssh_err.suggestion(),
         );
+    } else if let Some(localized) = i18n::localized_error_text(ssh_err) {
+        // B2: human branch only. The JSON envelope above deliberately keeps the
+        // English Display, because agents parse `error_code`, never prose.
+        let _ = output::print_error(&localized);
     } else {
         // G-MAC-01: Display via write_fmt — no temporary String.
+        // Reached for error codes without a translation (io, json, toml_*, …).
         let _ = output::print_error_fmt(format_args!("{ssh_err}"));
     }
     let _ = std::io::Write::flush(&mut std::io::stderr());
@@ -415,6 +461,25 @@ pub fn resolve_exit_code(result: Result<()>) -> i32 {
                     return emit_resolved_ssh_error(&ssh_err, wants_json);
                 }
             }
+            // D15: `src/output/emit.rs` returns `io::Result`, and 28 product call
+            // sites propagate it with a bare `?` into `anyhow::Result`. The result
+            // was that one identical failure reported two different contracts:
+            // `schema` mapped it and exited 74 with `error_code: "io"`, while
+            // `commands` and `vps export` leaked it here and exited 1 with
+            // `error_code: "unexpected"`. Measured with `> /dev/full` (ENOSPC).
+            //
+            // Classifying at this seam fixes every call site at once and keeps
+            // `emit.rs` on `io::Result`, which is the honest type for a writer.
+            // `io::Error` is not `Clone`, so the kind and message are rebuilt.
+            for cause in e.chain() {
+                if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
+                    let ssh_err = errors::SshCliError::Io(std::io::Error::new(
+                        io_err.kind(),
+                        io_err.to_string(),
+                    ));
+                    return emit_resolved_ssh_error(&ssh_err, wants_json);
+                }
+            }
             let code = errors::exit_codes::EX_GENERAL;
             if wants_json {
                 let _ = output::print_error_envelope(
@@ -427,7 +492,12 @@ pub fn resolve_exit_code(result: Result<()>) -> i32 {
                     Some("unexpected non-domain error; do not blind-retry"),
                 );
             } else {
-                let _ = output::print_error_fmt(format_args!("{e}"));
+                // C2: the untyped branch is localized too. B2 wired every typed
+                // `SshCliError` through i18n and left this one printing the raw
+                // English `anyhow` chain under `--lang pt-BR`. Only the label is
+                // translated; the chain itself stays verbatim so no diagnostic
+                // detail is lost.
+                let _ = output::print_error(&i18n::localized_unexpected_text(&e.to_string()));
             }
             let _ = std::io::Write::flush(&mut std::io::stderr());
             code

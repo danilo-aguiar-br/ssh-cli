@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// G-CLOSE-04: pure module — no `unsafe` permitted.
-#![forbid(unsafe_code)]
+// G-CLOSE-04 / B1: `deny`, not `forbid`.
+//
+// An inner attribute on a module *file* also governs that module's children, and
+// the `windows` child is the product's only Win32 FFI surface (see the allowlist
+// in `tests/gaps_v055_unsafe_ffi.rs`). `forbid` cannot be lifted by an inner
+// `#[allow]`, so it made the Windows target refuse to compile while every gate
+// run on Linux stayed green — `cfg(target_os = "windows")` code never reaches
+// type-check on a non-Windows host. `deny` keeps the same prohibition for every
+// sibling while letting `windows.rs` carry an audited, file-scoped exception.
+#![deny(unsafe_code)]
 //! Operating-system conditional abstractions.
 //!
 //! Platform initialization ([`initialize_platform`]) is the **first I/O-related

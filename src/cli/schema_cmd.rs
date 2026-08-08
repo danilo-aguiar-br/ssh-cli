@@ -12,6 +12,11 @@ use crate::errors::{SshCliError, SshCliResult};
 /// Names omit `.schema.json` and match `docs/schemas/README.md`.
 const SCHEMAS: &[(&str, &str, &str)] = &[
     (
+        "dry-run",
+        "dry-run.schema.json",
+        include_str!("../../docs/schemas/dry-run.schema.json"),
+    ),
+    (
         "error-envelope",
         "error-envelope.schema.json",
         include_str!("../../docs/schemas/error-envelope.schema.json"),
@@ -85,6 +90,11 @@ const SCHEMAS: &[(&str, &str, &str)] = &[
         "sudo-exec",
         "sudo-exec.schema.json",
         include_str!("../../docs/schemas/sudo-exec.schema.json"),
+    ),
+    (
+        "tunnel-closed",
+        "tunnel-closed.schema.json",
+        include_str!("../../docs/schemas/tunnel-closed.schema.json"),
     ),
     (
         "tunnel-listening",
@@ -165,7 +175,7 @@ mod tests {
 
     #[test]
     fn catalog_non_empty() {
-        assert!(SCHEMAS.len() >= 18);
+        assert!(SCHEMAS.len() >= 22);
     }
 
     #[test]
@@ -173,5 +183,57 @@ mod tests {
         assert!(SCHEMAS
             .iter()
             .any(|(n, _, b)| *n == "vps-list" && b.contains("schema")));
+    }
+
+    /// Every schema on disk is reachable through `ssh-cli schema`, and vice versa.
+    ///
+    /// `docs/schemas/README.md` tells agents to discover the catalog at runtime, so a
+    /// file that exists on disk but is missing from [`SCHEMAS`] is a published contract
+    /// the consumer cannot fetch: `ssh-cli schema tunnel-closed` answered exit 64
+    /// `unknown schema` while the README documented the very same name. Two schemas had
+    /// drifted that way with no gate to notice, because the only assertions here were a
+    /// lower bound on the count and one hand-picked name.
+    ///
+    /// The reverse direction matters too: a catalog entry without its file cannot exist
+    /// (`include_str!` would fail the build), but a *renamed* file would leave the entry
+    /// pointing at a stale leaf, so both sets are compared.
+    #[test]
+    fn catalog_and_disk_agree() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/schemas");
+
+        let mut on_disk: Vec<String> = std::fs::read_dir(&dir)
+            .expect("read docs/schemas")
+            .flatten()
+            .filter_map(|e| e.file_name().to_str().map(str::to_owned))
+            .filter(|f| f.ends_with(".schema.json"))
+            .collect();
+        on_disk.sort();
+
+        let mut in_catalog: Vec<String> = SCHEMAS
+            .iter()
+            .map(|(_, file, _)| (*file).to_owned())
+            .collect();
+        in_catalog.sort();
+
+        let missing: Vec<&String> = on_disk.iter().filter(|f| !in_catalog.contains(f)).collect();
+        assert!(
+            missing.is_empty(),
+            "schemas published on disk but absent from the runtime catalog: {missing:?}"
+        );
+
+        let stale: Vec<&String> = in_catalog.iter().filter(|f| !on_disk.contains(f)).collect();
+        assert!(
+            stale.is_empty(),
+            "catalog entries whose file no longer exists on disk: {stale:?}"
+        );
+
+        // Names are the lookup key an agent types; they must be the leaf minus the suffix.
+        for (name, file, _) in SCHEMAS {
+            assert_eq!(
+                *file,
+                format!("{name}.schema.json"),
+                "catalog name '{name}' does not match its file leaf '{file}'"
+            );
+        }
     }
 }

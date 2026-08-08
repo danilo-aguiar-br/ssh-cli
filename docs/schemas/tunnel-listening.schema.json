@@ -12,7 +12,8 @@
     "local_port",
     "remote_host",
     "remote_port",
-    "timeout_ms"
+    "timeout_ms",
+    "bind"
   ],
   "properties": {
     "ok": {
@@ -33,20 +34,35 @@
       "maximum": 65535,
       "description": "Local listen port after bind (OS-assigned when the requested port was 0 / ephemeral; never 0 after successful bind — GAP-SSH-TUN-003)"
     },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "local",
+        "socks5",
+        "streamlocal",
+        "reverse"
+      ],
+      "default": "local",
+      "description": "Which tunnel is serving. The sibling fields are read differently per mode: under `reverse` the listener is on the SSH server and `local_port` is the port it allocated; under `socks5` the destination is chosen per connection, so `remote_host` is `*` and `remote_port` is 0; under `streamlocal` `remote_host` carries the remote Unix socket path and `remote_port` is 0. Absent in events written before 0.5.4, which can only have been plain local forwards."
+    },
     "remote_host": {
       "type": "string",
-      "description": "Remote host reached through the SSH channel"
+      "description": "Remote host reached through the SSH channel. `*` under `socks5` (per-connection destination); the remote socket path under `streamlocal`; the local delivery host under `reverse`."
     },
     "remote_port": {
       "type": "integer",
       "minimum": 0,
       "maximum": 65535,
-      "description": "Remote port reached through the SSH channel"
+      "description": "Remote port reached through the SSH channel. 0 under `socks5` and `streamlocal`, where no single port applies; the local delivery port under `reverse`."
     },
     "timeout_ms": {
       "type": "integer",
       "minimum": 0,
       "description": "Bound tunnel lifetime in milliseconds"
+    },
+    "bind": {
+      "type": "string",
+      "description": "Effective local bind address (G-TUN-R06). Lets an agent audit from the contract alone whether the forwarded service was published beyond loopback; `127.0.0.1` is the default."
     }
   }
 }

@@ -26,15 +26,21 @@ fn walk_rs(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Modules allowed to hold `unsafe` at all: OS FFI plus its test encapsulation.
+///
+/// Shared by both gates so an `allow(unsafe_code)` attribute can never open a
+/// hole that the `unsafe {` scan does not already know about.
+const UNSAFE_FFI_ALLOWLIST: &[&str] = &[
+    "platform/windows.rs",
+    "signals.rs",
+    "test_util/env.rs", // test-only encapsulation
+];
+
 /// Product `unsafe {` may only appear in the OS FFI allowlist.
 #[test]
 fn product_unsafe_blocks_only_in_allowlist() {
     let root = workspace_root().join("src");
-    let allow = [
-        "platform/windows.rs",
-        "signals.rs",
-        "test_util/env.rs", // test-only encapsulation
-    ];
+    let allow = UNSAFE_FFI_ALLOWLIST;
     let mut files = Vec::new();
     walk_rs(&root, &mut files);
     let mut offenders = Vec::new();
@@ -65,28 +71,105 @@ fn product_unsafe_blocks_only_in_allowlist() {
     );
 }
 
-/// Pure modules that must keep `forbid(unsafe_code)`.
+/// Modules that carry no `unsafe_code` lint of their own, each with its reason.
+///
+/// Every entry must be justified here; an unjustified gap is the bug this gate
+/// exists to catch.
+const UNSAFE_LINT_EXEMPT: &[(&str, &str)] = &[
+    // `include!` fragments: an inner attribute is illegal outside a module root,
+    // so these inherit the `forbid` of `ssh/client_real.rs`.
+    ("ssh/client_real_core.rs", "include! fragment"),
+    ("ssh/client_real_scp.rs", "include! fragment"),
+    ("ssh/client_real_sftp.rs", "include! fragment"),
+    ("ssh/client_real_tests_body.rs", "include! fragment"),
+    // `#[cfg(test)] mod tests;` bodies: they inherit the parent module's lint.
+    ("agent_shape_tests.rs", "cfg(test) submodule"),
+    ("cli/tests.rs", "cfg(test) submodule"),
+    ("ssh/client_tests.rs", "cfg(test) submodule"),
+    ("tunnel/tests.rs", "cfg(test) submodule"),
+    // OS FFI holders: they need `unsafe`, and `product_unsafe_blocks_only_in_
+    // allowlist` is the gate that bounds them.
+    ("signals.rs", "OS signal FFI, in UNSAFE_FFI_ALLOWLIST"),
+    (
+        "test_util/env.rs",
+        "test-only env FFI, in UNSAFE_FFI_ALLOWLIST",
+    ),
+];
+
+/// Every product module states an explicit `unsafe_code` lint decision.
+///
+/// This used to be a literal inventory of eight paths, which made it blind to
+/// whole subsystems (`src/secrets/`, `src/i18n/`, `src/sftp/`) and let it pass
+/// in silence the moment a new module landed. Sweeping `src/` recursively
+/// asserts the real invariant instead of a layout snapshot.
 #[test]
-fn pure_modules_forbid_unsafe_code() {
+fn every_product_module_states_an_unsafe_code_lint() {
     let root = workspace_root().join("src");
-    let must = [
-        "ssh/mod.rs",
-        "ssh/client.rs",
-        "vps/model.rs",
-        "vps/mod.rs",
-        "vps/config_io.rs",
-        "secrets.rs",
-        "concurrency.rs",
-        "main.rs",
-    ];
-    for rel in must {
-        let path = root.join(rel);
-        let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {rel}: {e}"));
-        assert!(
-            text.contains("forbid(unsafe_code)"),
-            "{rel} must contain #![forbid(unsafe_code)]"
-        );
+    let mut files = Vec::new();
+    walk_rs(&root, &mut files);
+    assert!(
+        files.len() > 20,
+        "the src/ walk is broken, not the product: found only {} files",
+        files.len()
+    );
+
+    let mut offenders = Vec::new();
+    for f in &files {
+        let rel = f
+            .strip_prefix(&root)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        if UNSAFE_LINT_EXEMPT.iter().any(|(p, _)| rel == *p) {
+            continue;
+        }
+        let text = fs::read_to_string(f).unwrap();
+        let decided = text.contains("forbid(unsafe_code)")
+            || text.contains("deny(unsafe_code)")
+            || text.contains("allow(unsafe_code)");
+        if !decided {
+            offenders.push(rel);
+        }
     }
+    assert!(
+        offenders.is_empty(),
+        "these product modules state no `unsafe_code` lint and are not a declared \
+         exception in UNSAFE_LINT_EXEMPT:\n  {}",
+        offenders.join("\n  ")
+    );
+
+    // A file-scoped `allow(unsafe_code)` is the only way to widen the surface,
+    // so it may never appear outside the FFI allowlist.
+    let mut widened = Vec::new();
+    for f in &files {
+        let rel = f
+            .strip_prefix(&root)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        let text = fs::read_to_string(f).unwrap();
+        if text.contains("allow(unsafe_code)") && !UNSAFE_FFI_ALLOWLIST.contains(&rel.as_str()) {
+            widened.push(rel);
+        }
+    }
+    assert!(
+        widened.is_empty(),
+        "allow(unsafe_code) outside UNSAFE_FFI_ALLOWLIST:\n  {}",
+        widened.join("\n  ")
+    );
+
+    // Keep the exemption list honest: a stale entry hides a real regression.
+    let mut stale = Vec::new();
+    for (rel, why) in UNSAFE_LINT_EXEMPT {
+        if !root.join(rel).is_file() {
+            stale.push(format!("{rel} ({why})"));
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        "UNSAFE_LINT_EXEMPT names files that no longer exist:\n  {}",
+        stale.join("\n  ")
+    );
 }
 
 /// G-UNSAFE-02/08: no plaintext secrets env mutation in sources.

@@ -57,12 +57,27 @@ pub fn write_json_line<W: Write, T: Serialize>(mut w: W, value: &T) -> io::Resul
 
 /// Compact JSON + LF on stdout (agent success / data path).
 ///
+/// This is the **single funnel** every structured payload passes through, which is why
+/// agent-native shaping ([`crate::agent_shape`]) is applied here rather than at each of
+/// the fifteen call sites. Reducing before serialization is the whole point: shaping
+/// downstream with `jaq` would mean the oversized envelope was already built and
+/// written, so the tokens were already spent.
+///
+/// When no shaping flag was passed, [`crate::agent_shape::is_active`] short-circuits and
+/// the value is serialized directly — the default path pays no `to_value` round-trip.
+///
 /// # Errors
 /// Serialization or stdout I/O (including `BrokenPipe` → exit 141).
 pub fn print_json_line<T: Serialize>(value: &T) -> io::Result<()> {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
-    write_json_line(&mut handle, value)
+
+    let Some(cfg) = crate::agent_shape::current() else {
+        return write_json_line(&mut handle, value);
+    };
+    let mut shaped = serde_json::to_value(value).map_err(io::Error::other)?;
+    crate::agent_shape::apply(&mut shaped, &cfg);
+    write_json_line(&mut handle, &shaped)
 }
 
 /// Compact JSON + LF on stderr; BrokenPipe is ignored (downstream closed).

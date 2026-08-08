@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 //! Dispatcher for `ssh-cli vps …` subcommands.
 
-use super::config_io::{load, resolve_config_path, save, validate_key_path_exists};
+use super::config_io::{load, lock_config, resolve_config_path, validate_key_path_exists};
 use super::doctor::run_doctor_with_optional_probe;
 use super::health::run_health_check;
 use super::import_export::{run_export, run_import};
@@ -35,6 +35,7 @@ pub async fn run_vps_command(
             password_stdin,
             key,
             key_passphrase,
+            key_passphrase_stdin,
             use_agent,
             agent_socket,
             timeout,
@@ -57,13 +58,25 @@ pub async fn run_vps_command(
             let name = crate::paths::validate_and_normalize(&name)
                 .map_err(|e| SshCliError::InvalidArgument(format!("invalid VPS name: {e}")))?;
             let name_key = name.as_str().to_owned();
-            let mut file = load(&path)?;
-            if file.hosts.contains_key(&name_key) {
+            // Early, advisory duplicate check: fails before any stdin prompt. The
+            // authoritative check happens again under the config lock, below.
+            if load(&path)?.hosts.contains_key(&name_key) {
                 return Err(SshCliError::VpsDuplicate(name_key).into());
             }
-            if password_stdin && (sudo_password_stdin || su_password_stdin) {
+            // Stdin can only be drained once, so ANY two `--*-stdin` flags conflict.
+            // D13: the old guard was `password_stdin && (sudo || su)`, which let
+            // `--sudo-password-stdin --su-password-stdin` through: the first read
+            // consumed stdin and the second silently produced an empty secret.
+            // Counting is the invariant; enumerating pairs is not.
+            let stdin_secrets = usize::from(password_stdin)
+                + usize::from(key_passphrase_stdin)
+                + usize::from(sudo_password_stdin)
+                + usize::from(su_password_stdin);
+            if stdin_secrets > 1 {
                 return Err(SshCliError::InvalidArgument(
-                    "only one --*-stdin per one-shot invocation; use vps edit for sudo/su".into(),
+                    "only one --*-stdin per one-shot invocation (stdin is drained once); \
+                     use vps edit for the remaining secrets"
+                        .into(),
                 )
                 .into());
             }
@@ -71,6 +84,11 @@ pub async fn run_vps_command(
                 read_secret_stdin()?
             } else {
                 SecretString::from(password.unwrap_or_default())
+            };
+            let key_passphrase = if key_passphrase_stdin {
+                Some(read_secret_stdin()?)
+            } else {
+                key_passphrase.map(SecretString::from)
             };
             let sudo_s = if sudo_password_stdin {
                 Some(read_secret_stdin()?)
@@ -105,7 +123,7 @@ pub async fn run_vps_command(
                 user,
                 password,
                 key,
-                key_passphrase.map(SecretString::from),
+                key_passphrase,
                 Some(timeout),
                 Some(max_cmd),
                 Some(max_out),
@@ -149,9 +167,18 @@ pub async fn run_vps_command(
             }
             // GAP-SSH-VAL-002 / VAL-003: full domain validation on the write-path.
             record.validate().map_err(SshCliError::from)?;
+            // Read-modify-write under one lock: a concurrent `vps add` that loaded the
+            // same snapshot would otherwise overwrite this host on save.
+            let guard = lock_config(&path)?;
+            let mut file = load(&path)?;
+            if file.hosts.contains_key(&name_key) {
+                return Err(SshCliError::VpsDuplicate(name_key).into());
+            }
             file.hosts.insert(name_key.clone(), record);
             file.schema_version = model::CURRENT_SCHEMA_VERSION;
-            save(&path, &file)?;
+            guard.save(&path, &file)?;
+            // Release before `--check`: the lock must never span an SSH round trip.
+            drop(guard);
             // G-E2E-04 / one-shot: single stdout document (fold auto-key into vps-added).
             // Workload: local single-file CRUD — sequential justified (≪ SSH RTT).
             let auto_key = take_auto_key_meta();
@@ -178,17 +205,17 @@ pub async fn run_vps_command(
             };
             crate::output::emit_success("vps-added", data, &msg, format == OutputFormat::Json)?;
             if check {
-                run_health_check(
-                    HostSelection::Single(name.clone()),
+                run_health_check(crate::vps::HealthCheckRequest {
+                    selection: HostSelection::Single(name.clone()),
                     config_override,
                     format,
-                    false,
-                    None,
-                    None,
-                    None,
-                    None,
-                    false,
-                )
+                    json_local: false,
+                    password_override: None,
+                    timeout_override: None,
+                    key_override: None,
+                    key_passphrase_override: None,
+                    replace_host_key: false,
+                })
                 .await?;
             }
         }
@@ -215,11 +242,28 @@ pub async fn run_vps_command(
             }
         }
         VpsAction::Remove { name } => {
+            // Lock spans load → mutate → save so a concurrent edit is not resurrected.
+            let guard = lock_config(&path)?;
             let mut file = load(&path)?;
-            if file.hosts.remove(&name).is_none() {
+            if !file.hosts.contains_key(&name) {
                 return Err(SshCliError::VpsNotFound(name).into());
             }
-            save(&path, &file)?;
+            // C2: previewed *after* the existence check, so the plan never promises
+            // a removal that the real run would reject with exit 66. A dry-run that
+            // reports success for a host that does not exist is worse than no
+            // preview, because the agent then treats the failure as a regression.
+            if crate::cli::dry_run_stop(
+                "vps-remove",
+                &[
+                    ("name", serde_json::json!(name)),
+                    ("config_path", serde_json::json!(path.display().to_string())),
+                ],
+            )? {
+                return Ok(());
+            }
+            file.hosts.remove(&name);
+            guard.save(&path, &file)?;
+            drop(guard);
             // GAP-SSH-STATE-001: clear orphan active marker.
             clear_active_if_name(&path, &name)?;
             crate::output::emit_success(
@@ -238,6 +282,7 @@ pub async fn run_vps_command(
             password_stdin,
             key,
             key_passphrase,
+            key_passphrase_stdin,
             use_agent,
             agent_socket,
             timeout,
@@ -256,6 +301,45 @@ pub async fn run_vps_command(
             tls_client_cert,
             tls_client_key,
         } => {
+            // D13: `edit` had NO mutual-exclusion guard at all and read stdin up to
+            // three times in a row. Only the first read saw data; the rest silently
+            // stored empty secrets. Same invariant as `add`: stdin drains once.
+            let stdin_secrets = usize::from(password_stdin)
+                + usize::from(key_passphrase_stdin)
+                + usize::from(sudo_password_stdin)
+                + usize::from(su_password_stdin);
+            if stdin_secrets > 1 {
+                return Err(SshCliError::InvalidArgument(
+                    "only one --*-stdin per one-shot invocation (stdin is drained once); \
+                     run vps edit again for the remaining secrets"
+                        .into(),
+                )
+                .into());
+            }
+            // Stdin secrets are read *before* the lock: a blocking read must never hold
+            // it, or a concurrent one-shot would wait on the operator's terminal.
+            let password_stdin_value = if password_stdin {
+                Some(read_secret_stdin()?)
+            } else {
+                None
+            };
+            let key_passphrase_stdin_value = if key_passphrase_stdin {
+                Some(read_secret_stdin()?)
+            } else {
+                None
+            };
+            let sudo_stdin_value = if sudo_password_stdin {
+                Some(read_secret_stdin()?)
+            } else {
+                None
+            };
+            let su_stdin_value = if su_password_stdin {
+                Some(read_secret_stdin()?)
+            } else {
+                None
+            };
+            // Lock spans load → mutate → save (lost-update on concurrent edits).
+            let guard = lock_config(&path)?;
             let mut file = load(&path)?;
             let record = file
                 .hosts
@@ -283,8 +367,8 @@ pub async fn run_vps_command(
                     record.agent_socket = Some(s.to_string_lossy().into_owned());
                 }
             } else {
-                if password_stdin {
-                    record.password = read_secret_stdin()?;
+                if let Some(pw) = password_stdin_value {
+                    record.password = pw;
                     record.use_agent = false;
                 } else if let Some(pw) = password {
                     record.password = SecretString::from(pw);
@@ -299,7 +383,9 @@ pub async fn run_vps_command(
                     );
                     record.use_agent = false;
                 }
-                if let Some(kp) = key_passphrase {
+                if let Some(kp) = key_passphrase_stdin_value {
+                    record.key_passphrase = Some(kp);
+                } else if let Some(kp) = key_passphrase {
                     record.key_passphrase = Some(SecretString::from(kp));
                 }
                 if let Some(s) = agent_socket {
@@ -318,13 +404,13 @@ pub async fn run_vps_command(
                 record.max_output_chars = CharLimit::try_new(m)
                     .map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
             }
-            if sudo_password_stdin {
-                record.sudo_password = Some(read_secret_stdin()?);
+            if let Some(sp) = sudo_stdin_value {
+                record.sudo_password = Some(sp);
             } else if let Some(sp) = sudo_password {
                 record.sudo_password = Some(SecretString::from(sp));
             }
-            if su_password_stdin {
-                record.su_password = Some(read_secret_stdin()?);
+            if let Some(sp) = su_stdin_value {
+                record.su_password = Some(sp);
             } else if let Some(sp) = su_password {
                 record.su_password = Some(SecretString::from(sp));
             }
@@ -364,7 +450,8 @@ pub async fn run_vps_command(
                 )?;
             }
             record.validate().map_err(SshCliError::from)?;
-            save(&path, &file)?;
+            guard.save(&path, &file)?;
+            drop(guard);
             crate::output::emit_success(
                 "vps-edited",
                 serde_json::json!({ "name": name }),

@@ -39,8 +39,11 @@ Global options:
           
           Examples: `en`, `en-US`, `pt-BR`, `pt`. Invalid tags fail clap validation.
 
-  -v, --verbose
-          Increases log verbosity on stderr
+  -v, --verbose...
+          Increases log verbosity on stderr (`-v` info, `-vv` debug, `-vvv` trace).
+          
+          Always scoped to this crate (G2/G14): never a bare global `debug`/`trace` that would
+          enable `russh::client::encrypted` password dumps.
 
   -q, --quiet
           Suppresses non-JSON output (quiet mode)
@@ -63,6 +66,48 @@ Global options:
           
           Global — appears before or after subcommands. Subcommand fields use `from_global` so there
           is a single `--json` long name (clap uniqueness).
+
+      --select <PATHS>
+          Keep only these dotted paths in each record (CSV; alias `--fields`).
+          
+          Agent-native shaping: applied **before** serialization, so the full envelope is never
+          built. Without it an agent must pipe through `jaq`, by which point the oversized payload
+          has already been written and the tokens already spent.
+
+      --filter <EXPR>
+          Keep records matching `key=value`, `key!=value` or `key~substring` (repeatable, AND).
+          
+          A malformed predicate is rejected at parse time rather than silently matching nothing — a
+          typo must not be indistinguishable from an empty result.
+
+      --limit <N>
+          Emit at most N records (distinct from per-command query limits)
+
+      --sort <PATH>
+          Sort records ascending by dotted path (numbers compare numerically)
+
+      --dedupe-by <PATH>
+          Drop later records repeating this dotted path's value
+
+      --count-only
+          Replace the record collection with `{"count": N}`, counted after all filtering
+
+      --truncate-content <CHARS>
+          Shorten strings longer than N **characters** (never bytes; UTF-8 stays valid)
+
+      --max-output-bytes <BYTES>
+          Cap envelope size by dropping trailing records (never by slicing the JSON text)
+
+      --no-input
+          Refuse to read stdin; fail fast instead of blocking on an absent human
+
+      --dry-run
+          Print the plan for a destructive operation and exit without executing it.
+          
+          Accepted only by commands that implement it (see [`supports_dry_run`]); anywhere else it
+          is rejected with exit 64 rather than accepted and ignored. A global flag that silently
+          does nothing on half the surface is worse than no flag at all — that is exactly how
+          `--no-input` shipped broken on `vps add`.
 
       --disable-sudo
           Disables sudo-exec/su-exec for this invocation (alias --disableSudo)

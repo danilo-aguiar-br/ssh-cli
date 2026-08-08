@@ -106,20 +106,19 @@ pub(crate) fn ensure_dir(path: &Path) -> SshCliResult<()> {
     Ok(())
 }
 
-/// Writes bytes atomically-ish (tmp + rename) with 0o600 on Unix.
+/// Writes bytes atomically with `0o600` on Unix (ACME / mTLS private keys).
+///
+/// A2: the previous implementation used [`std::fs::write`], which creates the temp
+/// file at `0644` under the default umask and only chmod'ed afterwards — with the
+/// error discarded. That left a real window in which an ACME or mTLS private key was
+/// readable by any local user. Delegates to the shared helper that creates at `0600`
+/// via `O_EXCL` and propagates permission failures instead of swallowing them.
 pub(crate) fn write_secret_file(path: &Path, data: &[u8]) -> SshCliResult<()> {
     if let Some(parent) = path.parent() {
         ensure_dir(parent)?;
     }
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, data)
-        .map_err(|e| SshCliError::tls_msg(format!("write {}: {e}", tmp.display())))?;
-    // Best-effort secret file mode before/after rename.
-    let _ = crate::fs_perm::set_secret_file_mode(&tmp);
-    std::fs::rename(&tmp, path)
-        .map_err(|e| SshCliError::tls_msg(format!("rename {}: {e}", path.display())))?;
-    let _ = crate::fs_perm::set_secret_file_mode(path);
-    Ok(())
+    crate::fs_perm::write_secret_file_atomic(path, data)
+        .map_err(|e| SshCliError::tls_msg(format!("write {}: {e}", path.display())))
 }
 
 #[cfg(test)]

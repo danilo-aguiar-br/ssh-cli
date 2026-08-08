@@ -130,7 +130,7 @@
       "should_trigger": true
     },
     {
-      "query": "vps export corpo padrão TOML mesmo em pipe non-TTY usar --json só para event igual a vps-export",
+      "query": "corpo de vps export segue o formato resolvido então agente recebe JSON até em arquivo .toml, TOML exige --output-format text",
       "should_trigger": true
     },
     {

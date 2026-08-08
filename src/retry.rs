@@ -12,13 +12,13 @@
 //! | | auto-retry `exec` / `scp` / `sudo-exec` / `su-exec` (side effects) |
 //! | Classification | [`crate::errors::SshCliError::is_retryable`] + JSON envelope fields |
 //! | Dependency class | SSH TCP + russh only — no HTTP/gRPC product client |
-//! | In-process loops | Opt-in only via [`RetryConfig::enabled`] (default **false**) |
+//! | In-process loops | Opt-in only via [`crate::retry::RetryConfig::enabled`] (default **false**) |
 //!
 //! # Why in-process product retry is off by default
 //!
 //! Remote shell commands and file transfers are **not** assumed idempotent.
 //! Blind retry would violate least privilege and the one-shot contract
-//! (rules: desativar retry em operações não marcadas como idempotentes).
+//! (rule: disable retry for operations not marked idempotent).
 //! Agents use exit `74` + `retryable: true` and apply this policy externally.
 //!
 //! # Agent contract (documented SLA)
@@ -28,7 +28,7 @@
 //!   (exit [`crate::errors::exit_codes::EX_IOERR`]).
 //! - Never blind-retry exits `64`, `65`, `66`, `77`, `1` (remote command),
 //!   signals (`130`/`143`), or pipe (`141`).
-//! - Sleep with full-jitter exponential backoff ([`backoff_full_jitter`]).
+//! - Sleep with full-jitter exponential backoff ([`crate::retry::backoff_full_jitter`]).
 //! - Kill switch for embedding tools: `RetryConfig { enabled: false, .. }` or
 //!   `max_retries: 0`.
 //!

@@ -1,8 +1,11 @@
 # ssh-cli full LLM index
 
+> **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
+
+
 > Complete discovery map for one-shot multi-host SSH automation
 
-ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start the binary, run one operation, and the process exits. Multi-host credentials live under XDG via directories::ProjectDirs. Authentication accepts password or OpenSSH private key. sudo uses secure `sh -c` packing. su-exec provides real elevation. known_hosts implements TOFU. config writes are atomic with flock. Secrets in config.toml are **encrypted by default** (ChaCha20-Poly1305; auto `secrets.key`). Install is gated with crypto pins for clean `cargo install --locked`. Product surface **0.5.3**: G1–G19 closed (SFTP integrity — upload no longer truncates to 0 bytes; SETSTAT atime+mtime; fail-closed metadata; batch cancel cardinality; graduated `-v`/`-vv`/`-vvv` crate-scoped; SCP `sync_data` before rename; `exec --json` single NDJSON); G-E2E residual from 0.5.2 (root `schema`/`doctor`, single `vps-added`+`secrets_key_auto_created`, ambient `RUST_LOG` ignored, ACME permanent 64, FIXED_MASK export, `--use-agent`); export/import agent roundtrip; wire schema **v3** dual-read; SFTP prefer **0.5.3+**; russh 0.62.2. See [CHANGELOG 0.5.3](CHANGELOG.md).
+ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start the binary, run one operation, and the process exits. Multi-host credentials live under XDG via directories::ProjectDirs. Authentication accepts password or OpenSSH private key. sudo uses secure `sh -c` packing. su-exec provides real elevation. known_hosts implements TOFU. config writes are atomic with flock. Secrets in config.toml are **encrypted by default** (ChaCha20-Poly1305; auto `secrets.key`). Install is gated with crypto pins for clean `cargo install --locked`. Product surface **0.5.4**: 47 leaf commands; `tunnel` serves four modes (local, `--reverse`, `--socks5`, `--remote-socket`); eight payload-shaping flags apply before serialization; `--dry-run` and `--no-input` are global; partial multi-host failure exits **1**. Inherited from 0.5.3: G1–G19 closed (SFTP integrity — upload no longer truncates to 0 bytes; SETSTAT atime+mtime; fail-closed metadata; batch cancel cardinality; graduated `-v`/`-vv`/`-vvv` crate-scoped; SCP `sync_data` before rename; `exec --json` single NDJSON); G-E2E residual from 0.5.2 (root `schema`/`doctor`, single `vps-added`+`secrets_key_auto_created`, ambient `RUST_LOG` ignored, ACME permanent 64, FIXED_MASK export, `--use-agent`); export/import agent roundtrip; wire schema **v3** dual-read; SFTP prefer **0.5.3+**; russh 0.62.5. See [CHANGELOG 0.5.4](CHANGELOG.md).
 
 - Portuguese discovery file: [llms.pt-BR.txt](llms.pt-BR.txt)
 - Short index: [llms.txt](llms.txt)
@@ -39,6 +42,7 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - [skills/ssh-cli-pt/SKILL.md](skills/ssh-cli-pt/SKILL.md)
 - [scripts/e2e_real_ssh.sh](scripts/e2e_real_ssh.sh) (real SSH E2E; never logs secrets)
 - [scripts/verify_install_resolve.sh](scripts/verify_install_resolve.sh) (GAP-014 install gate)
+- [scripts/check_all_gates.sh](scripts/check_all_gates.sh) (mandatory gate battery; runs all ten gates in one invocation)
 
 ## JSON Schemas
 - [vps-list.schema.json](docs/schemas/vps-list.schema.json)
@@ -51,24 +55,94 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - [health-check.schema.json](docs/schemas/health-check.schema.json)
 - [scp-transfer.schema.json](docs/schemas/scp-transfer.schema.json) (`scp upload|download --json`; regular files only)
 - [tunnel-listening.schema.json](docs/schemas/tunnel-listening.schema.json) (`tunnel --json` post-bind event)
+- [tunnel-closed.schema.json](docs/schemas/tunnel-closed.schema.json) (`tunnel --json` shutdown event with reason and counters)
 - [secrets-init.schema.json](docs/schemas/secrets-init.schema.json) (`secrets init --json`; `event: "secrets-init"`)
 - [secrets-reencrypt.schema.json](docs/schemas/secrets-reencrypt.schema.json) (`secrets reencrypt --json`; `event: "secrets-reencrypt"`)
+- [sftp-transfer.schema.json](docs/schemas/sftp-transfer.schema.json) (`sftp upload|download --json`; files and `--recursive` trees)
+- [sftp-list.schema.json](docs/schemas/sftp-list.schema.json) (`sftp ls --json`)
+- [sftp-fs-op.schema.json](docs/schemas/sftp-fs-op.schema.json) (`sftp mkdir|rmdir|rm|stat|rename --json`)
+- [health-check-batch.schema.json](docs/schemas/health-check-batch.schema.json) (`health-check --all|--hosts --json`; field `max_concurrency`)
+- [exec-batch.schema.json](docs/schemas/exec-batch.schema.json) (`exec|sudo-exec|su-exec --all|--hosts|--tags --json`)
+- [scp-batch.schema.json](docs/schemas/scp-batch.schema.json) (`scp upload|download --all|--hosts --json`)
+- [sftp-batch.schema.json](docs/schemas/sftp-batch.schema.json) (`sftp --all|--hosts --json`)
+- [dry-run.schema.json](docs/schemas/dry-run.schema.json) (`--dry-run --json` plan envelope; emitted instead of executing)
 - [error-envelope.schema.json](docs/schemas/error-envelope.schema.json)
 
-## Commands (product surface 0.5.3 — from `ssh-cli commands`)
+## Commands (product surface 0.5.4 — 47 leaves, from `ssh-cli commands`)
 - `vps {add,list,remove,edit,show,path,doctor,export,import}`
 - `connect`, `exec`, `sudo-exec`, `su-exec`
-- `scp {upload,download}` (**regular files only**; no `-r`; avoid crates.io **0.3.9** broken SCP wire — use **0.5.3+**): flags `--timeout|--password-stdin|--key|--key-passphrase[-stdin]|--json` → `scp-transfer` with required `event: "scp-transfer"`; download `.ssh-cli.partial`, `sync_data`, then rename (G9); preserve mtime/mode; stream upload 32 KiB; missing remote → `file not found: <path>` exit **66**
-- `sftp {upload,download,ls,mkdir,rmdir,rm,stat,rename}` — prefer **0.5.3+** (G1–G19: no 0-byte truncate, SETSTAT atime+mtime, fail-closed metadata, `SFTP_PERM_MASK` 0o7777); JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`
-- `tunnel --timeout-ms` with optional `--bind` (default `127.0.0.1`); auth `--password-stdin|--key|--key-passphrase[-stdin]`; `--json` → `tunnel_listening` after bind; post-bind deadline exits **0** after listening (pre-bind timeout still **74**)
+- `scp {upload,download}` (**regular files only**; no `-r`; avoid crates.io **0.3.9** broken SCP wire — use **0.5.3+**): flags `--timeout|--password-stdin|--key|--key-passphrase[-stdin]|--json` → `scp-transfer` with required `event: "scp-transfer"`; download `.ssh-cli.partial`, `sync_data`, then rename (G9); mtime/mode preservation best-effort, reported as `mtime_preserved` / `durable`; stream upload 32 KiB; missing remote → `file not found: <path>` exit **66**
+- `sftp {upload,download,ls,mkdir,rmdir,rm,stat,rename}` — prefer **0.5.3+** (G1–G19: no 0-byte truncate, SETSTAT atime+mtime, fail-closed metadata, `SFTP_PERM_MASK` 0o7777 outbound, `SFTP_PERM_MASK_UNTRUSTED` 0o0777 inbound since 0.5.4/A3); JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`
+- `tunnel --timeout-ms` — **four modes**, one local bind + one SSH session per invocation (G-PAR-30):
+  - default **local** forward: `tunnel <VPS> <LOCAL_PORT> <REMOTE_HOST> <REMOTE_PORT>`
+  - `--reverse` (**G-TUN-R01**, `ssh -R`): the *server* listens and delivers connections back; `<REMOTE_PORT> 0` lets the server allocate and report the port. A local forward cannot accept `0` — there would be nothing to connect to
+  - `--socks5` (**G-TUN-R02**, `ssh -D`): serves a local SOCKS5 proxy (RFC 1928 no-auth + CONNECT) choosing a destination **per connection**, so `<REMOTE_HOST>`/`<REMOTE_PORT>` are omitted; one handshake reaches N destinations behind a bastion
+  - `--remote-socket <PATH>` (**G-TUN-R03**, `direct-streamlocal@openssh.com`): forwards to a remote **Unix socket** (`/var/run/docker.sock`, PostgreSQL, systemd). Path must be absolute or exit **64**; the client may run on Windows because it only speaks TCP locally
+  - JSON `mode` label is `local` | `reverse` | `socks5` | `streamlocal`
+- `tunnel` bind and events: `--bind` (default `127.0.0.1`) is validated by clap as an IP, so a typo fails at parse time (exit **2**) instead of after a full SSH handshake (G-TUN-R08); any routable bind requires `--i-accept-network-exposure` (G-TUN-R13), which under `--reverse` guards the **server's** bind address instead; auth `--password-stdin|--key|--key-passphrase[-stdin]|--use-agent`; `--json` → `tunnel_listening` after bind (carries the bind address and `local_port`) and `tunnel_closed` on shutdown (carries `reason`, `forwards_served`, `capacity_waits`); post-bind deadline exits **0** (pre-bind timeout still **74**)
 - `health-check [--timeout]` with auth `--password-stdin|--key|--key-passphrase[-stdin]`
 - `secrets {status,init,reencrypt}` with `--json` events `secrets-init` / `secrets-reencrypt`; first secret write folds `secrets_key_auto_created: true` into the same `vps-added` JSON (one document); flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`
 - `completions`, `commands`, `schema [NAME]`, `doctor` (root alias of `vps doctor`)
 - `locale {show,set,clear}` — UI locale under XDG (not product env)
 - `tls {provider,paths, mtls {list,import,show,remove}, acme {account {create,show}, issue, complete, status, list}}`
-- `vps export` **TOML by default** (TTY and pipe); JSON agent envelope only with `--json`; redacted: empty password is `""`, never an `sshcli-enc:` blob of empty; `--include-secrets` to pipe/non-TTY needs `-o`/`--output` or `--i-understand-secrets-on-stdout`
+- `vps export` body follows the **resolved output format**: JSON on any non-TTY stdout, even into a `.toml` filename; TOML needs `--output-format text`; redacted: empty password is `""`, never an `sshcli-enc:` blob of empty; `--include-secrets` to pipe/non-TTY needs `-o`/`--output` or `--i-understand-secrets-on-stdout`
 - `vps import` accepts TOML (EN keys + PT aliases) **or** JSON `vps-export` envelopes; redacted skeletons need `--allow-incomplete`
 - `exec --json` emits a **single** NDJSON object (G8); batch cancel fills cancelled remainder so `results.len() == input.len()` (G5/G17)
+
+## Complete command list (47 leaves, one per line)
+Written out in full rather than in brace notation: this file is ingested by machines, and a
+retriever searching for `tls acme account create` must find that exact string.
+
+- `ssh-cli vps add`
+- `ssh-cli vps list`
+- `ssh-cli vps remove`
+- `ssh-cli vps edit`
+- `ssh-cli vps show`
+- `ssh-cli vps path`
+- `ssh-cli vps doctor`
+- `ssh-cli vps export`
+- `ssh-cli vps import`
+- `ssh-cli connect`
+- `ssh-cli exec`
+- `ssh-cli sudo-exec`
+- `ssh-cli su-exec`
+- `ssh-cli scp upload`
+- `ssh-cli scp download`
+- `ssh-cli sftp upload`
+- `ssh-cli sftp download`
+- `ssh-cli sftp ls`
+- `ssh-cli sftp mkdir`
+- `ssh-cli sftp rmdir`
+- `ssh-cli sftp rm`
+- `ssh-cli sftp stat`
+- `ssh-cli sftp rename`
+- `ssh-cli tunnel`
+- `ssh-cli health-check`
+- `ssh-cli secrets status`
+- `ssh-cli secrets init`
+- `ssh-cli secrets reencrypt`
+- `ssh-cli completions`
+- `ssh-cli commands`
+- `ssh-cli schema`
+- `ssh-cli doctor`
+- `ssh-cli locale show`
+- `ssh-cli locale set`
+- `ssh-cli locale clear`
+- `ssh-cli tls provider`
+- `ssh-cli tls paths`
+- `ssh-cli tls mtls list`
+- `ssh-cli tls mtls import`
+- `ssh-cli tls mtls show`
+- `ssh-cli tls mtls remove`
+- `ssh-cli tls acme account create`
+- `ssh-cli tls acme account show`
+- `ssh-cli tls acme issue`
+- `ssh-cli tls acme complete`
+- `ssh-cli tls acme status`
+- `ssh-cli tls acme list`
+
+Discover this list at runtime with `ssh-cli commands` (`event: "commands"`); it is the same tree.
+
 
 ## Defaults and Limits
 - Default SSH port is 22
@@ -82,7 +156,11 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - Secrets at rest: encrypted by default (auto `secrets.key`); prefer CLI flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` over env; opt-out for tests only; no `.env` product store — XDG + CLI flags only; `SSH_CLI_SECRETS_*` fail-closed if present
 - Redacted export: empty secrets serialize as empty strings, never `sshcli-enc:` ciphertext of empty
 - Telemetry is always false
-- Install: always prefer `--locked`; product line **0.5.3** uses russh 0.62.2; prefer **0.5.3+** for SFTP
+- Install: always prefer `--locked`; product line **0.5.4** uses russh 0.62.5; prefer **0.5.3+** for SFTP
+- Payload shaping (global, applied **before** serialization so the oversized envelope is never built): `--select <PATHS>` (alias `--fields`), `--filter key=value|key!=value|key~substring` (repeatable, AND; a malformed predicate is rejected at parse time rather than silently matching nothing), `--limit N`, `--sort <PATH>`, `--dedupe-by <PATH>`, `--count-only` (→ `{"count": N}`, counted after filtering), `--truncate-content <CHARS>` (characters, never bytes; UTF-8 stays valid), `--max-output-bytes <BYTES>` (drops trailing records, never slices the JSON text)
+- `--no-input` refuses to read stdin and fails fast instead of blocking on an absent human
+- `--dry-run` prints the plan and exits without executing. Accepted **only** by `vps remove`, `vps import`, `sftp rm`, `sftp rmdir`, `secrets init` and `secrets reencrypt`; anywhere else it is rejected with exit **64** rather than accepted and ignored
+- Partial multi-host failure exits **1** (was 65 before 0.5.4): a partial batch is an operational outcome, not malformed input
 
 ## Operational Rules for Agents
 - Birth execute die after every product command
@@ -94,7 +172,11 @@ ssh-cli is the Rust replacement for long-lived Node SSH daemons. Agents start th
 - Prefer **0.5.3+** for any SFTP transfer (G1 closed 0-byte truncation)
 - Validate command length before SSH using max_command_chars
 - Parse --json stdout only; default stderr is silent at tracing level error
-- Map exit codes before retry (auth **77**, bad TOML **65**, missing file **66**)
+- Map exit codes before retry (auth **77**, bad TOML **65**, missing file **66**, partial multi-host **1**)
+- Prefer `--select`/`--filter`/`--limit` over piping through an external JSON tool: the shaping happens before serialization, so the tokens are never spent
+- Prefer one `tunnel --socks5` over N `tunnel` processes when reaching N destinations behind one bastion
+- Never pass a routable `--bind` without `--i-accept-network-exposure`; the flag is the acknowledgement, not a formality
+- Wait for `tunnel_listening` before using the local port, and read `tunnel_closed` to learn why the tunnel ended
 - Never reintroduce long-lived daemon packaging into this project
 - Never enable telemetry
 - Never print master-key or live SSH passwords

@@ -82,10 +82,15 @@ fn reg_min_with_key() {
     );
 }
 
+/// `#[serial]` + reset: the exec paths poll the process-wide cancel flags, and
+/// sibling tests (`concurrency_tests`, `scp::tests`) set those flags. Without both,
+/// a parallel run makes this test abort as "cancelled" with no defect in the code.
 #[tokio::test]
+#[serial_test::serial]
 async fn sudo_exec_with_client_ok() {
     use crate::ssh::client::mocks::MockSshClient;
     use crate::ssh::client::ExecutionOutput;
+    crate::signals::reset_flags_for_tests();
     let mut mock = MockSshClient::new();
     mock.expect_run_command().returning(|c, _, stdin| {
         assert!(c.contains("sudo -n sh -c"));

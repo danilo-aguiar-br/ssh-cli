@@ -11,7 +11,7 @@ use secrecy::ExposeSecret;
 
 use crate::errors::{SshCliError, SshCliResult};
 use crate::ssh::client_handler::{
-    new_host_key_outcome, take_host_key_error, ClientHandler, HostKeyOutcome,
+    new_host_key_outcome, take_host_key_error, ClientHandler, ForwardedSource, HostKeyOutcome,
 };
 use crate::ssh::connection::ConnectionConfig;
 
@@ -22,6 +22,8 @@ pub(crate) struct AuthenticatedSession {
     /// Kept so Drop/debug paths can inspect (usually empty after success).
     #[allow(dead_code)]
     pub host_key_outcome: HostKeyOutcome,
+    /// Inbound `forwarded-tcpip` channels for `tunnel --reverse` (G-TUN-R01).
+    pub forwarded: ForwardedSource,
 }
 
 /// Connect, verify host key, authenticate. Full flow honors `timeout_ms`.
@@ -40,7 +42,12 @@ pub(crate) async fn connect_authenticated(
     let use_agent = cfg.use_agent;
     let agent_socket = cfg.resolved_agent_socket();
     let host_key_outcome = new_host_key_outcome();
-    let handler = ClientHandler::new(&cfg, Arc::clone(&host_key_outcome));
+    // Bounded: the *server* decides how fast forwarded channels arrive, so an
+    // unbounded queue would be remote-controlled memory growth. When it fills, the
+    // handler rejects over the wire instead of buffering.
+    let (forwarded_tx, forwarded_rx) =
+        tokio::sync::mpsc::channel(crate::constants::REVERSE_FORWARD_QUEUE_DEPTH);
+    let handler = ClientHandler::new(&cfg, Arc::clone(&host_key_outcome), forwarded_tx);
     let outcome_for_err = Arc::clone(&host_key_outcome);
 
     let client_config = crate::ssh::connect::build_ssh_client_config(timeout);
@@ -179,6 +186,7 @@ pub(crate) async fn connect_authenticated(
         session,
         cfg,
         host_key_outcome,
+        forwarded: forwarded_rx,
     })
 }
 

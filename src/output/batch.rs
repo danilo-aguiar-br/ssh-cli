@@ -8,10 +8,17 @@ use super::{is_quiet, report_json_serialize_error};
 use crate::domain::BatchRunId;
 use crate::json_wire::{
     self, ExecBatchJson, ExecHostJson, HealthBatchJson, HealthHostJson, ScpBatchJson, ScpHostJson,
-    ScpTransferJson, SftpBatchJson, SftpFsOpJson, SftpListEntryJson, SftpListJson,
-    SftpTransferJson, TunnelListeningJson,
+    ScpTransferJson, TunnelCloseReason, TunnelClosedJson, TunnelListeningJson,
 };
+#[cfg(feature = "ssh-real")]
+use crate::json_wire::{
+    SftpBatchJson, SftpFsOpJson, SftpListEntryJson, SftpListJson, SftpTransferJson,
+};
+// A6: the SFTP emitters below take types owned by the russh-backed subsystem, so
+// they only exist when that stack is compiled in.
+#[cfg(feature = "ssh-real")]
 use crate::sftp::batch::HostSftpResult;
+#[cfg(feature = "ssh-real")]
 use crate::ssh::sftp_types::{SftpListEntry, SftpStat};
 use crate::vps::{HostExecResult, HostHealthResult};
 use std::io::{self, Write};
@@ -211,8 +218,7 @@ pub fn print_transfer_json(
     vps: &str,
     local: &str,
     remote: &str,
-    bytes: u64,
-    duration_ms: u64,
+    result: &crate::ssh::client::TransferResult,
 ) -> io::Result<()> {
     // GAP-SSH-IO-009: event discriminator (parity with tunnel_listening).
     let v = ScpTransferJson {
@@ -222,8 +228,10 @@ pub fn print_transfer_json(
         vps: vps.to_string(),
         local: local.to_string(),
         remote: remote.to_string(),
-        bytes,
-        duration_ms,
+        bytes: result.bytes_transferred,
+        duration_ms: result.duration_ms,
+        mtime_preserved: result.mtime_preserved,
+        durable: result.durable,
     };
     match json_wire::print_json_line(&v) {
         Ok(()) => Ok(()),
@@ -238,6 +246,7 @@ pub fn print_transfer_json(
 ///
 /// # Errors
 /// Serialization or stdout I/O.
+#[cfg(feature = "ssh-real")]
 pub fn print_sftp_transfer_json(
     direction: &str,
     vps: &str,
@@ -271,6 +280,7 @@ pub fn print_sftp_transfer_json(
 ///
 /// # Errors
 /// Serialization or stdout I/O.
+#[cfg(feature = "ssh-real")]
 pub fn print_sftp_list_json(vps: &str, path: &str, entries: &[SftpListEntry]) -> io::Result<()> {
     let v = SftpListJson {
         ok: true,
@@ -301,6 +311,7 @@ pub fn print_sftp_list_json(vps: &str, path: &str, entries: &[SftpListEntry]) ->
 ///
 /// # Errors
 /// Serialization or stdout I/O.
+#[cfg(feature = "ssh-real")]
 pub fn print_sftp_fs_op_json(
     op: &str,
     vps: &str,
@@ -334,6 +345,7 @@ pub fn print_sftp_fs_op_json(
 ///
 /// # Errors
 /// Serialization or stdout I/O.
+#[cfg(feature = "ssh-real")]
 pub fn print_sftp_stat_json(vps: &str, st: &SftpStat) -> io::Result<()> {
     let v = SftpFsOpJson {
         ok: true,
@@ -361,6 +373,7 @@ pub fn print_sftp_stat_json(vps: &str, st: &SftpStat) -> io::Result<()> {
 ///
 /// # Errors
 /// Serialization or stdout I/O.
+#[cfg(feature = "ssh-real")]
 pub fn print_sftp_batch(
     direction: &str,
     results: &[HostSftpResult],
@@ -419,6 +432,36 @@ pub fn print_sftp_batch(
     out.flush()
 }
 
+/// Builds the `tunnel_listening` payload without writing it anywhere.
+///
+/// Split out from the printer so the document can be asserted on. Every field of this
+/// event was previously reachable only by driving a real listener and reading stdout,
+/// which is why `bind` — added by G-TUN-R06 precisely so an agent could audit whether a
+/// service had been published beyond loopback — shipped covered by nothing but a schema
+/// file and a mention in prose.
+#[must_use]
+pub fn build_tunnel_listening(
+    vps: &str,
+    local_port: u16,
+    remote_host: &str,
+    remote_port: u16,
+    timeout_ms: u64,
+    bind: &str,
+    mode: &str,
+) -> TunnelListeningJson {
+    TunnelListeningJson {
+        ok: true,
+        event: "tunnel_listening".into(),
+        vps: vps.to_string(),
+        local_port,
+        remote_host: remote_host.to_string(),
+        remote_port,
+        timeout_ms,
+        bind: bind.to_string(),
+        mode: mode.to_string(),
+    }
+}
+
 /// JSON event when the local tunnel listener comes up (GAP-SSH-IO-008).
 ///
 /// # Errors
@@ -429,17 +472,88 @@ pub fn print_tunnel_listening_json(
     remote_host: &str,
     remote_port: u16,
     timeout_ms: u64,
+    bind: &str,
+    mode: &str,
 ) -> io::Result<()> {
-    let v = TunnelListeningJson {
-        ok: true,
-        event: "tunnel_listening".into(),
-        vps: vps.to_string(),
+    let v = build_tunnel_listening(
+        vps,
         local_port,
-        remote_host: remote_host.to_string(),
+        remote_host,
         remote_port,
         timeout_ms,
-    };
+        bind,
+        mode,
+    );
     match json_wire::print_json_line(&v) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            report_json_serialize_error(&e);
+            Err(e)
+        }
+    }
+}
+
+/// Builds the `tunnel_closed` payload without writing it anywhere.
+///
+/// The whole event — `reason`, `forwards_served`, `capacity_waits`, `ok` — used to be
+/// constructed inside the printer, so nothing could inspect it. The 0.5.4 audit found
+/// the three field names appearing in exactly one place outside the emitter: a
+/// documentation test asserting the CHANGELOG mentions them. Deleting the emission
+/// would not have turned the suite red, which is the same failure mode G-QA-R01 was
+/// written to stop.
+#[must_use]
+pub fn build_tunnel_closed(input: TunnelClosedInput<'_>) -> TunnelClosedJson {
+    TunnelClosedJson {
+        // An accept-error shutdown is not a clean lifetime, even though the process
+        // still exits 0 for having bound successfully.
+        ok: !matches!(input.reason, TunnelCloseReason::AcceptError),
+        event: "tunnel_closed".into(),
+        vps: input.vps.to_string(),
+        reason: input.reason,
+        bind: input.bind.to_string(),
+        local_port: input.local_port,
+        forwards_served: input.forwards_served,
+        capacity_waits: input.capacity_waits,
+        duration_ms: input.duration_ms,
+        mode: input.mode.to_string(),
+    }
+}
+
+/// Inputs for [`build_tunnel_closed`].
+///
+/// B3: three of the eight fields are bare `u64` counters and one is a `u16`
+/// port. Passed positionally, swapping `forwards_served` with `capacity_waits`
+/// compiles and produces a plausible-looking event that misreports the tunnel's
+/// lifetime — the exact class of silent wrongness the suppressed
+/// `too_many_arguments` lint was pointing at.
+pub struct TunnelClosedInput<'a> {
+    /// Registry name of the relay host.
+    pub vps: &'a str,
+    /// Why the tunnel stopped.
+    pub reason: TunnelCloseReason,
+    /// Effective local bind address.
+    pub bind: &'a str,
+    /// Effective local port (OS-assigned when `0` was requested).
+    pub local_port: u16,
+    /// Connections accepted over the tunnel's lifetime.
+    pub forwards_served: u64,
+    /// Times an accept waited on the concurrency semaphore.
+    pub capacity_waits: u64,
+    /// Wall lifetime in milliseconds.
+    pub duration_ms: u64,
+    /// Tunnel mode label (`local`, `reverse`, `socks5`, `streamlocal`).
+    pub mode: &'a str,
+}
+
+/// Emits the `tunnel_closed` shutdown event (G-TUN-R07).
+///
+/// Always emitted, including on the happy deadline path, so an agent can tell the
+/// three endings apart instead of inferring them from a shared exit 0.
+///
+/// # Errors
+/// Serialization or stdout I/O (including BrokenPipe).
+pub fn print_tunnel_closed_json(event: &TunnelClosedJson) -> io::Result<()> {
+    match json_wire::print_json_line(event) {
         Ok(()) => Ok(()),
         Err(e) => {
             report_json_serialize_error(&e);

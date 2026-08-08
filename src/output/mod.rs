@@ -18,9 +18,16 @@ mod json;
 mod text;
 
 pub use batch::{
-    print_exec_batch, print_health_batch, print_scp_batch, print_sftp_batch, print_sftp_fs_op_json,
-    print_sftp_list_json, print_sftp_stat_json, print_sftp_transfer_json, print_transfer_json,
-    print_tunnel_listening_json,
+    build_tunnel_closed, build_tunnel_listening, print_exec_batch, print_health_batch,
+    print_scp_batch, print_transfer_json, print_tunnel_closed_json, print_tunnel_listening_json,
+    TunnelClosedInput,
+};
+// A6: re-exported separately because the SFTP emitters only exist with `ssh-real`.
+// Folding them into the list above is what made `--no-default-features` fail here.
+#[cfg(feature = "ssh-real")]
+pub use batch::{
+    print_sftp_batch, print_sftp_fs_op_json, print_sftp_list_json, print_sftp_stat_json,
+    print_sftp_transfer_json,
 };
 pub(crate) use emit::report_json_serialize_error;
 pub use emit::{

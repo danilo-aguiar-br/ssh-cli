@@ -27,9 +27,11 @@ fn g_ssh_02_client_id_is_product_generic() {
         connect.contains("SSH_CLIENT_ID") && connect.contains("client_id:"),
         "G-SSH-02/08: build_ssh_client_config must set client_id"
     );
+    // The right operand was already asserted above, so the disjunction could
+    // never fail. Keep only the negative clause that carries the contract.
     assert!(
-        !connect.contains("CARGO_PKG_VERSION") || connect.contains("SSH_CLIENT_ID"),
-        "must not rely solely on russh default version banner"
+        !connect.contains("CARGO_PKG_VERSION"),
+        "must not rely on the russh default version banner"
     );
 }
 
@@ -95,8 +97,10 @@ fn g_ssh_05_tcp_keepalive_and_compression_none() {
         connect.contains("set_keepalive") || connect.contains("TCP_KEEPALIVE"),
         "G-SSH-05: TCP keepalive"
     );
+    // The bare `NONE` operand subsumed the qualified one and matched any
+    // screaming-case identifier, so only the qualified path is kept.
     assert!(
-        connect.contains("compression::NONE") || connect.contains("NONE"),
+        connect.contains("compression::NONE"),
         "compression none-only policy"
     );
     let cargo = read("Cargo.toml");
@@ -128,10 +132,10 @@ fn g_ssh_06_split_modules_exist() {
 #[test]
 fn g_ssh_09_fail_closed_known_hosts_non_test() {
     let h = read("src/ssh/client_handler.rs");
+    // The first conjunction was subsumed by the second operand, which made the
+    // `cfg(test)` half unreachable. Assert both halves of the real contract.
     assert!(
-        h.contains("cfg(test)") && h.contains("fail-closed")
-            || h.contains("fail-closed")
-            || h.contains("rejecting host key"),
+        h.contains("cfg(test)") && h.contains("fail-closed"),
         "G-SSH-09: non-test must reject missing known_hosts path"
     );
 }

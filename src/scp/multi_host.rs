@@ -24,6 +24,8 @@ pub(crate) async fn run_scp_multi_host_multi_file_upload(
     let path = vps::resolve_config_path(config_override.as_deref())?;
     let file = vps::load(&path)?;
     let jobs = vps::resolve_host_jobs(selection, &file)?;
+    // B4: keep the requested host order so never-admitted hosts still get a row.
+    let names: Vec<String> = jobs.iter().map(|(n, _)| n.clone()).collect();
     let limit = crate::concurrency::effective_limit();
     let remote_dir = remote_dir.to_path_buf();
     let path_c = path.clone();
@@ -87,7 +89,7 @@ pub(crate) async fn run_scp_multi_host_multi_file_upload(
     })
     .await;
 
-    finish_scp_nested_batch("upload", results, limit, json)
+    finish_scp_nested_batch("upload", results, &names, limit, json)
 }
 
 /// G-PAR-48: multi-host × multi-file download — local paths host-suffixed under dest dir.
@@ -118,6 +120,8 @@ pub(crate) async fn run_scp_multi_host_multi_file_download(
     let path = vps::resolve_config_path(config_override.as_deref())?;
     let file = vps::load(&path)?;
     let jobs = vps::resolve_host_jobs(selection, &file)?;
+    // B4: keep the requested host order so never-admitted hosts still get a row.
+    let names: Vec<String> = jobs.iter().map(|(n, _)| n.clone()).collect();
     let limit = crate::concurrency::effective_limit();
     let local_dir = local_dir.to_path_buf();
     let path_c = path.clone();
@@ -218,7 +222,7 @@ pub(crate) async fn run_scp_multi_host_multi_file_download(
     })
     .await;
 
-    finish_scp_nested_batch("download", results, limit, json)
+    finish_scp_nested_batch("download", results, &names, limit, json)
 }
 
 pub(crate) async fn run_scp_all_upload(
@@ -231,6 +235,8 @@ pub(crate) async fn run_scp_all_upload(
     let path = vps::resolve_config_path(config_override.as_deref())?;
     let file = vps::load(&path)?;
     let jobs = vps::resolve_host_jobs(selection, &file)?;
+    // B4: keep the requested host order so never-admitted hosts still get a row.
+    let names: Vec<String> = jobs.iter().map(|(n, _)| n.clone()).collect();
     let limit = crate::concurrency::effective_limit();
     let local_owned = local.to_path_buf();
     let remote_owned = remote.to_path_buf();
@@ -292,7 +298,7 @@ pub(crate) async fn run_scp_all_upload(
     })
     .await;
 
-    finish_scp_batch("upload", results, limit, json)
+    finish_scp_batch("upload", results, &names, limit, json)
 }
 
 pub(crate) async fn run_scp_all_download(
@@ -305,6 +311,8 @@ pub(crate) async fn run_scp_all_download(
     let path = vps::resolve_config_path(config_override.as_deref())?;
     let file = vps::load(&path)?;
     let jobs = vps::resolve_host_jobs(selection, &file)?;
+    // B4: keep the requested host order so never-admitted hosts still get a row.
+    let names: Vec<String> = jobs.iter().map(|(n, _)| n.clone()).collect();
     let limit = crate::concurrency::effective_limit();
     let remote_owned = remote.to_path_buf();
     let local_prefix = local_prefix.to_path_buf();
@@ -370,5 +378,5 @@ pub(crate) async fn run_scp_all_download(
     })
     .await;
 
-    finish_scp_batch("download", results, limit, json)
+    finish_scp_batch("download", results, &names, limit, json)
 }

@@ -21,7 +21,9 @@ use super::sftp_path::{
     check_depth, ensure_local_under, join_remote, validate_entry_name, validate_remote_path,
 };
 use super::sftp_types::{SftpListEntry, SftpStat};
-use crate::constants::{SFTP_IO_CHUNK, SFTP_LIST_MAX_ENTRIES, SFTP_PERM_MASK, SFTP_SUBSYSTEM};
+use crate::constants::{
+    SFTP_IO_CHUNK, SFTP_LIST_MAX_ENTRIES, SFTP_PERM_MASK, SFTP_PERM_MASK_UNTRUSTED, SFTP_SUBSYSTEM,
+};
 use crate::errors::{SshCliError, SshCliResult};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
@@ -68,6 +70,23 @@ fn kind_from_attrs(attrs: &FileAttributes) -> String {
     } else {
         "other".into()
     }
+}
+
+/// Rejects a directory listing that grew past [`SFTP_LIST_MAX_ENTRIES`].
+///
+/// `seen` is the number of entries consumed **so far**, so the caller stops before
+/// allocating entry `SFTP_LIST_MAX_ENTRIES + 1` instead of after. A hostile server
+/// picks the entry count, so this is the only bound between it and our heap.
+///
+/// # Errors
+/// [`SshCliError::InvalidArgument`] once `seen` exceeds the cap.
+fn check_list_cap(seen: usize, op: &str) -> SshCliResult<()> {
+    if seen > SFTP_LIST_MAX_ENTRIES {
+        return Err(SshCliError::InvalidArgument(format!(
+            "sftp {op} exceeds max entries ({SFTP_LIST_MAX_ENTRIES})"
+        )));
+    }
+    Ok(())
 }
 
 /// Converts product timeout ms into SFTP response timeout seconds (crate default 10).
@@ -185,10 +204,75 @@ pub async fn upload_file(
         .await
         .map_err(|e| map_sftp_err(remote, e))?;
 
+    // B2: SCP verified byte counts in both directions while SFTP verified in
+    // neither, so a truncated SFTP upload reported `ok` with a plausible
+    // `bytes` field — the transfer looked complete because the loop counted what
+    // it *wrote*, never what the server *kept*.
+    verify_local_read(local, meta.len(), bytes)?;
+    verify_remote_size(sftp, remote, bytes).await?;
+
     Ok(TransferResult {
         bytes_transferred: bytes,
         duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+        ..Default::default()
     })
+}
+
+/// Fails when the local file shrank between `symlink_metadata` and the read loop.
+///
+/// Mirrors the SCP upload guard: the announced size is the contract the caller
+/// reports, so silently sending fewer bytes turns a truncation into a success.
+///
+/// # Errors
+/// [`SshCliError::ChannelFailed`] when `read` differs from `announced`.
+fn verify_local_read(local: &Path, announced: u64, read: u64) -> SshCliResult<()> {
+    if read == announced {
+        return Ok(());
+    }
+    Err(SshCliError::channel_msg(format!(
+        "local file changed during SFTP upload of {}: announced {announced} bytes, read {read}",
+        local.display()
+    )))
+}
+
+/// Fails when a download received a different byte count than the server announced.
+///
+/// A server that omits `size` from its `stat` cannot be checked, and that case is
+/// accepted rather than turned into a false failure — asserting on an attribute
+/// the protocol makes optional would break valid servers to catch nothing.
+///
+/// # Errors
+/// [`SshCliError::ChannelFailed`] when a declared size differs from `received`.
+fn verify_received(remote: &str, announced: Option<u64>, received: u64) -> SshCliResult<()> {
+    match announced {
+        Some(size) if size != received => Err(SshCliError::channel_msg(format!(
+            "truncated SFTP download: {remote} announced {size} bytes, received {received}"
+        ))),
+        _ => Ok(()),
+    }
+}
+
+/// Confirms the server persisted exactly the bytes that were streamed.
+///
+/// This is the destination-effect proof: counting bytes handed to `write_all`
+/// only proves what the client attempted. A server that silently applied a quota,
+/// a full filesystem, or a truncating `SETSTAT` is invisible without a re-`stat`.
+/// A server that omits `size` from the reply cannot be checked, and is accepted
+/// rather than turned into a false failure.
+///
+/// # Errors
+/// [`SshCliError::ChannelFailed`] when the remote size is present and differs.
+async fn verify_remote_size(sftp: &SftpSession, remote: &str, sent: u64) -> SshCliResult<()> {
+    let attrs = sftp
+        .metadata(remote.to_owned())
+        .await
+        .map_err(|e| map_sftp_err(remote, e))?;
+    match attrs.size {
+        Some(size) if size != sent => Err(SshCliError::channel_msg(format!(
+            "truncated SFTP upload: sent {sent} bytes, server holds {size} for {remote}"
+        ))),
+        _ => Ok(()),
+    }
 }
 
 /// Builds wire `FileAttributes` for an SFTP upload from local metadata (G1/G3/G12/G19).
@@ -309,6 +393,12 @@ async fn download_file_to_partial(
             .map_err(SshCliError::Io)?;
         bytes = bytes.saturating_add(n as u64);
     }
+    // B2: verified *before* the atomic rename, so a short read never reaches the
+    // final path. Checking after the rename would leave a truncated file in place
+    // with an error beside it — the worst of both outcomes, since a retry would
+    // then have to distinguish "absent" from "present but wrong".
+    verify_received(remote, link_meta.size, bytes)?;
+
     local_file.flush().await.map_err(SshCliError::Io)?;
     // Durability barrier before atomic rename (parity with SCP G9).
     local_file.sync_data().await.map_err(SshCliError::Io)?;
@@ -319,10 +409,15 @@ async fn download_file_to_partial(
         .map_err(SshCliError::Io)?;
 
     // G18: local mode is a mutation — surface failure (do not silent-ok).
+    //
+    // A3: this mode comes from the *server*, so it is untrusted. Clamping with
+    // `SFTP_PERM_MASK` (0o7777) would let a hostile server set setuid/setgid on the
+    // file we just wrote to local disk. Inbound modes use the untrusted mask, which
+    // drops every elevation bit.
     #[cfg(unix)]
     if let Some(mode) = link_meta.permissions {
         use std::os::unix::fs::PermissionsExt;
-        let mode_bits = mode & SFTP_PERM_MASK;
+        let mode_bits = mode & SFTP_PERM_MASK_UNTRUSTED;
         tokio::fs::set_permissions(local, std::fs::Permissions::from_mode(mode_bits))
             .await
             .map_err(|e| {
@@ -336,6 +431,7 @@ async fn download_file_to_partial(
     Ok(TransferResult {
         bytes_transferred: bytes,
         duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+        ..Default::default()
     })
 }
 
@@ -352,6 +448,7 @@ pub async fn upload_tree(
     Ok(TransferResult {
         bytes_transferred: bytes,
         duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+        ..Default::default()
     })
 }
 
@@ -383,15 +480,31 @@ async fn upload_tree_rec(
         ));
     }
 
-    // Ensure remote dir exists (ignore already-exists style errors by try_exists).
-    if !sftp
-        .try_exists(remote_dir.to_owned())
-        .await
-        .map_err(|e| map_sftp_err(remote_dir, e))?
-    {
-        sftp.create_dir(remote_dir.to_owned())
-            .await
-            .map_err(|e| map_sftp_err(remote_dir, e))?;
+    // A4: `try_exists` resolves through `stat`, which *follows* symlinks — a remote
+    // symlink pointing at an unrelated directory would report "exists" and the whole
+    // subtree would land wherever the link aims. The module contract is no-follow, so
+    // probe with `symlink_metadata` and refuse a symlinked destination outright.
+    match sftp.symlink_metadata(remote_dir.to_owned()).await {
+        Ok(meta) => {
+            if meta.file_type().is_symlink() {
+                return Err(SshCliError::InvalidArgument(format!(
+                    "sftp upload tree refuses remote symlink destination (no-follow): {remote_dir}"
+                )));
+            }
+            if !meta.file_type().is_dir() {
+                return Err(SshCliError::InvalidArgument(format!(
+                    "sftp upload tree destination exists and is not a directory: {remote_dir}"
+                )));
+            }
+        }
+        Err(russh_sftp::client::error::Error::Status(st))
+            if st.status_code == StatusCode::NoSuchFile =>
+        {
+            sftp.create_dir(remote_dir.to_owned())
+                .await
+                .map_err(|e| map_sftp_err(remote_dir, e))?;
+        }
+        Err(e) => return Err(map_sftp_err(remote_dir, e)),
     }
 
     let mut rd = tokio::fs::read_dir(local_dir)
@@ -451,6 +564,7 @@ pub async fn download_tree(
     Ok(TransferResult {
         bytes_transferred: bytes,
         duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+        ..Default::default()
     })
 }
 
@@ -489,11 +603,7 @@ async fn download_tree_rec(
     let mut count = 0_usize;
     for entry in entries {
         count = count.saturating_add(1);
-        if count > SFTP_LIST_MAX_ENTRIES {
-            return Err(SshCliError::InvalidArgument(format!(
-                "sftp directory listing exceeds max entries ({SFTP_LIST_MAX_ENTRIES})"
-            )));
-        }
+        check_list_cap(count, "directory listing")?;
         if crate::signals::should_stop() {
             return Err(SshCliError::InvalidArgument(crate::i18n::t(
                 crate::i18n::Message::OperationCancelled,
@@ -535,13 +645,11 @@ pub async fn list_dir(sftp: &SftpSession, remote: &str) -> SshCliResult<Vec<Sftp
         .read_dir(remote.to_owned())
         .await
         .map_err(|e| map_sftp_err(remote, e))?;
+    // Bound our own copy as we consume, so a server that answers with millions of
+    // names cannot make us build a second full-size Vec on top of the wire response.
     let mut out = Vec::new();
     for entry in entries {
-        if out.len() >= SFTP_LIST_MAX_ENTRIES {
-            return Err(SshCliError::InvalidArgument(format!(
-                "sftp ls exceeds max entries ({SFTP_LIST_MAX_ENTRIES})"
-            )));
-        }
+        check_list_cap(out.len().saturating_add(1), "ls")?;
         let meta = entry.metadata();
         out.push(SftpListEntry {
             name: entry.file_name(),
@@ -606,6 +714,68 @@ pub async fn rename(sftp: &SftpSession, from: &str, to: &str) -> SshCliResult<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// B2: SCP verified byte counts in both directions while SFTP verified in
+    /// neither, so a truncated transfer reported `ok` with a plausible `bytes`
+    /// field — the loop counted what it *wrote*, never what survived.
+    #[test]
+    fn upload_rejects_a_file_that_shrank_mid_read() {
+        let err = verify_local_read(Path::new("/tmp/x"), 4096, 1024)
+            .expect_err("a short read must not report success");
+        let text = err.to_string();
+        assert!(text.contains("4096"), "{text}");
+        assert!(text.contains("1024"), "{text}");
+    }
+
+    #[test]
+    fn upload_accepts_an_exact_read() {
+        assert!(verify_local_read(Path::new("/tmp/x"), 4096, 4096).is_ok());
+    }
+
+    #[test]
+    fn upload_accepts_an_empty_file() {
+        // Zero-length uploads are legitimate; treating 0 as "nothing happened"
+        // would fail every empty-file transfer.
+        assert!(verify_local_read(Path::new("/tmp/x"), 0, 0).is_ok());
+    }
+
+    #[test]
+    fn download_rejects_a_short_read() {
+        let err = verify_received("/srv/db.dump", Some(9_000), 8_192)
+            .expect_err("a truncated download must not be renamed into place");
+        assert!(err.to_string().contains("9000"), "{err}");
+    }
+
+    #[test]
+    fn download_accepts_an_exact_read() {
+        assert!(verify_received("/srv/db.dump", Some(8_192), 8_192).is_ok());
+    }
+
+    #[test]
+    fn download_accepts_a_server_that_omits_the_size() {
+        // `size` is optional in the SFTP attribute set. Asserting on an attribute
+        // the protocol does not require would break valid servers to catch nothing.
+        assert!(verify_received("/srv/db.dump", None, 8_192).is_ok());
+    }
+
+    /// B9: the cap must trip on the entry that crosses it, while it is still being
+    /// consumed — not after the whole listing has been copied into our own Vec.
+    #[test]
+    fn list_cap_trips_on_first_entry_past_limit() {
+        assert!(check_list_cap(0, "ls").is_ok());
+        assert!(check_list_cap(1, "ls").is_ok());
+        assert!(check_list_cap(SFTP_LIST_MAX_ENTRIES, "ls").is_ok());
+        let err = check_list_cap(SFTP_LIST_MAX_ENTRIES + 1, "ls").unwrap_err();
+        assert!(matches!(err, SshCliError::InvalidArgument(_)));
+        assert!(err.to_string().contains(&SFTP_LIST_MAX_ENTRIES.to_string()));
+    }
+
+    /// The op label reaches the message so `ls` and tree walks are distinguishable.
+    #[test]
+    fn list_cap_message_carries_op() {
+        let err = check_list_cap(SFTP_LIST_MAX_ENTRIES + 1, "directory listing").unwrap_err();
+        assert!(err.to_string().contains("directory listing"));
+    }
 
     #[test]
     fn timeout_secs_ceil() {

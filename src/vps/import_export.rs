@@ -146,6 +146,10 @@ pub(super) fn run_import(
     let imported = parse_import_payload(&text)?;
     let mut current = load(path)?;
     let mut imported_count = 0usize;
+    // C2: an import silently replaces same-named hosts, so the plan names them.
+    // Reporting only a count would hide the one fact that decides whether the
+    // import is safe to run.
+    let mut planned: Vec<serde_json::Value> = Vec::new();
     for (k, mut v) in imported.hosts {
         // VAL-001 on import (domain VpsName = path-safe NFC name).
         let name = crate::domain::VpsName::try_new(&k).map_err(|e| {
@@ -158,13 +162,23 @@ pub(super) fn run_import(
         }
         match v.validate() {
             Ok(()) => {
-                current.hosts.insert(name.as_str().to_owned(), v);
+                let replaced = current.hosts.insert(name.as_str().to_owned(), v).is_some();
+                planned.push(serde_json::json!({
+                    "name": name.as_str(),
+                    "replaces_existing": replaced,
+                    "incomplete": false,
+                }));
                 imported_count += 1;
             }
             Err(ref err) if allow_incomplete => {
                 // GAP-SSH-IMP-001: incomplete skeleton allowed.
                 tracing::warn!(host = %name, error = %err, "import incomplete allowed");
-                current.hosts.insert(name.as_str().to_owned(), v);
+                let replaced = current.hosts.insert(name.as_str().to_owned(), v).is_some();
+                planned.push(serde_json::json!({
+                    "name": name.as_str(),
+                    "replaces_existing": replaced,
+                    "incomplete": true,
+                }));
                 imported_count += 1;
             }
             Err(err) => {
@@ -184,6 +198,20 @@ pub(super) fn run_import(
                 .into());
             }
         }
+    }
+    // Every per-host validation above already ran, so a plan that reaches this
+    // point is one the real run would also accept — the preview and the execution
+    // share the same code path up to the single `save`.
+    if crate::cli::dry_run_stop(
+        "vps-import",
+        &[
+            ("source", serde_json::json!(file.display().to_string())),
+            ("config_path", serde_json::json!(path.display().to_string())),
+            ("imported", serde_json::json!(imported_count)),
+            ("hosts", serde_json::Value::Array(planned)),
+        ],
+    )? {
+        return Ok(());
     }
     current.schema_version = model::CURRENT_SCHEMA_VERSION;
     save(path, &current)?;

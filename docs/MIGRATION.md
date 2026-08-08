@@ -1,11 +1,27 @@
 # Migration Guide
 
+> **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
+
+
 > Move from ssh-cli 0.3.3 (or later) to 0.5.3 without losing multi-host inventory.
 
 - Read this document in [Portuguese (pt-BR)](MIGRATION.pt-BR.md).
 
 
 ## What Changes
+
+### Since 0.5.4
+- **BREAKING — partial multi-host failure now exits `1` (was `65`).** Any wrapper that branched on `65` to mean "some hosts failed" must be updated. `65` is `EX_DATAERR`, which claims the *input* was malformed; a batch where three of ten hosts were unreachable had perfectly valid input, so the old code lied about the cause (G-ERR-R02). Check the batch envelope's per-host results, not just the process exit.
+- **BREAKING — a non-loopback `tunnel --bind` now requires `--i-accept-network-exposure`.** Any script passing `--bind 0.0.0.0` or a LAN address fails until the acknowledgement is added. Before this, the flag silently published the forwarded remote service to the whole local network (G-TUN-R13). Under `--reverse` the same flag guards the **server's** bind address instead, because that is the exposed end in that direction.
+- **`tunnel` gained three modes.** The default local forward is unchanged, so existing invocations keep working.
+  - `--reverse` (**G-TUN-R01**) asks the server to listen and deliver connections back to your local port — the callback-webhook and inverted-bastion case that previously forced operators out of this CLI and into system `ssh`. `REMOTE_PORT` may be `0`, letting the server allocate and report the port.
+  - `--socks5` (**G-TUN-R02**) serves a local SOCKS5 proxy (RFC 1928 no-auth + CONNECT) choosing a destination per connection, so `REMOTE_HOST`/`REMOTE_PORT` are omitted. Replace N `tunnel` processes aimed at N hosts behind one bastion with one invocation: the handshake is paid once.
+  - `--remote-socket <PATH>` (**G-TUN-R03**) forwards to a remote Unix socket over `direct-streamlocal@openssh.com`, reaching Docker, PostgreSQL and systemd sockets that never listen on TCP. The path must be absolute or exit **64**.
+- **New `tunnel_closed` event.** `tunnel --json` now emits it on shutdown with `reason`, `forwards_served` and `capacity_waits`. Add it to any parser that treated `tunnel_listening` as the only tunnel event. It is the only way to distinguish a clean deadline from a saturated semaphore, since all endings exit 0.
+- **Eight payload-shaping flags are now global:** `--select` (alias `--fields`), `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`. They apply *before* serialization, so replacing an external JSON post-filter with these flags stops the oversized envelope from ever being written. No existing behaviour changes when they are omitted.
+- **`--no-input` and `--dry-run` are global.** `--dry-run` is honoured only by `vps remove`, `vps import`, `sftp rm`, `sftp rmdir`, `secrets init` and `secrets reencrypt`; anywhere else it is refused with exit **64** rather than accepted and ignored.
+- **Security fixes — upgrade for these alone:** **A1** truncates the server-sent pre-auth SSH banner on **character** boundaries rather than byte indices — the 512-character log cap already existed (G-SSH-14); what was broken is that slicing by byte index panics whenever the cut lands inside a multi-byte character, and the release profile sets `panic = "abort"`, so there is no unwind: the process dies and takes a whole multi-host fan-out with it, **A2** creates ACME/mTLS private keys at `0600` instead of tightening the mode after the file already exists, **A3** masks server-sent modes to plain `rwx` triples so setuid, setgid and sticky cannot ride a download onto a local file. See `SECURITY.md` for the mechanism of each.
+- `ssh-cli schema dry-run` and `ssh-cli schema tunnel-closed` now emit their documents with exit **0** (previously exit 64), so schema discovery covers the full catalogue.
 
 ### Since 0.5.3
 - **G1** SFTP upload no longer truncates destination to zero bytes — prefer 0.5.3+ for all SFTP; verify with destination `sha256sum`.
@@ -19,7 +35,7 @@
 - **G9** SCP download propagates `sync_data` failure before atomic rename.
 - **G10** Release gate includes `cargo fmt --check`.
 - **G11** Baseline suite is green without re-run lottery; re-running until pass is not a gate strategy.
-- **G12 / G19** Permission bits masked with named `SFTP_PERM_MASK` (`0o7777`).
+- **G12 / G19** Permission bits masked with named `SFTP_PERM_MASK` (`0o7777`) on the **outbound** upload path. Since 0.5.4 the **inbound** download path masks with `SFTP_PERM_MASK_UNTRUSTED` (`0o0777`) instead, because that mode comes from the server — see A3 above.
 - **G13 / G15** No circular tests that assert FIXED text in local `gaps.md`; acceptance requires destination effect proof (checksum). `gaps.md` is maintainer-local (gitignored / cargo-excluded) — not a published contract.
 - **G16** English identifiers and channel errors on the SCP client path (`client_real_scp.rs`).
 - **G18** SFTP download local `set_permissions` failures are surfaced.
@@ -44,7 +60,7 @@
 ### Since 0.3.6
 - Default at-rest encryption of secrets in `config.toml` (ChaCha20-Poly1305).
 - Auto-creates XDG `secrets.key` (0o600) on first secret write.
-- CLI `secrets status|init|reencrypt` (never prints the master key).
+- CLI `secrets status|init|reencrypt` (never prints the primary key).
 - Opt-out for tests only: `--allow-plaintext-secrets` (CLI-only; no env store).
 - Doctor fields: `secrets_key_file`, `secrets_plaintext_opt_out`.
 
@@ -67,7 +83,7 @@
 
 ### Since 0.4.1 (historical)
 - AUD-POST patch: empty secrets never become `sshcli-enc` blobs on redacted export (EXP-001); tunnel post-bind deadline exits 0 (TUN-002); `tunnel`/`health-check` auth flag parity with exec/scp (CLI-005/006); SCP JSON includes `event: "scp-transfer"` (IO-009). Additive only — no breaking CLI changes.
-- SCP wire fix (0.4.0): crates.io 0.3.9 advertised SCP but the protocol was broken. Upgrade to 0.4.0+ (prefer product line 0.5.3) before relying on `scp`.
+- SCP wire fix (0.4.0): crates.io 0.3.9 advertised SCP but the protocol was broken. Upgrade to 0.4.0+ (prefer product line 0.5.4) before relying on `scp`.
 - SCP is regular files only (no `-r`). Directory trees use `sftp --recursive`. Use `--timeout` for large files (covers connect + transfer). Success JSON via `--json` / `--output-format json` (`docs/schemas/scp-transfer.schema.json`; SFTP: `sftp-transfer.schema.json`).
 - SCP download writes `{path}.ssh-cli.partial` then atomic rename; mode/times applied on the partial before rename.
 - SCP upload streams in 32 KiB chunks (no full-file `fs::read` into RAM).
@@ -161,7 +177,7 @@ ssh-cli su-exec prod "id"
 - Expect no active VPS as exit 66; missing SCP file as exit 66 with `file not found: <path>`.
 - Expect tunnel banners only in human/TTY paths, not on agent JSON stdout.
 - Secrets control is CLI/XDG only (`--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`, XDG `secrets.key`); env secrets stores are rejected fail-closed.
-- Do not assume auto JSON non-TTY applies to `vps export` — export stays TOML unless `--json`.
+- Do assume auto JSON non-TTY applies to `vps export` — the body is JSON on any non-TTY stdout, and TOML needs `--output-format text`.
 
 
 ## JSON Schema Changes
@@ -203,7 +219,7 @@ ssh-cli su-exec prod "id"
 - Always-trust host key behavior is gone in release builds.
 - Default encryption is on; plaintext requires explicit CLI opt-out `--allow-plaintext-secrets` only (env secrets stores are rejected fail-closed).
 - Default tracing is error; INFO prose is not expected on agent stderr.
-- SCP remains file-only by design in 0.4.0+ (still true in 0.5.3; not a temporary limitation).
+- SCP remains file-only by design in 0.4.0+ (still true in 0.5.4; not a temporary limitation).
 - SFTP integrity requires 0.5.3+ (G1); do not rely on pre-0.5.3 SFTP upload without destination checksum proof.
 
 
@@ -220,7 +236,7 @@ ssh-cli su-exec prod "id"
 - New writes use English TOML keys: `name`, `port`, `username`, `password`, `added_at`, …
 - Loads still accept legacy Portuguese keys (`nome`, `porta`, `usuario`, `senha`, `adicionado_em`) — dual-read EN serialize / PT load aliases.
 - `added_at` is optional on import (defaults to now when missing).
-- `vps export` default body is TOML (even on pipe/non-TTY); use `--json` for the agent envelope (`event: "vps-export"`). Auto JSON non-TTY does not apply to export.
+- `vps export` body follows the resolved format: the agent envelope (`event: "vps-export"`) on any non-TTY stdout, even into a `.toml` filename; `--output-format text` is the only route to a TOML body. Auto JSON non-TTY applies to export like everywhere else.
 - `vps import` accepts TOML (EN + PT aliases) or JSON `vps-export` envelopes; `--allow-incomplete` for redacted/skeleton hosts.
 - `--include-secrets` requires `-o`/`--output` or `--i-understand-secrets-on-stdout`.
 - Secrets control is CLI/XDG only: `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`, or XDG `secrets.key` (env secrets stores rejected fail-closed).
@@ -243,7 +259,7 @@ ssh-cli su-exec prod "id"
 - SFTP upload integrity fixed (G1); SETSTAT atime+mtime (G3); fail-closed set_metadata (G4); perm mask (G12); batch cancel cardinality (G5/G17).
 - Suites: `tests/gaps_v042_integration.rs` + `tests/gaps_v051_integration.rs` + `tests/gaps_v056_ssh.rs` + `tests/gaps_v057_sftp.rs` + `tests/gaps_v058_e2e_residual.rs`; official e2e **E01–E18**.
 
-Product line: 0.5.3.
+Product line: 0.5.4.
 
 ## See Also
 - [HOW_TO_USE.md](HOW_TO_USE.md) — end-user command surface

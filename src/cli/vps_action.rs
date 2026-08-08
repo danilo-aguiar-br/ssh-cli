@@ -38,8 +38,18 @@ pub enum VpsAction {
         #[arg(long, value_name = "PATH", value_hint = ValueHint::FilePath)]
         key: Option<PathBuf>,
         /// Key passphrase.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "key_passphrase_stdin")]
         key_passphrase: Option<String>,
+        /// Reads the key passphrase from stdin.
+        ///
+        /// D13: `exec`, `scp`, `health-check` and `tunnel` all accepted
+        /// `--key-passphrase-stdin`, but `vps add` and `vps edit` — the only two
+        /// commands that *persist* the passphrase — did not. The one secret that
+        /// reaches disk was also the one that had to travel through argv, where
+        /// any local process can read it from `ps`. Found by running the E2E
+        /// matrix for real for the first time (D1).
+        #[arg(long, action = ArgAction::SetTrue)]
+        key_passphrase_stdin: bool,
         /// Authenticate via SSH agent (mutually exclusive with --password / --key; G-E2E-19).
         #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["password", "password_stdin", "key"])]
         use_agent: bool,
@@ -142,8 +152,11 @@ pub enum VpsAction {
         #[arg(long, value_name = "PATH", value_hint = ValueHint::FilePath)]
         key: Option<PathBuf>,
         /// New key passphrase.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "key_passphrase_stdin")]
         key_passphrase: Option<String>,
+        /// Reads the new key passphrase from stdin (D13 — see `VpsAction::Add`).
+        #[arg(long, action = ArgAction::SetTrue)]
+        key_passphrase_stdin: bool,
         /// Switch primary auth to SSH agent (clears password/key when set; G-E2E-19).
         #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["password", "password_stdin", "key"])]
         use_agent: bool,

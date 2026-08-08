@@ -14,31 +14,70 @@
 //!
 //! Plaintext at-rest opt-out: **only** CLI `--allow-plaintext-secrets` (no env store).
 //!
-//! With a key: serialization writes `sshcli-enc:v1:<base64(nonce||ciphertext)>`.
+//! With a key: serialization writes `sshcli-enc:v2:<base64(nonce||ciphertext)>`.
+//!
+//! # Blob versions (A7)
+//!
+//! `v1` blobs were sealed **without** associated data, so the AEAD tag only
+//! proved "encrypted by this key" and said nothing about *where* the blob
+//! belongs. Anyone able to edit `config.toml` could move a `password` blob to
+//! another host, or paste it into `su_password`, and decryption would still
+//! succeed — context confusion with no detection.
+//!
+//! `v2` binds the ciphertext to a [`SecretContext`] (host name + field name) via
+//! AEAD associated data, so a relocated blob fails tag verification.
+//!
+//! Compatibility is deliberate and dual-read:
+//! - `v1` is still accepted on read (existing configs must keep working).
+//! - `v2` is always written.
+//! - A `v2` blob sealed under [`SecretContext::unbound`] — the context used by
+//!   call sites not yet passing host/field — is accepted under any context. That
+//!   keeps the migration monotonic: today's writes are no weaker than `v1`, and
+//!   once a call site passes a real context the rewritten blob becomes strictly
+//!   bound and can never be relocated afterwards.
 //!
 //! **Never** log or return the key or plaintext in public errors.
 
 use crate::constants::{
-    AEAD_NONCE_LEN_BYTES, AEAD_TAG_LEN_BYTES, APP_NAME, ENV_SECRETS_KEY, ENV_SECRETS_KEY_FILE,
-    KEYRING_SERVICE, KEYRING_USER_LEGACY, KEYRING_USER_PRIMARY, PRIMARY_KEY_HEX_LEN,
-    PRIMARY_KEY_LEN_BYTES, SECRETS_KEY_FILE_NAME,
+    APP_NAME, ENV_SECRETS_KEY, ENV_SECRETS_KEY_FILE, PRIMARY_KEY_HEX_LEN, PRIMARY_KEY_LEN_BYTES,
+    SECRETS_KEY_FILE_NAME,
 };
 use crate::errors::{SshCliError, SshCliResult};
-use chacha20poly1305::aead::{Aead, KeyInit};
-use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
-/// Prefix for encrypted blobs in TOML.
+mod aead;
+mod keyring_store;
+
+pub use aead::SecretContext;
+use aead::{decrypt_secret, encrypt_secret};
+use keyring_store::read_keyring;
+pub use keyring_store::write_key_to_keyring;
+
+/// Prefix for legacy encrypted blobs without associated data (read-only).
 pub const ENC_PREFIX: &str = "sshcli-enc:v1:";
+
+/// Prefix for context-bound encrypted blobs (written by this version).
+pub const ENC_PREFIX_V2: &str = "sshcli-enc:v2:";
+
+/// Primary key material that scrubs itself on drop.
+///
+/// A8: the bare `[u8; 32]` is `Copy`, so every hand-off between
+/// `load_primary_key` → `ensure_key_for_write` → `serialize_secret` left a
+/// residual copy on a stack frame that no `.zeroize()` call could reach —
+/// zeroizing the last binding cleaned one copy and no more. Wrapping the array
+/// makes it move-only in practice: each frame owns exactly one value and drops
+/// it scrubbed.
+pub type PrimaryKey = Zeroizing<[u8; PRIMARY_KEY_LEN_BYTES]>;
 
 /// File name of the primary key in the config directory (XDG sibling of `config.toml`).
 pub const KEY_FILE_NAME: &str = SECRETS_KEY_FILE_NAME;
 
 // Compile-time invariants (const/static rules).
 const _: () = assert!(!ENC_PREFIX.is_empty());
+const _: () = assert!(!ENC_PREFIX_V2.is_empty());
 const _: () = assert!(!KEY_FILE_NAME.is_empty());
 const _: () = assert!(PRIMARY_KEY_LEN_BYTES == 32);
 
@@ -191,7 +230,7 @@ pub fn secrets_key_path() -> SshCliResult<PathBuf> {
 ///
 /// # Errors
 /// Returns an error if a configured key source exists but cannot be read or parsed.
-pub fn load_primary_key() -> SshCliResult<(Option<[u8; PRIMARY_KEY_LEN_BYTES]>, KeySource)> {
+pub fn load_primary_key() -> SshCliResult<(Option<PrimaryKey>, KeySource)> {
     // CLI flag: --secrets-key-file
     let secrets_key_file = lock_global(&RUNTIME_FLAGS).secrets_key_file.clone();
     if let Some(path) = secrets_key_file {
@@ -232,10 +271,14 @@ pub fn load_primary_key() -> SshCliResult<(Option<[u8; PRIMARY_KEY_LEN_BYTES]>, 
 
     let path = secrets_key_path()?;
     if path.is_file() {
+        // G-ERR-R01: failing to *read* the key file is I/O, not a data error. The file
+        // being unreadable and the file holding garbage are different problems with
+        // different fixes, and they shared exit 65.
         let mut text =
             crate::paths::read_text_capped(&path, crate::paths::MAX_SECRETS_KEY_FILE_BYTES)
                 .map_err(|e| {
-                    SshCliError::Config(format!("failed reading {}: {e}", path.display()))
+                    tracing::debug!(err = %e, path = %path.display(), "failed reading secrets key");
+                    e
                 })?;
         let key = parse_hex_key(text.trim())
             .map_err(|e| SshCliError::InvalidArgument(format!("invalid {KEY_FILE_NAME}: {e}")));
@@ -251,7 +294,7 @@ pub fn load_primary_key() -> SshCliResult<(Option<[u8; PRIMARY_KEY_LEN_BYTES]>, 
 ///
 /// # Errors
 /// Returns an error if auto-creating `secrets.key` fails when encryption is required.
-pub fn ensure_key_for_write() -> SshCliResult<(Option<[u8; PRIMARY_KEY_LEN_BYTES]>, KeySource)> {
+pub fn ensure_key_for_write() -> SshCliResult<(Option<PrimaryKey>, KeySource)> {
     let (existing, source) = load_primary_key()?;
     if existing.is_some() {
         return Ok((existing, source));
@@ -267,8 +310,13 @@ pub fn ensure_key_for_write() -> SshCliResult<(Option<[u8; PRIMARY_KEY_LEN_BYTES
         path = %path.display(),
         "secrets.key auto-created (event secrets-key-auto-created)"
     );
-    let key =
-        parse_hex_key(&hex).map_err(|e| SshCliError::Config(format!("invalid generated key: {e}")));
+    // G-ERR-R01: this key was produced by `generate_hex_key` three lines up, so failing
+    // to parse it back is an internal contradiction, not bad user input. Exit 65 told
+    // the caller to fix data they never supplied.
+    let key = parse_hex_key(&hex).map_err(|e| {
+        tracing::error!(err = %e, "generated key failed round-trip parse");
+        SshCliError::software("key_encoding")
+    });
     hex.zeroize();
     Ok((Some(key?), KeySource::XdgFile))
 }
@@ -278,9 +326,8 @@ pub fn secrets_status() -> SshCliResult<SecretsStatus> {
     let key_file_path = secrets_key_path()?;
     let (key, source) = load_primary_key()?;
     let encryption_active = key.is_some();
-    if let Some(mut k) = key {
-        k.zeroize();
-    }
+    // A8: dropping the `Zeroizing` scrubs the material; no manual call needed.
+    drop(key);
     Ok(SecretsStatus {
         source,
         encryption_active,
@@ -289,10 +336,10 @@ pub fn secrets_status() -> SshCliResult<SecretsStatus> {
     })
 }
 
-/// True if the string is already an encrypted blob.
+/// True if the string is already an encrypted blob (any supported version).
 #[must_use]
 pub fn is_encrypted_blob(value: &str) -> bool {
-    value.starts_with(ENC_PREFIX)
+    value.starts_with(ENC_PREFIX) || value.starts_with(ENC_PREFIX_V2)
 }
 
 /// Serializes a secret for TOML: encrypts if a key exists (or is auto-created); otherwise plaintext.
@@ -304,41 +351,65 @@ pub fn is_encrypted_blob(value: &str) -> bool {
 /// # Errors
 /// Returns an error if key resolution, RNG, or AEAD encryption fails.
 pub fn serialize_secret(plaintext: &str) -> SshCliResult<String> {
+    serialize_secret_in_context(SecretContext::unbound(), plaintext)
+}
+
+/// Serializes a secret bound to `ctx` (A7): writes a `v2` blob sealed with AAD.
+///
+/// # Errors
+/// Returns an error if key resolution, RNG, or AEAD encryption fails.
+pub fn serialize_secret_in_context(
+    ctx: SecretContext<'_>,
+    plaintext: &str,
+) -> SshCliResult<String> {
     if plaintext.is_empty() {
         return Ok(String::new());
     }
     let (key, _) = ensure_key_for_write()?;
     match key {
         None => Ok(plaintext.to_string()),
-        Some(mut key) => {
-            let out = encrypt_secret(&key, plaintext)?;
-            key.zeroize();
-            Ok(out)
-        }
+        // `key` is dropped scrubbed at the end of this arm (A8).
+        Some(key) => encrypt_secret(&key, plaintext, ctx),
     }
 }
 
-/// Deserializes from TOML: decrypts `sshcli-enc:v1:` blobs; otherwise returns as-is.
+/// Deserializes from TOML: decrypts `sshcli-enc:` blobs; otherwise returns as-is.
+///
+/// Uses [`SecretContext::unbound`], so it accepts `v1` blobs and `v2` blobs that
+/// were themselves sealed unbound, but rejects a `v2` blob bound to a concrete
+/// host/field. Call sites that know the owner must use
+/// [`deserialize_secret_in_context`] to get the relocation check.
 pub fn deserialize_secret(stored: &str) -> SshCliResult<String> {
+    deserialize_secret_in_context(SecretContext::unbound(), stored)
+}
+
+/// Deserializes a secret expected to belong to `ctx`.
+///
+/// Fails when a `v2` blob was sealed for a different host or a different field:
+/// the AEAD tag no longer verifies, which is the whole point of A7.
+///
+/// # Errors
+/// Missing primary key, malformed blob, or AEAD verification failure.
+pub fn deserialize_secret_in_context(ctx: SecretContext<'_>, stored: &str) -> SshCliResult<String> {
     if !is_encrypted_blob(stored) {
         return Ok(stored.to_string());
     }
     let (key, _) = load_primary_key()?;
-    let mut key = key.ok_or_else(|| {
+    let key = key.ok_or_else(|| {
         SshCliError::InvalidArgument(format!(
             "config contains encrypted secrets; run `{APP_NAME} secrets init` (XDG `{KEY_FILE_NAME}`) or pass `--secrets-key-file PATH` / `--use-keyring` (env key material is not supported)"
         ))
     })?;
-    let plain = decrypt_secret(&key, stored)?;
-    key.zeroize();
-    Ok(plain)
+    decrypt_secret(&key, stored, ctx)
 }
 
 /// Generates [`PRIMARY_KEY_LEN_BYTES`] random bytes as [`PRIMARY_KEY_HEX_LEN`] hex chars.
 pub fn generate_hex_key() -> SshCliResult<String> {
     let mut bytes = [0u8; PRIMARY_KEY_LEN_BYTES];
-    getrandom::getrandom(&mut bytes)
-        .map_err(|e| SshCliError::Config(format!("RNG failed: {e}")))?;
+    // G-ERR-R01: a CSPRNG that cannot produce bytes is a broken host, not malformed
+    // input. Reporting it as exit 65 told an agent to "fix the data" for a condition
+    // no input change can resolve.
+    getrandom::fill(&mut bytes).map_err(|_| SshCliError::software("rng"))?;
     let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
     bytes.zeroize();
     Ok(hex)
@@ -377,20 +448,20 @@ pub fn write_key_file(path: &Path, hex64: &str, force: bool) -> SshCliResult<()>
         std::fs::create_dir_all(parent_dir)?;
     }
     let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
-    let mut tmp = tempfile::NamedTempFile::new_in(parent_dir)
-        .map_err(|e| SshCliError::Config(format!("tempfile secrets.key: {e}")))?;
+    // G-ERR-R01: a full disk, a read-only mount or a missing XDG directory is I/O
+    // (exit 74), not malformed data (exit 65). Every step below used to collapse into
+    // `Config`, so `secrets init` on a read-only home reported "configuration error"
+    // and an agent had no way to tell it apart from a corrupt registry file.
+    let mut tmp = tempfile::NamedTempFile::new_in(parent_dir).map_err(SshCliError::Io)?;
     use std::io::Write;
     tmp.write_all(hex64.trim().as_bytes())
-        .map_err(|e| SshCliError::Config(format!("write secrets.key: {e}")))?;
-    tmp.write_all(b"\n")
-        .map_err(|e| SshCliError::Config(format!("write secrets.key: {e}")))?;
-    tmp.as_file()
-        .sync_all()
-        .map_err(|e| SshCliError::Config(format!("fsync secrets.key: {e}")))?;
-    crate::fs_perm::set_secret_file_mode(tmp.path())
-        .map_err(|e| SshCliError::Config(format!("chmod secrets.key: {e}")))?;
-    tmp.persist(path)
-        .map_err(|e| SshCliError::Config(format!("persist secrets.key: {e}")))?;
+        .map_err(SshCliError::Io)?;
+    tmp.write_all(b"\n").map_err(SshCliError::Io)?;
+    tmp.as_file().sync_all().map_err(SshCliError::Io)?;
+    crate::fs_perm::set_secret_file_mode(tmp.path())?;
+    // `PersistError` wraps the underlying `io::Error`; unwrapping it keeps the real
+    // cause instead of flattening "permission denied" into a formatted string.
+    tmp.persist(path).map_err(|e| SshCliError::Io(e.error))?;
     // Best-effort re-apply after rename (matches prior ignore-on-error chmod).
     let _ = crate::fs_perm::set_secret_file_mode(path);
     Ok(())
@@ -430,26 +501,20 @@ pub fn init_primary_key(use_keyring: bool, force: bool) -> SshCliResult<SecretsS
     secrets_status()
 }
 
-/// Stores primary-key (hex) in the OS keyring. Does not print the key.
-pub fn write_key_to_keyring(hex64: &str) -> SshCliResult<()> {
-    let _ = parse_hex_key(hex64)
-        .map_err(|e| SshCliError::InvalidArgument(format!("invalid key: {e}")))?;
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER_PRIMARY)
-        .map_err(|e| SshCliError::Config(format!("keyring Entry::new failed: {e}")))?;
-    entry
-        .set_password(hex64.trim())
-        .map_err(|e| SshCliError::Config(format!("keyring set failed: {e}")))?;
-    Ok(())
-}
-
-fn parse_hex_key(hex: &str) -> Result<[u8; PRIMARY_KEY_LEN_BYTES], String> {
+fn parse_hex_key(hex: &str) -> Result<PrimaryKey, String> {
     let h = hex.trim();
-    if h.len() != PRIMARY_KEY_HEX_LEN {
+    // A6: `len()` counts BYTES while `&h[i*2..i*2+2]` requires a char boundary. A key
+    // file holding multi-byte UTF-8 that happens to total 64 bytes would slice mid-character
+    // and panic instead of returning a typed error. Rejecting non-ASCII first makes byte
+    // offsets and character boundaries the same thing, so the loop below cannot panic.
+    if !h.is_ascii() || h.len() != PRIMARY_KEY_HEX_LEN {
         return Err(format!(
             "expected {PRIMARY_KEY_HEX_LEN} hex characters ({PRIMARY_KEY_LEN_BYTES} bytes)"
         ));
     }
-    let mut out = [0u8; PRIMARY_KEY_LEN_BYTES];
+    // A8: fill the protected buffer directly so no bare `[u8; 32]` copy is left
+    // behind on this frame.
+    let mut out: PrimaryKey = Zeroizing::new([0u8; PRIMARY_KEY_LEN_BYTES]);
     for i in 0..PRIMARY_KEY_LEN_BYTES {
         let byte =
             u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).map_err(|_| "invalid hex".to_string())?;
@@ -458,91 +523,15 @@ fn parse_hex_key(hex: &str) -> Result<[u8; PRIMARY_KEY_LEN_BYTES], String> {
     Ok(out)
 }
 
-fn encrypt_secret(key: &[u8; PRIMARY_KEY_LEN_BYTES], plaintext: &str) -> SshCliResult<String> {
-    let cipher =
-        ChaCha20Poly1305::new_from_slice(key).map_err(|_| SshCliError::crypto("aead_key"))?;
-    let mut nonce_bytes = [0u8; AEAD_NONCE_LEN_BYTES];
-    getrandom::getrandom(&mut nonce_bytes)
-        .map_err(|e| SshCliError::Config(format!("RNG failed: {e}")))?;
-    let nonce = Nonce::from_slice(&nonce_bytes);
-    let ciphertext = cipher
-        .encrypt(nonce, plaintext.as_bytes())
-        .map_err(|_| SshCliError::crypto("encrypt"))?;
-    let mut packed = Vec::with_capacity(AEAD_NONCE_LEN_BYTES + ciphertext.len());
-    packed.extend_from_slice(&nonce_bytes);
-    packed.extend_from_slice(&ciphertext);
-    Ok(format!(
-        "{ENC_PREFIX}{}",
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &packed)
-    ))
-}
-
-fn decrypt_secret(key: &[u8; PRIMARY_KEY_LEN_BYTES], blob: &str) -> SshCliResult<String> {
-    let b64 = blob
-        .strip_prefix(ENC_PREFIX)
-        .ok_or_else(|| SshCliError::crypto("blob_parse"))?;
-    let packed = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
-        .map_err(|_| SshCliError::crypto("blob_b64"))?;
-    if packed.len() < AEAD_NONCE_LEN_BYTES + AEAD_TAG_LEN_BYTES {
-        return Err(SshCliError::Config("encrypted blob too short".to_string()));
-    }
-    let (nonce_bytes, ct) = packed.split_at(AEAD_NONCE_LEN_BYTES);
-    let cipher =
-        ChaCha20Poly1305::new_from_slice(key).map_err(|_| SshCliError::crypto("aead_key"))?;
-    let nonce = Nonce::from_slice(nonce_bytes);
-    let plain = cipher
-        .decrypt(nonce, ct)
-        .map_err(|_| SshCliError::crypto("decrypt"))?;
-    match String::from_utf8(plain) {
-        Ok(s) => Ok(s),
-        Err(e) => {
-            // from_utf8 failure keeps bytes in the error — scrub before drop.
-            let mut bad = e.into_bytes();
-            bad.zeroize();
-            Err(SshCliError::Config(
-                "decrypted secret is not valid UTF-8".to_string(),
-            ))
-        }
-    }
-}
-
-fn read_keyring() -> SshCliResult<Option<[u8; PRIMARY_KEY_LEN_BYTES]>> {
-    // Prefer inclusive primary-key id; fall back to legacy master-key user for migration.
-    for user in [KEYRING_USER_PRIMARY, KEYRING_USER_LEGACY] {
-        let entry = match keyring::Entry::new(KEYRING_SERVICE, user) {
-            Ok(e) => e,
-            Err(e) => {
-                if user == "secrets-master-key" {
-                    return Err(SshCliError::Config(format!(
-                        "keyring Entry::new failed: {e}"
-                    )));
-                }
-                continue;
-            }
-        };
-        match entry.get_password() {
-            Ok(mut s) => {
-                let key = parse_hex_key(&s).map_err(|e| {
-                    SshCliError::InvalidArgument(format!("invalid keyring primary-key: {e}"))
-                });
-                s.zeroize();
-                return Ok(Some(key?));
-            }
-            Err(keyring::Error::NoEntry) => continue,
-            Err(e) => {
-                if user == "secrets-master-key" {
-                    return Err(SshCliError::Config(format!("keyring get failed: {e}")));
-                }
-                continue;
-            }
-        }
-    }
-    Ok(None)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Crypto types live in `secrets::aead` now; the legacy-v1 fixture below still
+    // needs to seal a blob by hand, so it imports them locally instead of forcing
+    // the production module to keep an import it no longer uses.
+    use crate::constants::AEAD_NONCE_LEN_BYTES;
+    use chacha20poly1305::aead::{Aead, KeyInit};
+    use chacha20poly1305::{ChaCha20Poly1305, Nonce};
     use serial_test::serial;
     use tempfile::TempDir;
 
@@ -634,6 +623,93 @@ mod tests {
         assert_eq!(out, "");
         assert!(!is_encrypted_blob(&out));
         clear_key_env();
+    }
+
+    #[test]
+    #[serial]
+    fn v2_blob_rejects_foreign_host_and_field() {
+        // A7: an operator editing config.toml must not be able to move a blob
+        // between hosts or between fields and still have it decrypt.
+        let _tmp = sandbox();
+        init_primary_key(false, false).expect("init key");
+        let plain = "fake-bound-secret";
+        let host_a = SecretContext::new("host-a", "password");
+        let enc = serialize_secret_in_context(host_a, plain).unwrap();
+        assert!(enc.starts_with(ENC_PREFIX_V2), "v2 must be written");
+
+        assert_eq!(deserialize_secret_in_context(host_a, &enc).unwrap(), plain);
+
+        let other_host = SecretContext::new("host-b", "password");
+        assert!(
+            deserialize_secret_in_context(other_host, &enc).is_err(),
+            "blob bound to host-a must not open as host-b"
+        );
+
+        let other_field = SecretContext::new("host-a", "su_password");
+        assert!(
+            deserialize_secret_in_context(other_field, &enc).is_err(),
+            "blob bound to password must not open as su_password"
+        );
+        clear_key_env();
+    }
+
+    #[test]
+    #[serial]
+    fn unbound_blob_stays_readable_under_any_context() {
+        // Migration: call sites not yet passing host/field write unbound blobs;
+        // wiring a context later must not lock the user out of their config.
+        let _tmp = sandbox();
+        init_primary_key(false, false).expect("init key");
+        let plain = "fake-unbound-secret";
+        let enc = serialize_secret(plain).unwrap();
+        assert!(enc.starts_with(ENC_PREFIX_V2));
+        let bound = SecretContext::new("host-a", "password");
+        assert_eq!(deserialize_secret_in_context(bound, &enc).unwrap(), plain);
+        clear_key_env();
+    }
+
+    #[test]
+    #[serial]
+    fn legacy_v1_blob_still_decrypts() {
+        // Existing configs hold v1 blobs sealed without associated data.
+        let _tmp = sandbox();
+        init_primary_key(false, false).expect("init key");
+        let (key, _) = load_primary_key().unwrap();
+        let key = key.expect("key present");
+        let plain = "fake-legacy-v1-secret";
+
+        // Rebuild a v1 blob exactly as the previous version wrote it.
+        let cipher = ChaCha20Poly1305::new_from_slice(key.as_slice()).unwrap();
+        let mut nonce_bytes = [0u8; AEAD_NONCE_LEN_BYTES];
+        getrandom::fill(&mut nonce_bytes).unwrap();
+        let ct = cipher
+            .encrypt(&Nonce::from(nonce_bytes), plain.as_bytes())
+            .unwrap();
+        let mut packed = nonce_bytes.to_vec();
+        packed.extend_from_slice(&ct);
+        let blob = format!(
+            "{ENC_PREFIX}{}",
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &packed)
+        );
+
+        assert!(is_encrypted_blob(&blob));
+        assert_eq!(deserialize_secret(&blob).unwrap(), plain);
+        assert_eq!(
+            deserialize_secret_in_context(SecretContext::new("host-a", "password"), &blob).unwrap(),
+            plain
+        );
+        clear_key_env();
+    }
+
+    #[test]
+    fn aad_encoding_is_unambiguous() {
+        // A host literally named "a:b" must not collide with the pair (a, b).
+        assert_ne!(
+            SecretContext::new("a:b", "password").aad(),
+            SecretContext::new("a", "b:password").aad()
+        );
+        assert!(SecretContext::unbound().is_unbound());
+        assert!(!SecretContext::new("host-a", "password").is_unbound());
     }
 
     #[test]

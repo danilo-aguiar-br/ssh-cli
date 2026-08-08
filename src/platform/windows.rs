@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// B1: file-scoped exception to the `deny(unsafe_code)` inherited from
+// `super`. This module is the audited Win32 FFI surface listed in the
+// allowlist of `tests/gaps_v055_unsafe_ffi.rs`; every block below carries a
+// `// SAFETY:` proof and `clippy::undocumented_unsafe_blocks` (crate-level
+// `deny`) still enforces that. Scope is this file only — siblings keep `deny`.
+#![allow(unsafe_code)]
 //! Windows platform specifics.
 //!
 //! Configures the console **before** any user-facing I/O so:
@@ -74,7 +80,11 @@ fn enable_virtual_terminal_processing() {
         // SAFETY: GetStdHandle with STD_* constants is documented Win32; returns
         // INVALID_HANDLE_VALUE when the handle is unavailable (e.g. fully detached).
         let handle: HANDLE = unsafe { GetStdHandle(handle_id) };
-        if handle == 0 || handle == INVALID_HANDLE_VALUE {
+        // B1: `windows-sys` 0.61 redefined `HANDLE` from an integer newtype to
+        // `*mut c_void`, so the previous `handle == 0` stopped type-checking
+        // (E0308). `is_null()` is the pointer-era spelling of the same guard;
+        // `INVALID_HANDLE_VALUE` still compares directly as a raw pointer.
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
             tracing::debug!(handle = label, "console handle unavailable for VT mode");
             continue;
         }

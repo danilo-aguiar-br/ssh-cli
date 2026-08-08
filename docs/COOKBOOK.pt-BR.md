@@ -1,9 +1,12 @@
 # Cookbook
 
+> **0.5.4** — release de segurança e agent-native. Corrige DoS remoto pré-auth no banner SSH (A1), impede que bits setuid enviados pelo servidor caiam no arquivo baixado (A3), fecha a janela de leitura pública em chaves privadas ACME/mTLS (A2) e adiciona flags de redução de payload (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) aplicadas antes da serialização. BREAKING: falha parcial multi-host agora sai com exit **1** (era 65); `--bind` fora do loopback exige `--i-accept-network-exposure`. Novo evento `tunnel_closed`.
+
+
 > Copie receitas executáveis que resolvem problemas reais de SSH multi-host com agentes.
 
 - Leia este documento em [inglês](COOKBOOK.md).
-- Linha de produto: 0.5.3.
+- Linha de produto: 0.5.4.
 
 
 ## Nota de latência
@@ -21,11 +24,11 @@
 - Telemetria: desligada
 - Segredos at-rest: cifrados por padrão (auto `secrets.key`)
 - Instalação: `cargo install ssh-cli --locked`
-- Supply chain: russh 0.62.2; `cargo deny` com `yanked=deny`, `multiple-versions=warn`
+- Supply chain: russh 0.62.5; `cargo deny` com `yanked=deny`, `multiple-versions=deny`
 - SCP: somente arquivos regulares (sem `-r` / sem diretórios). Árvores e FS remoto usam **`sftp`** (`upload|download --recursive`, `ls`, `mkdir`, …). Sufixo partial de download `.ssh-cli.partial`; JSON exige `event: "scp-transfer"`
-- Wire SCP: use 0.4.0+ (prefira a linha de produto 0.5.3); nunca 0.3.9 (crates.io 0.3.9 anunciava SCP mas era inoperante)
+- Wire SCP: use 0.4.0+ (prefira a linha de produto 0.5.4); nunca 0.3.9 (crates.io 0.3.9 anunciava SCP mas era inoperante)
 - SFTP: prefira **0.5.3+** (correção de integridade de upload G1); verifique o destino com `sha256sum`; árvores via `--recursive`
-- Export redacted: corpo padrão é TOML (mesmo em pipes); secrets vazios como `""`; secrets não vazios redacted → `***` (`FIXED_MASK`, nunca `""` para não vazios); nunca blob `sshcli-enc:` no caminho redacted; JSON só com `vps export --json`
+- Export redacted: o corpo segue o formato resolvido, então é JSON em qualquer stdout non-TTY e TOML somente com `--output-format text`; secrets vazios como `""`; secrets não vazios redacted → `***` (`FIXED_MASK`, nunca `""` para não vazios); nunca blob `sshcli-enc:` no caminho redacted; JSON só com `vps export --json`
 - Wire de hosts: schema v3 (serialização em inglês; dual-read de aliases legados em português)
 - Tunnel pós-bind: deadline one-shot sai com exit 0 após `tunnel_listening` (TUN-002); timeout pré-bind permanece 74
 - Tunnel `--bind` padrão: `127.0.0.1`
@@ -44,7 +47,7 @@
   - G5/G17: cancelamento multi-arquivo / batch mantém `results.len() == input.len()` (resto cancelled preenchido)
   - G8: `exec --json` de host único emite exatamente um objeto JSON
   - G9: download SCP propaga falha de `sync_data` antes do rename
-  - G12/G19: bits de permissão mascarados com `SFTP_PERM_MASK` (`0o7777`)
+  - G12/G19: bits de permissão mascarados por direção — `SFTP_PERM_MASK` (`0o7777`) no upload, `SFTP_PERM_MASK_UNTRUSTED` (`0o0777`) no download (A3)
   - G15: aceite prova de efeito no destino (checksum), não só contagem de bytes do cliente
   - G18: falhas de `set_permissions` local no download SFTP são sinalizadas
   - G7: matriz E2E real-SSH inclui checksum SFTP + árvore recursiva (**E17/E18**)
@@ -177,6 +180,13 @@ ssh-cli exec --all 'uptime' --json
 ssh-cli exec --hosts web1,web2 'uptime' --json
 ssh-cli --max-concurrency 4 sudo-exec --all 'systemctl is-active nginx' --json
 
+# por tag, sem enumerar nomes — só na família exec (exec / sudo-exec / su-exec).
+# As tags vêm de `vps add --tag prod --tag edge`; casa todo host que carregue qualquer tag listada.
+ssh-cli exec --tags prod,edge 'uptime' --json
+ssh-cli sudo-exec --tags prod 'systemctl restart nginx' --json
+# --all, --hosts e --tags são mutuamente exclusivos: o clap rejeita qualquer par com exit 2.
+# scp, sftp e health-check aceitam --all e --hosts, mas NÃO --tags.
+
 # copia um arquivo local para o mesmo path remoto em todos (scp-batch)
 ssh-cli scp upload --all ./app.tgz /tmp/app.tgz --json
 ssh-cli scp upload --hosts web1,web2 ./app.tgz /tmp/app.tgz --json
@@ -245,8 +255,9 @@ ssh-cli secrets reencrypt
 ## Como exportar e importar inventário sem segredos
 
 ```bash
-# corpo padrão do export é TOML mesmo em pipe/non-TTY (não auto-JSON)
-ssh-cli vps export -o /tmp/hosts.mascarado.toml
+# o corpo segue o formato resolvido: JSON em non-TTY, TOML somente com --output-format text
+ssh-cli vps export -o /tmp/hosts.mascarado.json
+ssh-cli --output-format text vps export -o /tmp/hosts.mascarado.toml
 # secrets vazios serializam como "" — nunca ciphertext sshcli-enc: (EXP-001)
 # secrets não vazios redacted → "***" (FIXED_MASK; nunca "" para não vazios; G-E2E-10)
 # envelope de agente só com --json → event: "vps-export"
@@ -281,13 +292,100 @@ ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
 # stdout: {"ok":true,"event":"tunnel_listening","vps":"prod","local_port":18080,...}
 # schema: docs/schemas/tunnel-listening.schema.json
 # após tunnel_listening, deadline one-shot pós-bind sai com exit 0 (TUN-002); timeout pré-bind permanece 74
-# override de bind opcional (só quando intencional):
-# ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --bind 0.0.0.0
+# override de bind opcional — bind roteável EXIGE o reconhecimento (G-TUN-R13):
+# ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 \
+#   --bind 0.0.0.0 --i-accept-network-exposure
+# sem --i-accept-network-exposure o bind roteável é recusado, não publicado em silêncio
+# tunnel --json também emite tunnel_closed no encerramento, com reason/forwards_served/capacity_waits
 # auth opcional (paridade exec/scp, CLI-005):
 printf '%s' "$PASS" | ssh-cli tunnel prod 18080 127.0.0.1 8080 \
   --timeout-ms 30000 --json --password-stdin
 ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json \
   --key ~/.ssh/id_ed25519
+```
+
+
+## Como alcançar muitos destinos com um só handshake (`--socks5`)
+
+```bash
+# G-TUN-R02: uma sessão SSH serve todo destino, escolhido por conexão
+ssh-cli tunnel prod 1080 --socks5 --timeout-ms 300000 --json
+# stdout: {"ok":true,"event":"tunnel_listening","mode":"socks5","local_port":1080,...}
+# REMOTE_HOST / REMOTE_PORT são omitidos: o CONNECT do SOCKS5 carrega o alvo
+# depois aponte qualquer cliente com suporte a SOCKS5 para 127.0.0.1:1080
+curl --socks5-hostname 127.0.0.1:1080 http://10.0.0.5:8080/health
+curl --socks5-hostname 127.0.0.1:1080 http://10.0.0.9:9200/_cluster/health
+# prefira isso a N processos `ssh-cli tunnel`: o handshake é pago uma vez, não N
+```
+
+
+## Como encaminhar para socket Unix remoto (`--remote-socket`)
+
+```bash
+# G-TUN-R03: direct-streamlocal@openssh.com alcança alvos que nunca escutam em TCP
+ssh-cli tunnel prod 2375 --remote-socket /var/run/docker.sock --timeout-ms 60000 --json
+# stdout: {"ok":true,"event":"tunnel_listening","mode":"streamlocal",...}
+DOCKER_HOST=tcp://127.0.0.1:2375 docker ps
+# socket peer do PostgreSQL, mesma forma:
+ssh-cli tunnel db 15432 --remote-socket /var/run/postgresql/.s.PGSQL.5432 \
+  --timeout-ms 60000 --json
+# o caminho deve ser ABSOLUTO — caminho relativo falha com exit 64 antes de qualquer SSH
+# a existência local nunca é checada: o socket vive no filesystem do servidor
+# trate isso como delegação de privilégio — a porta local herda a autoridade do socket
+```
+
+
+## Como deixar o servidor alcançar de volta (`--reverse`)
+
+```bash
+# G-TUN-R01: o servidor escuta e entrega conexões à sua porta local
+# casos de uso: webhook de callback, debugger remoto apontando para IDE local, bastion invertido
+ssh-cli tunnel prod 8080 127.0.0.1 9000 --reverse --timeout-ms 120000 --json
+# stdout: {"ok":true,"event":"tunnel_listening","mode":"reverse",...}
+# REMOTE_PORT 0 pede ao servidor que aloque e informe a porta que ligou:
+ssh-cli tunnel prod 8080 127.0.0.1 0 --reverse --timeout-ms 120000 --json
+# um forward local não aceita 0 — não haveria nada a que se conectar
+# expor o bind do SERVIDOR exige o reconhecimento, já que é essa a ponta exposta aqui:
+ssh-cli tunnel prod 8080 0.0.0.0 9000 --reverse \
+  --i-accept-network-exposure --timeout-ms 120000 --json
+# AllowTcpForwarding / GatewayPorts do servidor ainda governam se o bind é permitido
+```
+
+
+## Como encolher o payload do agente antes de ele ser escrito
+
+```bash
+# as oito flags de redução agem ANTES da serialização: o envelope grande nunca é construído
+ssh-cli health-check --all --json --select name,ok --filter ok=false
+# só as falhas, dois campos cada
+ssh-cli vps list --json --select name,host --sort name --limit 10
+ssh-cli exec --all 'uptime' --json --truncate-content 200 --max-output-bytes 65536
+# quantos hosts estão inalcançáveis, sem transferir registro de host algum:
+ssh-cli health-check --all --json --filter ok=false --count-only
+# stdout: {"count":2}
+# predicado malformado é rejeitado no parse, então typo nunca parece "nenhum resultado"
+ssh-cli vps list --json --filter 'nameprod'     # exit 64: nenhum operador
+ssh-cli vps list --json --filter '=prod'        # exit 64: chave vazia
+# note o que É válido: `name~~prod` parseia como chave `name`, substring `~prod` — exit 0, `[]`.
+# A recusa cobre operador ausente, não toda string de aparência estranha.
+```
+
+
+## Como ensaiar uma operação destrutiva (`--dry-run`)
+
+```bash
+# aceita SOMENTE por estes seis; em qualquer outro lugar --dry-run é recusada com exit 64
+ssh-cli vps remove old-host --dry-run --json
+ssh-cli vps import --file hosts.toml --dry-run --json
+ssh-cli sftp rm prod /srv/app/stale.log --dry-run --json
+ssh-cli sftp rmdir prod /srv/app/empty-dir --dry-run --json
+ssh-cli secrets init --dry-run --json
+ssh-cli secrets reencrypt --dry-run --json
+# a recusa é o ponto: flag que não faz nada em silêncio em metade da superfície
+# é pior que flag nenhuma, porque o operador acredita que o ensaio aconteceu
+ssh-cli exec prod 'rm -rf /tmp/x' --dry-run --json   # exit 64, não um no-op silencioso
+# execução sem operador também deve recusar esperar por um humano que não está lá:
+ssh-cli vps list --json --no-input
 ```
 
 
@@ -307,7 +405,7 @@ printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
 ## Como transferir artefato de release (somente arquivo regular)
 
 ```bash
-# Use 0.4.0+ (prefira a linha de produto 0.5.3); nunca 0.3.9 — o wire SCP daquela release estava quebrado
+# Use 0.4.0+ (prefira a linha de produto 0.5.4); nunca 0.3.9 — o wire SCP daquela release estava quebrado
 # SCP: sem diretórios / sem -r (use `sftp --recursive` para árvores)
 ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
   --timeout 120000 --json
@@ -358,7 +456,7 @@ ssh-cli sftp rmdir prod /tmp/empty --json
 
 - Prefira a linha de produto **0.5.3+** para todo trabalho SFTP (integridade de upload G1).
 - SETSTAT envia `atime`+`mtime` juntos (G3); metadata mutante é fail-closed (G4).
-- Bits de permissão usam `SFTP_PERM_MASK` (`0o7777`; G12/G19).
+- Bits de permissão são mascarados por direção: `SFTP_PERM_MASK` (`0o7777`; G12/G19) no upload, `SFTP_PERM_MASK_UNTRUSTED` (`0o0777`) no download, então setuid/setgid/sticky enviados pelo servidor nunca chegam ao arquivo local (A3).
 - Falhas de `set_permissions` local no download são sinalizadas (G18).
 
 

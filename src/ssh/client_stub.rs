@@ -17,7 +17,7 @@ pub struct SshClient;
 impl SshClientTrait for SshClient {
     async fn connect(_cfg: ConnectionConfig) -> Result<Box<Self>, SshCliError> {
         Err(SshCliError::ConnectionFailed(
-            "feature `ssh-real` is disabled; rebuild with --features ssh-real".into(),
+            "feature `ssh-real` is disabled; rebuild with --features ssh-real".to_string(),
         ))
     }
 
@@ -28,19 +28,19 @@ impl SshClientTrait for SshClient {
         _stdin_data: Option<Vec<u8>>,
     ) -> Result<ExecutionOutput, SshCliError> {
         Err(SshCliError::channel_msg(
-            "stub without russh: feature `ssh-real` disabled".into(),
+            "stub without russh: feature `ssh-real` disabled",
         ))
     }
 
     async fn upload(&self, _local: &Path, _remote: &Path) -> Result<TransferResult, SshCliError> {
         Err(SshCliError::channel_msg(
-            "stub without russh: feature `ssh-real` disabled".into(),
+            "stub without russh: feature `ssh-real` disabled",
         ))
     }
 
     async fn download(&self, _remote: &Path, _local: &Path) -> Result<TransferResult, SshCliError> {
         Err(SshCliError::channel_msg(
-            "stub without russh: feature `ssh-real` disabled".into(),
+            "stub without russh: feature `ssh-real` disabled",
         ))
     }
 
@@ -52,7 +52,7 @@ impl SshClientTrait for SshClient {
         _origin_port: u16,
     ) -> Result<Box<dyn super::TunnelChannel>, SshCliError> {
         Err(SshCliError::channel_msg(
-            "stub without russh: feature `ssh-real` disabled".into(),
+            "stub without russh: feature `ssh-real` disabled",
         ))
     }
 

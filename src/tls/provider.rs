@@ -25,7 +25,7 @@ pub const PROVIDER_NAME: &str = "aws_lc_rs";
 /// (including by another crate in the same process).
 ///
 /// # Errors
-/// Returns [`SshCliError::Tls`] when install fails for a reason other than
+/// Returns [`crate::errors::SshCliError::Tls`] when install fails for a reason other than
 /// "already installed".
 pub fn install_default_provider() -> SshCliResult<()> {
     if PROVIDER_READY.load(Ordering::Acquire) {

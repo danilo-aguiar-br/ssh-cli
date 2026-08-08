@@ -26,10 +26,19 @@ set +x
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${SSH_CLI_E2E_BIN:-$ROOT/target/release/ssh-cli}"
+# Did the caller NAME a binary, or are we on the default? An explicitly named binary
+# that cannot be executed is a hard failure: silently building the default and testing
+# that instead would report PASS for a binary the operator never asked about.
+BIN_EXPLICIT=0
+[[ -n "${SSH_CLI_E2E_BIN:-}" ]] && BIN_EXPLICIT=1
 FROM_GROK=0
 SOFT_SUDO=0
 FAILS=0
 CONFIG_DIR=""
+LOCAL_SSHD=0
+SSHD_PID=""
+LOCAL_KEY=""
+LOCAL_KEY_PASS=""
 
 pass() { echo "PASS $1"; }
 fail() { echo "FAIL $1"; FAILS=$((FAILS + 1)); }
@@ -41,16 +50,19 @@ usage() {
 Usage: e2e_real_ssh.sh [options]
   --bin PATH              binary (default: target/release/ssh-cli)
   --config-dir DIR        isolated XDG config dir with pre-registered hosts
+  --local-sshd            spawn an unprivileged sshd on loopback and run the full matrix
   --from-grok-config      read $HOME/.grok/config.toml only (never inside this repository)
   Env (harness-only, not product store): SSH_CLI_E2E_HOST PORT USER PASSWORD [SUDO_PASSWORD]
-  Without a lab host, exits 0 with SKIP. Never prints secrets.
+  Without a lab host and without --local-sshd, exits 0 with SKIP. Never prints secrets.
+  With --local-sshd, an unusable sshd is a FAILURE — never a silent skip.
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --from-grok-config) FROM_GROK=1; shift ;;
-    --bin) BIN="$2"; shift 2 ;;
+    --local-sshd) LOCAL_SSHD=1; shift ;;
+    --bin) BIN="$2"; BIN_EXPLICIT=1; shift 2 ;;
     --config-dir) CONFIG_DIR="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -58,6 +70,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ! -x "$BIN" ]]; then
+  if [[ "$BIN_EXPLICIT" -eq 1 ]]; then
+    # The operator named this binary. Substituting the default here would run the
+    # whole E01-E16 matrix against a different artifact and print PASS for every
+    # case, which is worse than useless: it is a green report about untested code.
+    echo "FAIL E00: named binary is not executable: $BIN" >&2
+    exit 2
+  fi
   echo "building ssh-cli release..." >&2
   (cd "$ROOT" && cargo build --release -q)
   BIN="$ROOT/target/release/ssh-cli"
@@ -126,18 +145,158 @@ PY
   rm -f "$HELPER"
 fi
 
-# G-E2E-05: offline / no lab → SKIP exit 0 (not FAIL).
-if [[ -z "${SSH_CLI_E2E_HOST:-}" || -z "${SSH_CLI_E2E_USER:-}" || -z "${SSH_CLI_E2E_PASSWORD:-}" ]]; then
-  skip_all "no lab host (set harness SSH_CLI_E2E_* or --from-grok-config / --config-dir)"
-fi
-SSH_CLI_E2E_PORT="${SSH_CLI_E2E_PORT:-22}"
-
 TMP="$(mktemp -d /tmp/ssh-cli-e2e.XXXXXX)"
 cleanup() {
+  if [[ -n "$SSHD_PID" ]]; then
+    kill "$SSHD_PID" 2>/dev/null || true
+    wait "$SSHD_PID" 2>/dev/null || true
+  fi
   rm -rf "$TMP"
   unset SSH_CLI_E2E_PASSWORD SSH_CLI_E2E_SUDO_PASSWORD SSH_CLI_E2E_HOST SSH_CLI_E2E_USER 2>/dev/null || true
 }
 trap cleanup EXIT
+
+# --- D1: unprivileged local sshd ---------------------------------------------
+# The official E01–E18 matrix had never executed once: without a lab host the
+# script called skip_all and exited 0, so every "all gates green" scoreboard
+# silently counted eighteen no-ops. Six documents said "prefer local sshd" and
+# the harness had no code to start one. This mode closes that gap: the whole
+# matrix runs against a real OpenSSH server on loopback, with no lab, no
+# network and no secrets on disk outside $TMP.
+#
+# Auth is a passphrase-protected ed25519 key rather than a password: a system
+# account password cannot be driven without PAM/root, and the passphrase keeps
+# E02's real assertion (secrets are encrypted at rest) while additionally
+# exercising --key-passphrase-stdin, which the password path never touched.
+sshd_binary() {
+  command -v sshd 2>/dev/null || { [[ -x /usr/sbin/sshd ]] && echo /usr/sbin/sshd; } \
+    || { [[ -x /usr/bin/sshd ]] && echo /usr/bin/sshd; } || true
+}
+
+sftp_server_binary() {
+  local c
+  for c in /usr/libexec/openssh/sftp-server /usr/lib/openssh/sftp-server \
+           /usr/libexec/sftp-server /usr/lib/ssh/sftp-server; do
+    [[ -x "$c" ]] && { echo "$c"; return 0; }
+  done
+  return 1
+}
+
+port_is_free() {
+  # A refused connect means nothing is listening there.
+  ! (exec 3<>/dev/tcp/127.0.0.1/"$1") 2>/dev/null
+}
+
+free_loopback_port() {
+  # sshd rejects Port 0, so probe upward from a randomized offset instead of
+  # hardcoding a literal that could collide with a developer's own service.
+  local base p i
+  base=$(( 20000 + (RANDOM % 20000) ))
+  for i in $(seq 0 199); do
+    p=$(( base + i ))
+    if port_is_free "$p"; then
+      echo "$p"
+      return 0
+    fi
+  done
+  return 1
+}
+
+start_local_sshd() {
+  local sshd sftp port cfg
+  sshd="$(sshd_binary)"
+  if [[ -z "$sshd" ]]; then
+    echo "FAIL E00: --local-sshd requested but no sshd binary found" >&2
+    return 1
+  fi
+  if ! sftp="$(sftp_server_binary)"; then
+    echo "FAIL E00: --local-sshd requested but no sftp-server binary found" >&2
+    return 1
+  fi
+
+  LOCAL_KEY="$TMP/e2e_id_ed25519"
+  LOCAL_KEY_PASS="$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')"
+  ssh-keygen -q -t ed25519 -f "$TMP/e2e_hostkey" -N '' -C e2e-host </dev/null
+  ssh-keygen -q -t ed25519 -f "$LOCAL_KEY" -N "$LOCAL_KEY_PASS" -C e2e-user </dev/null
+  cp "$LOCAL_KEY.pub" "$TMP/authorized_keys"
+  chmod 600 "$TMP/e2e_hostkey" "$LOCAL_KEY" "$TMP/authorized_keys"
+
+  if ! port="$(free_loopback_port)"; then
+    echo "FAIL E00: no free loopback port for local sshd" >&2
+    return 1
+  fi
+
+  cfg="$TMP/sshd_config"
+  {
+    printf 'Port %s\n' "$port"
+    printf 'ListenAddress 127.0.0.1\n'
+    printf 'HostKey %s/e2e_hostkey\n' "$TMP"
+    printf 'PidFile %s/sshd.pid\n' "$TMP"
+    printf 'AuthorizedKeysFile %s/authorized_keys\n' "$TMP"
+    printf 'PubkeyAuthentication yes\n'
+    printf 'PasswordAuthentication no\n'
+    printf 'KbdInteractiveAuthentication no\n'
+    printf 'UsePAM no\n'
+    printf 'StrictModes no\n'
+    printf 'AllowTcpForwarding yes\n'
+    printf 'PermitTTY yes\n'
+    printf 'LogLevel ERROR\n'
+    printf 'Subsystem sftp %s\n' "$sftp"
+  } >"$cfg"
+
+  if ! "$sshd" -t -f "$cfg" 2>"$TMP/sshd-validate.err"; then
+    echo "FAIL E00: local sshd config rejected" >&2
+    return 1
+  fi
+
+  "$sshd" -D -f "$cfg" -E "$TMP/sshd.log" &
+  SSHD_PID=$!
+
+  # Wait for the listener instead of sleeping a magic number.
+  local i ready=0
+  for i in $(seq 1 60); do
+    if ! kill -0 "$SSHD_PID" 2>/dev/null; then
+      echo "FAIL E00: local sshd exited during startup" >&2
+      return 1
+    fi
+    if ! port_is_free "$port"; then
+      ready=1
+      break
+    fi
+    sleep 0.1
+  done
+  if [[ "$ready" -ne 1 ]]; then
+    echo "FAIL E00: local sshd never listened on 127.0.0.1:$port" >&2
+    return 1
+  fi
+
+  SSH_CLI_E2E_HOST=127.0.0.1
+  SSH_CLI_E2E_PORT="$port"
+  SSH_CLI_E2E_USER="$(id -un)"
+  export SSH_CLI_E2E_HOST SSH_CLI_E2E_PORT SSH_CLI_E2E_USER
+  return 0
+}
+
+if [[ "$LOCAL_SSHD" -eq 1 ]]; then
+  # Explicit mode never degrades to SKIP: an unusable sshd is a hard failure.
+  if ! start_local_sshd; then
+    echo "---"
+    echo "fails=1 local_sshd=requested_but_unusable"
+    exit 1
+  fi
+fi
+
+# G-E2E-05: offline / no lab → SKIP exit 0 (not FAIL).
+# D1: the skip is no longer silent. When a usable sshd exists, say so, so that a
+# reader can tell "nothing to run" apart from "a runnable matrix was not run".
+if [[ "$LOCAL_SSHD" -eq 0 ]] \
+  && [[ -z "${SSH_CLI_E2E_HOST:-}" || -z "${SSH_CLI_E2E_USER:-}" || -z "${SSH_CLI_E2E_PASSWORD:-}" ]]; then
+  if [[ -n "$(sshd_binary)" ]]; then
+    skip_all "no lab host, but sshd IS available here — re-run with --local-sshd to execute E01-E18"
+  fi
+  skip_all "no lab host and no sshd (set harness SSH_CLI_E2E_* or --from-grok-config / --config-dir / --local-sshd)"
+fi
+SSH_CLI_E2E_PORT="${SSH_CLI_E2E_PORT:-22}"
 
 export SSH_CLI_HOME="$TMP"
 export HOME="$TMP"
@@ -154,26 +313,47 @@ else
   fail E01
 fi
 
-if printf '%s' "$SSH_CLI_E2E_PASSWORD" | cli vps add \
-  --name e2e \
-  --host "$SSH_CLI_E2E_HOST" \
-  --port "$SSH_CLI_E2E_PORT" \
-  --user "$SSH_CLI_E2E_USER" \
-  --password-stdin \
-  --timeout 60000 \
-  --check >/dev/null 2>&1; then
-  if grep -q 'sshcli-enc:v1:' "$TMP/config.toml" 2>/dev/null \
-    && ! grep -Fq "$SSH_CLI_E2E_PASSWORD" "$TMP/config.toml" 2>/dev/null; then
-    pass E02
-  else
-    fail E02
-  fi
+# E02: register the host and prove the secret is encrypted at rest.
+# Local mode authenticates with a passphrase-protected key, so the secret under
+# test is the passphrase; the at-rest assertion is identical either way.
+E02_SECRET=""
+if [[ "$LOCAL_SSHD" -eq 1 ]]; then
+  E02_SECRET="$LOCAL_KEY_PASS"
+  E02_ADDED=0
+  printf '%s' "$LOCAL_KEY_PASS" | cli vps add \
+    --name e2e \
+    --host "$SSH_CLI_E2E_HOST" \
+    --port "$SSH_CLI_E2E_PORT" \
+    --user "$SSH_CLI_E2E_USER" \
+    --key "$LOCAL_KEY" \
+    --key-passphrase-stdin \
+    --timeout 60000 \
+    --check >/dev/null 2>&1 && E02_ADDED=1
+else
+  E02_SECRET="$SSH_CLI_E2E_PASSWORD"
+  E02_ADDED=0
+  printf '%s' "$SSH_CLI_E2E_PASSWORD" | cli vps add \
+    --name e2e \
+    --host "$SSH_CLI_E2E_HOST" \
+    --port "$SSH_CLI_E2E_PORT" \
+    --user "$SSH_CLI_E2E_USER" \
+    --password-stdin \
+    --timeout 60000 \
+    --check >/dev/null 2>&1 && E02_ADDED=1
+fi
+# The prefix is matched version-agnostically. This assertion was frozen at
+# `sshcli-enc:v1:` while the product had already moved to v2 — a stale literal
+# nobody could notice, because the harness had never executed (D1).
+if [[ "$E02_ADDED" -eq 1 ]] \
+  && rg -q 'sshcli-enc:v[0-9]+:' "$TMP/config.toml" 2>/dev/null \
+  && ! rg -qF "$E02_SECRET" "$TMP/config.toml" 2>/dev/null; then
+  pass E02
 else
   fail E02
 fi
 
 OUT="$(cli exec e2e 'echo e2e-ok' 2>/dev/null || true)"
-if echo "$OUT" | grep -q 'e2e-ok'; then
+if printf '%s' "$OUT" | rg -q 'e2e-ok'; then
   pass E03
 else
   fail E03
@@ -196,27 +376,30 @@ else
 fi
 
 DOUT="$(cli vps doctor 2>/dev/null || true)"
-if echo "$DOUT" | grep -q 'encrypted'; then
+if printf '%s' "$DOUT" | rg -q 'encrypted'; then
   pass E06
 else
   fail E06
 fi
 
+# E07: the registered secret must never surface in list/show output.
+# Uses E02_SECRET, not SSH_CLI_E2E_PASSWORD: under --local-sshd the password is
+# empty, and `rg -F ""` matches every line, which would fail E07 spuriously.
 LOUT="$(cli vps list 2>/dev/null || true)$(cli vps show e2e 2>/dev/null || true)"
-if echo "$LOUT" | grep -Fq "$SSH_CLI_E2E_PASSWORD"; then
+if [[ -n "$E02_SECRET" ]] && printf '%s' "$LOUT" | rg -qF "$E02_SECRET"; then
   fail E07
 else
   pass E07
 fi
 
-if ! cli exec e2e --timeout 2000 'sleep 30' >/dev/null 2>&1; then
+if ! cli exec --timeout 2000 e2e 'sleep 30' >/dev/null 2>&1; then
   pass E08
 else
   soft E08 "sleep completed within timeout"
 fi
 
 OUT2="$(cli exec e2e 'echo e2e-ok' 2>/dev/null || true)"
-if echo "$OUT2" | grep -q 'e2e-ok'; then
+if printf '%s' "$OUT2" | rg -q 'e2e-ok'; then
   pass E09
 else
   fail E09
@@ -238,17 +421,17 @@ printf 'space-payload\n' >"$UP_SPACE"
 dd if=/dev/urandom of="$UP_1M" bs=1024 count=1024 status=none 2>/dev/null || \
   head -c 1048576 /dev/urandom >"$UP_1M"
 
-if cli scp upload e2e --timeout 120000 "$UP_PLAIN" "$REMOTE_SCP" >/dev/null 2>&1 \
-  && cli scp upload e2e --timeout 120000 "$UP_SPACE" "$REMOTE_SPACE" >/dev/null 2>&1 \
-  && cli scp upload e2e --timeout 180000 "$UP_1M" "${REMOTE_SCP}.1m" >/dev/null 2>&1; then
+if cli scp upload --timeout 120000 e2e "$UP_PLAIN" "$REMOTE_SCP" >/dev/null 2>&1 \
+  && cli scp upload --timeout 120000 e2e "$UP_SPACE" "$REMOTE_SPACE" >/dev/null 2>&1 \
+  && cli scp upload --timeout 180000 e2e "$UP_1M" "${REMOTE_SCP}.1m" >/dev/null 2>&1; then
   pass E10
 else
   fail E10
 fi
 
-if cli scp download e2e --timeout 120000 "$REMOTE_SCP" "$DOWN_PLAIN" >/dev/null 2>&1 \
-  && cli scp download e2e --timeout 120000 "$REMOTE_SPACE" "$DOWN_SPACE" >/dev/null 2>&1 \
-  && cli scp download e2e --timeout 180000 "${REMOTE_SCP}.1m" "$DOWN_1M" >/dev/null 2>&1; then
+if cli scp download --timeout 120000 e2e "$REMOTE_SCP" "$DOWN_PLAIN" >/dev/null 2>&1 \
+  && cli scp download --timeout 120000 e2e "$REMOTE_SPACE" "$DOWN_SPACE" >/dev/null 2>&1 \
+  && cli scp download --timeout 180000 e2e "${REMOTE_SCP}.1m" "$DOWN_1M" >/dev/null 2>&1; then
   pass E11
 else
   fail E11
@@ -264,7 +447,7 @@ fi
 
 # E13: remote missing → exit 66 (ArquivoNaoEncontrado / GAP-SSH-IO-010); no residual local file
 set +e
-cli scp download e2e --timeout 30000 "/tmp/ssh-cli-e2e-missing-$$-no-such" "$TMP/should-not-exist" >/dev/null 2>&1
+cli scp download --timeout 30000 e2e "/tmp/ssh-cli-e2e-missing-$$-no-such" "$TMP/should-not-exist" >/dev/null 2>&1
 E13_EC=$?
 set -e
 if [[ "$E13_EC" -eq 66 && ! -f "$TMP/should-not-exist" ]]; then
@@ -279,27 +462,17 @@ PRESERVE_REMOTE="/tmp/ssh-cli-e2e-preserve-$$.bin"
 PRESERVE_DOWN="$TMP/preserve-down.bin"
 printf 'preserve-payload\n' >"$PRESERVE_LOCAL"
 chmod 600 "$PRESERVE_LOCAL"
-# Epoch seconds (portable): avoid TZ ambiguity of touch -d strings
-python3 - "$PRESERVE_LOCAL" <<'PY' || true
-import os, sys, time
-path = sys.argv[1]
-epoch = 1_579_089_600  # 2020-01-15 12:00:00 UTC
-os.utime(path, (epoch, epoch))
-PY
+# Epoch seconds (portable): @epoch avoids the TZ ambiguity of touch -d strings.
+touch -d "@1579089600" "$PRESERVE_LOCAL" || true  # 2020-01-15 12:00:00 UTC
 LOCAL_MODE="$(stat -c '%a' "$PRESERVE_LOCAL" 2>/dev/null || stat -f '%OLp' "$PRESERVE_LOCAL")"
 LOCAL_MTIME="$(stat -c '%Y' "$PRESERVE_LOCAL" 2>/dev/null || stat -f '%m' "$PRESERVE_LOCAL")"
-if cli scp upload e2e --timeout 60000 "$PRESERVE_LOCAL" "$PRESERVE_REMOTE" >/dev/null 2>&1 \
-  && cli scp download e2e --timeout 60000 "$PRESERVE_REMOTE" "$PRESERVE_DOWN" >/dev/null 2>&1; then
+if cli scp upload --timeout 60000 e2e "$PRESERVE_LOCAL" "$PRESERVE_REMOTE" >/dev/null 2>&1 \
+  && cli scp download --timeout 60000 e2e "$PRESERVE_REMOTE" "$PRESERVE_DOWN" >/dev/null 2>&1; then
   # Non-TTY default is JSON envelope — extract stdout field (text format has banners).
-  REMOTE_JSON="$(cli exec e2e --json --timeout 30000 "stat -c '%a %Y' $(printf '%q' "$PRESERVE_REMOTE")" 2>/dev/null || true)"
-  REMOTE_LINE="$(printf '%s' "$REMOTE_JSON" | python3 -c 'import sys,json
-try:
-  d=json.load(sys.stdin)
-  print((d.get("stdout") or "").strip().splitlines()[0] if (d.get("stdout") or "").strip() else "")
-except Exception:
-  print("")' 2>/dev/null || true)"
-  REMOTE_MODE="$(printf '%s\n' "$REMOTE_LINE" | awk '{print $1}')"
-  REMOTE_MTIME="$(printf '%s\n' "$REMOTE_LINE" | awk '{print $2}')"
+  REMOTE_JSON="$(cli exec --json --timeout 30000 e2e "stat -c '%a %Y' $(printf '%q' "$PRESERVE_REMOTE")" 2>/dev/null || true)"
+  REMOTE_LINE="$(printf '%s' "$REMOTE_JSON" | jaq -r '(.stdout // "") | split("\n") | .[0] // ""' 2>/dev/null || true)"
+  REMOTE_MODE="$(printf '%s\n' "$REMOTE_LINE" | choose 0)"
+  REMOTE_MTIME="$(printf '%s\n' "$REMOTE_LINE" | choose 1)"
   DOWN_MODE="$(stat -c '%a' "$PRESERVE_DOWN" 2>/dev/null || stat -f '%OLp' "$PRESERVE_DOWN")"
   DOWN_MTIME="$(stat -c '%Y' "$PRESERVE_DOWN" 2>/dev/null || stat -f '%m' "$PRESERVE_DOWN")"
   if [[ "$REMOTE_MODE" == "$LOCAL_MODE" && "$REMOTE_MTIME" == "$LOCAL_MTIME" \
@@ -311,30 +484,19 @@ except Exception:
 else
   fail E14
 fi
-cli exec e2e --json "rm -f $(printf '%q' "$PRESERVE_REMOTE")" >/dev/null 2>&1 || true
+cli exec --json e2e "rm -f $(printf '%q' "$PRESERVE_REMOTE")" >/dev/null 2>&1 || true
 
 # E15: GAP-SSH-TUN-003 — local port 0 binds ephemeral; JSON local_port must be >= 1
 TUN_JSON_OUT="$TMP/tunnel-e15.json"
 set +e
 # wall timeout; tunnel --timeout-ms 2000 one-shot post-bind exit 0
-timeout 8 "$BIN" --config-dir "$TMP" --output-format json tunnel e2e 0 127.0.0.1 22 --timeout-ms 2000 --json >"$TUN_JSON_OUT" 2>/dev/null
+timeout 8 "$BIN" --config-dir "$TMP" --output-format json tunnel e2e 0 127.0.0.1 "$SSH_CLI_E2E_PORT" --timeout-ms 2000 --json >"$TUN_JSON_OUT" 2>/dev/null
 set -e
-if python3 - "$TUN_JSON_OUT" <<'PY'
-import json, sys
-path = sys.argv[1]
-try:
-    with open(path) as f:
-        raw = f.read().strip()
-    # first complete JSON object
-    d = json.loads(raw)
-    lp = int(d.get("local_port") or 0)
-    ev = d.get("event")
-    ok = d.get("ok") is True and ev == "tunnel_listening" and lp >= 1
-    sys.exit(0 if ok else 1)
-except Exception:
-    sys.exit(1)
-PY
-then
+# `tunnel` legitimately emits NDJSON: `tunnel_listening` then `tunnel_closed`.
+# A bare `jaq -e` reports the status of the LAST document, so it would judge the
+# run by the close event and always fail. Slurp and look for the bind event.
+if jaq -s -e 'any(.[]; .ok == true and .event == "tunnel_listening" and ((.local_port // 0) >= 1))' \
+    "$TUN_JSON_OUT" >/dev/null 2>&1; then
   pass E15
 else
   fail E15
@@ -347,8 +509,8 @@ SYM_REMOTE="/tmp/ssh-cli-e2e-symlink-$$.txt"
 SYM_DOWN="$TMP/symlink-down.txt"
 printf 'symlink-payload-v1\n' >"$SYM_TARGET"
 ln -sfn "$SYM_TARGET" "$SYM_LINK"
-if cli scp upload e2e --timeout 60000 "$SYM_LINK" "$SYM_REMOTE" >/dev/null 2>&1 \
-  && cli scp download e2e --timeout 60000 "$SYM_REMOTE" "$SYM_DOWN" >/dev/null 2>&1 \
+if cli scp upload --timeout 60000 e2e "$SYM_LINK" "$SYM_REMOTE" >/dev/null 2>&1 \
+  && cli scp download --timeout 60000 e2e "$SYM_REMOTE" "$SYM_DOWN" >/dev/null 2>&1 \
   && cmp -s "$SYM_TARGET" "$SYM_DOWN"; then
   pass E16
 else
@@ -370,20 +532,20 @@ for SFTP_SIZE in 0 1 760 32768 32769 65536; do
     dd if=/dev/urandom of="$SFTP_LOCAL" bs=1 count="$SFTP_SIZE" status=none 2>/dev/null \
       || head -c "$SFTP_SIZE" /dev/urandom >"$SFTP_LOCAL"
   fi
-  LOCAL_HASH="$(sha256sum "$SFTP_LOCAL" | awk '{print $1}')"
-  if ! cli sftp upload e2e --timeout 60000 "$SFTP_LOCAL" "$SFTP_REMOTE" >/dev/null 2>&1; then
+  LOCAL_HASH="$(sha256sum "$SFTP_LOCAL" | choose 0)"
+  if ! cli sftp upload --timeout 60000 e2e "$SFTP_LOCAL" "$SFTP_REMOTE" >/dev/null 2>&1; then
     SFTP_OK=0
     break
   fi
   # Measure EFFECT on destination via remote sha256 — not the JSON bytes field.
-  REMOTE_HASH="$(cli exec e2e --json "sha256sum $(printf '%q' "$SFTP_REMOTE")" 2>/dev/null \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("stdout") or "").split()[0] if d.get("stdout") else "")' 2>/dev/null || true)"
+  REMOTE_HASH="$(cli exec --json e2e "sha256sum $(printf '%q' "$SFTP_REMOTE")" 2>/dev/null \
+    | jaq -r '(.stdout // "") | split(" ") | .[0] // ""' 2>/dev/null || true)"
   if [[ -z "$REMOTE_HASH" || "$REMOTE_HASH" != "$LOCAL_HASH" ]]; then
     SFTP_OK=0
     cli exec e2e "rm -f $(printf '%q' "$SFTP_REMOTE")" >/dev/null 2>&1 || true
     break
   fi
-  if ! cli sftp download e2e --timeout 60000 "$SFTP_REMOTE" "$SFTP_DOWN" >/dev/null 2>&1 \
+  if ! cli sftp download --timeout 60000 e2e "$SFTP_REMOTE" "$SFTP_DOWN" >/dev/null 2>&1 \
     || ! cmp -s "$SFTP_LOCAL" "$SFTP_DOWN"; then
     SFTP_OK=0
     cli exec e2e "rm -f $(printf '%q' "$SFTP_REMOTE")" >/dev/null 2>&1 || true
@@ -403,10 +565,10 @@ mkdir -p "$SFTP_TREE/sub"
 printf 'leaf-a\n' >"$SFTP_TREE/a.txt"
 printf 'leaf-b\n' >"$SFTP_TREE/sub/b.txt"
 SFTP_TREE_REMOTE="/tmp/ssh-cli-e2e-sftp-tree-$$"
-LEAF_HASH="$(sha256sum "$SFTP_TREE/sub/b.txt" | awk '{print $1}')"
-if cli sftp upload e2e --recursive --timeout 120000 "$SFTP_TREE" "$SFTP_TREE_REMOTE" >/dev/null 2>&1; then
-  REMOTE_LEAF_HASH="$(cli exec e2e --json "sha256sum $(printf '%q' "$SFTP_TREE_REMOTE/sub/b.txt")" 2>/dev/null \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("stdout") or "").split()[0] if d.get("stdout") else "")' 2>/dev/null || true)"
+LEAF_HASH="$(sha256sum "$SFTP_TREE/sub/b.txt" | choose 0)"
+if cli sftp upload --recursive --timeout 120000 e2e "$SFTP_TREE" "$SFTP_TREE_REMOTE" >/dev/null 2>&1; then
+  REMOTE_LEAF_HASH="$(cli exec --json e2e "sha256sum $(printf '%q' "$SFTP_TREE_REMOTE/sub/b.txt")" 2>/dev/null \
+    | jaq -r '(.stdout // "") | split(" ") | .[0] // ""' 2>/dev/null || true)"
   if [[ -n "$REMOTE_LEAF_HASH" && "$REMOTE_LEAF_HASH" == "$LEAF_HASH" ]]; then
     pass E18
   else

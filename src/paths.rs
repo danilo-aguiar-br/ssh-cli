@@ -187,6 +187,16 @@ pub const MAX_CONFIG_TOML_BYTES: u64 = 4 * 1024 * 1024;
 /// Cap for TOFU `known_hosts` text file.
 pub const MAX_KNOWN_HOSTS_BYTES: u64 = 1_024 * 1024;
 
+/// Maximum size of a PEM file accepted by `tls mtls import`.
+///
+/// Unlike the other caps here, this one guards an operator-supplied path rather than a
+/// file the CLI wrote itself. `tls mtls import` read it with an unbounded `fs::read`,
+/// so pointing the flag at a large file — by typo or by a script composing paths —
+/// pulled the whole thing into memory before anything validated it. A full certificate
+/// chain with a private key is a few kilobytes; 1 MiB is generous by three orders of
+/// magnitude and still bounded.
+pub const MAX_PEM_FILE_BYTES: u64 = 1_024 * 1024;
+
 const _: () = assert!(MAX_SECRETS_KEY_FILE_BYTES >= 64);
 const _: () = assert!(MAX_CONFIG_TOML_BYTES >= 4_096);
 const _: () = assert!(MAX_KNOWN_HOSTS_BYTES >= 256);
@@ -297,6 +307,52 @@ pub fn read_text_capped(path: &std::path::Path, max_bytes: u64) -> std::io::Resu
     let mut limited = file.take(max_bytes.saturating_add(1));
     let mut buf = String::new();
     limited.read_to_string(&mut buf)?;
+    if (buf.len() as u64) > max_bytes {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "file {} exceeds max size of {max_bytes} bytes",
+                path.display()
+            ),
+        ));
+    }
+    Ok(buf)
+}
+
+/// Reads a file as bytes, refusing anything larger than `max_bytes`.
+///
+/// Byte-oriented twin of [`read_text_capped`] for content that is not required to be
+/// UTF-8 — PEM material is base64 in practice but its DER neighbours are not, and
+/// rejecting a valid certificate over an encoding assumption would be a worse failure
+/// than the one this cap exists to prevent.
+///
+/// The size is checked twice on purpose: `metadata` can race with a writer, so the
+/// `take` provides the guarantee and the up-front check merely avoids opening a file
+/// that is already known to be too large.
+///
+/// # Errors
+/// [`std::io::ErrorKind::InvalidData`] when the file exceeds `max_bytes`; any other
+/// I/O error from `metadata`, `open` or the read itself.
+pub fn read_bytes_capped(path: &std::path::Path, max_bytes: u64) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+
+    let meta = std::fs::metadata(path)?;
+    if meta.len() > max_bytes {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "file {} exceeds max size of {max_bytes} bytes",
+                path.display()
+            ),
+        ));
+    }
+
+    let file = std::fs::File::open(path)?;
+    let mut limited = file.take(max_bytes.saturating_add(1));
+    // Sized from the metadata rather than grown from empty: the length is already known
+    // and the cap above bounds it, so one allocation replaces a doubling sequence.
+    let mut buf = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
+    limited.read_to_end(&mut buf)?;
     if (buf.len() as u64) > max_bytes {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,

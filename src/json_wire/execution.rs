@@ -164,6 +164,31 @@ pub struct ScpTransferJson {
     pub bytes: u64,
     /// Duration in milliseconds.
     pub duration_ms: u64,
+    /// Whether the remote modification time landed on the local file.
+    ///
+    /// G-SCP-R01: the CLI documented mtime preservation as a guarantee while treating
+    /// it as best-effort in code, and the failure was discarded at two nesting levels.
+    /// A build pipeline that decides whether to recompile by comparing mtime could act
+    /// on a timestamp that was never applied, with the symptom surfacing far from the
+    /// cause. Additive and defaulted to `true`, so events written before this field
+    /// existed still deserialize and pre-existing consumers are unaffected.
+    #[serde(default = "default_true")]
+    pub mtime_preserved: bool,
+    /// Whether the parent directory was fsynced after the atomic rename.
+    ///
+    /// G-SCP-R02: the rename is atomic but the directory entry is not durable until it
+    /// is flushed. Success was reported unqualified, so an agent could not tell a
+    /// durable write from one that a power loss would erase.
+    #[serde(default = "default_true")]
+    pub durable: bool,
+}
+
+/// Wire default for the additive SCP durability flags.
+///
+/// `true` rather than `false`: an event that predates the fields was emitted by a
+/// build that never reported a failure, so assuming loss would invent one.
+fn default_true() -> bool {
+    true
 }
 
 /// `sftp upload|download --json` success stdout (G-SFTP-09).
@@ -286,4 +311,82 @@ pub struct TunnelListeningJson {
     pub remote_port: u16,
     /// One-shot timeout in milliseconds.
     pub timeout_ms: u64,
+    /// Effective local bind address.
+    ///
+    /// G-TUN-R06: without this an agent could not tell a `127.0.0.1` bind from a
+    /// `0.0.0.0` one, so it had no way to audit — from the structured contract alone —
+    /// whether it had just published a remote database to the local network. Additive
+    /// field: existing consumers are unaffected.
+    pub bind: String,
+    /// Which tunnel mode is serving: `local`, `socks5`, `streamlocal` or `reverse`.
+    ///
+    /// The other fields are read differently per mode — `local_port` is a local
+    /// listener for three of them and the *server's* port for `reverse`, and
+    /// `remote_host` is a concrete target except under SOCKS5, where the
+    /// destination is chosen per connection. Without this discriminator an agent
+    /// would have to infer the mode from the flags it passed, which stops working
+    /// the moment anything else launches the tunnel.
+    #[serde(default = "default_tunnel_mode")]
+    pub mode: String,
+}
+
+/// Wire default for [`TunnelListeningJson::mode`] / [`TunnelClosedJson::mode`].
+///
+/// Events written before the mode field existed can only have been plain local
+/// forwards, so deserializing them as `local` is a statement of fact rather than
+/// a guess.
+fn default_tunnel_mode() -> String {
+    "local".to_string()
+}
+
+/// Reason a tunnel stopped serving, reported by [`TunnelClosedJson`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TunnelCloseReason {
+    /// The `--timeout-ms` deadline elapsed after a successful bind (exit 0).
+    Deadline,
+    /// SIGINT / SIGTERM arrived.
+    Signal,
+    /// The accept loop hit a fatal error and stopped early.
+    AcceptError,
+}
+
+/// `tunnel --json` shutdown event.
+///
+/// G-TUN-R07: the tunnel used to emit `tunnel_listening` and then fall silent until
+/// death, so three very different endings shared exit 0 — deadline reached, signal
+/// received, and a fatal accept error that broke the loop early. The last case was
+/// the worst: because `bound` was already true, the timeout wrapper returned `Ok(())`
+/// and the process reported success even though it had stopped accepting connections
+/// seconds into a five-minute deadline. Those are now distinguishable.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TunnelClosedJson {
+    /// `true` when the tunnel served its full lifetime.
+    pub ok: bool,
+    /// Discriminator: `"tunnel_closed"`.
+    pub event: String,
+    /// VPS name.
+    pub vps: String,
+    /// Why the tunnel stopped.
+    pub reason: TunnelCloseReason,
+    /// Effective local bind address.
+    pub bind: String,
+    /// Local listen port that was served.
+    pub local_port: u16,
+    /// Connections accepted and forwarded during the tunnel's lifetime.
+    ///
+    /// G-TUN-R11: answers the most basic diagnostic question — did anything ever
+    /// connect? A tunnel that bound correctly but was never used produced output
+    /// identical to one that served five hundred connections.
+    pub forwards_served: u64,
+    /// Times a new connection had to wait for a concurrency permit.
+    ///
+    /// G-TUN-R12: saturation was previously invisible, so the symptom was rising
+    /// latency with no stated cause and the operator could hunt the network instead.
+    pub capacity_waits: u64,
+    /// Wall-clock lifetime in milliseconds.
+    pub duration_ms: u64,
+    /// Which tunnel mode was serving (mirrors [`TunnelListeningJson::mode`]).
+    #[serde(default = "default_tunnel_mode")]
+    pub mode: String,
 }

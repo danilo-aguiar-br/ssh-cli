@@ -111,15 +111,7 @@ fn message_vps_registry_empty_pt_differs_en() {
 fn variantes_unitarias_nao_vazias_em_ambos_idiomas() {
     let unit_variants = [
         Message::VpsRegistryEmpty,
-        Message::VpsListTitle,
-        Message::ConfigPathLabel,
-        Message::ConfigNoKeys,
-        Message::ErrorLoadConfig,
-        Message::ErrorSaveConfig,
-        Message::ErrorSshConnection,
-        Message::ErrorCommandFailed,
         Message::TunnelPressCtrlC,
-        Message::HealthCheckNoVps,
         Message::OperationCancelled,
         Message::LocalePreferenceCleared,
         Message::LocaleStatusTitle,
@@ -175,18 +167,18 @@ fn variantes_com_campos_incluem_dados_dinamicos() {
             "prod-01",
         ),
         (
-            Message::HealthCheckFailed {
-                name: "test-vps".to_string(),
+            // B2: replaces the unreachable `HealthCheckFailed`; this variant is
+            // the one the error path actually renders now.
+            Message::ErrorSshConnection {
                 detail: "connection refused".to_string(),
             },
-            "test-vps",
+            "connection refused",
         ),
         (
-            Message::HealthCheckLatency {
-                name: "relay-01".to_string(),
-                latency_ms: 42,
+            Message::ErrorUnavailable {
+                service: "keyring".to_string(),
             },
-            "relay-01",
+            "keyring",
         ),
         (
             Message::LocalePreferenceSaved {
@@ -213,12 +205,16 @@ fn variantes_com_campos_incluem_dados_dinamicos() {
 }
 
 #[test]
-fn tunnel_active_includes_port_host_and_vps() {
-    let msg = Message::TunnelActive {
-        local_port: 8080,
+fn tunnel_local_listening_includes_port_host_and_vps() {
+    // B2: `TunnelActive` was superseded by the per-mode listening variants that
+    // closed the recorded tunnel incident; only the survivor is asserted here.
+    let msg = Message::TunnelLocalListening {
+        bind: "127.0.0.1".to_string(),
+        port: 8080,
         remote_host: "10.0.0.1".to_string(),
         remote_port: 22,
-        vps_name: "relay-01".to_string(),
+        vps: "relay-01".to_string(),
+        timeout_ms: 1_000,
     };
     let en = msg.text(Language::English);
     let pt = msg.text(Language::Portuguese);

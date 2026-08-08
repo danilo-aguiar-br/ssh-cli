@@ -14,7 +14,7 @@
 /// Resource: single pass via `char_indices().nth`; fast-path when `content.len() <= max_chars`
 /// (each scalar is ≥ 1 byte, so byte length bounds char count from above).
 ///
-/// Prefer [`take_utf8_capped`] on the exec path when you already own a `Vec<u8>` —
+/// Prefer `take_utf8_capped` on the exec path when you already own a `Vec<u8>` —
 /// that reuses the buffer instead of allocating a second copy.
 #[must_use]
 pub fn truncate_utf8(content: &str, max_chars: usize) -> (String, bool) {

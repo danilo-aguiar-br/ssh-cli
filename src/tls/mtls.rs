@@ -35,9 +35,13 @@ pub fn mtls_import(
     let cert_path = cert_pem_path(&dir);
     let key_path = key_pem_path(&dir);
 
-    let cert_bytes = std::fs::read(cert_src)
+    // Bounded: these are the only two reads in the crate that take an operator-supplied
+    // path with no cap. PEM material is kilobytes; refusing beyond `MAX_PEM_FILE_BYTES`
+    // costs nothing legitimate and removes the one unbounded allocation an argument
+    // could steer.
+    let cert_bytes = crate::paths::read_bytes_capped(cert_src, crate::paths::MAX_PEM_FILE_BYTES)
         .map_err(|e| SshCliError::tls_msg(format!("read {}: {e}", cert_src.display())))?;
-    let key_bytes = std::fs::read(key_src)
+    let key_bytes = crate::paths::read_bytes_capped(key_src, crate::paths::MAX_PEM_FILE_BYTES)
         .map_err(|e| SshCliError::tls_msg(format!("read {}: {e}", key_src.display())))?;
     write_secret_file(&cert_path, &cert_bytes)?;
     write_secret_file(&key_path, &key_bytes)?;

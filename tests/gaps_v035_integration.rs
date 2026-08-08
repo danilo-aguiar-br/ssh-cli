@@ -184,7 +184,7 @@ fn secrets_encrypt_on_disk_when_key_set() {
         .success();
     let toml = std::fs::read_to_string(tmp.path().join("config.toml")).unwrap();
     assert!(
-        toml.contains("sshcli-enc:v1:"),
+        toml.contains("sshcli-enc:v2:"),
         "password must be encrypted on disk"
     );
     assert!(!toml.contains("fake-test-password-not-real-enc"));
@@ -283,7 +283,7 @@ fn default_encryption_auto_key_file() {
         .assert()
         .success();
     let toml = std::fs::read_to_string(tmp.path().join("config.toml")).unwrap();
-    assert!(toml.contains("sshcli-enc:v1:"));
+    assert!(toml.contains("sshcli-enc:v2:"));
     assert!(!toml.contains("fake-default-enc-password-xyz"));
     assert!(tmp.path().join("secrets.key").is_file());
     cmd_enc_default(&tmp)
@@ -329,6 +329,6 @@ fn secrets_init_and_reencrypt() {
         .assert()
         .success();
     let toml_enc = std::fs::read_to_string(tmp.path().join("config.toml")).unwrap();
-    assert!(toml_enc.contains("sshcli-enc:v1:"));
+    assert!(toml_enc.contains("sshcli-enc:v2:"));
     assert!(!toml_enc.contains("fake-reencrypt-password-abc"));
 }

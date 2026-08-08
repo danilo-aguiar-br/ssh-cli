@@ -1,10 +1,13 @@
 # How to Use ssh-cli
 
+> **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
+
+
 > Go from install to first remote command in under 60 seconds.
 
 - Read this document in [Portuguese (pt-BR)](HOW_TO_USE.pt-BR.md).
 - Return to [README.md](../README.md) for the full command map.
-- Product line documented here: 0.5.3.
+- Product line documented here: 0.5.4.
 
 
 ## Prerequisites
@@ -65,7 +68,7 @@ ssh-cli exec demo "uname -a" --json
 | `sftp rm` | Remove a remote file |
 | `sftp stat` | Stat a remote path |
 | `sftp rename` | Rename/move a remote path |
-| `tunnel` | Local port-forward with required `--timeout-ms` |
+| `tunnel` | Port-forward with required `--timeout-ms`; four modes (local, `--reverse`, `--socks5`, `--remote-socket`) |
 | `health-check` | Probe connectivity / latency |
 | `secrets status` | Encryption mode without printing the key |
 | `secrets init` | Create primary-key (never prints it) |
@@ -104,7 +107,7 @@ ssh-cli exec demo "uname -a" --json
 - Missing local/remote file on SCP exits 66 with message `file not found: <path>` (path is canonical/normalized; no stacked `SCP:` prefixes).
 - Failed download keeps the final path untouched: writes `{path}.ssh-cli.partial`, applies mode/times on the partial, then atomic rename. SCP download propagates `sync_data` failure before rename (G9).
 - Upload streams in 32 KiB chunks (does not load the whole file into RAM).
-- mtime/mode are preserved both directions automatically (remote `scp -tp` / `-fp`; no extra user flag).
+- mtime/mode preservation is attempted both directions automatically (remote `scp -tp` / `-fp`; no extra user flag) and is **best-effort**: the `scp-transfer` event reports `mtime_preserved` and `durable` so you never have to guess (G-SCP-R01/R02).
 - Manage primary-key with `ssh-cli secrets status|init|reencrypt` (never prints the key). Keyring may still accept the legacy `secrets-master-key` alias on read.
 - `secrets init --json` / `secrets reencrypt --json` emit success events (`secrets-init`, `secrets-reencrypt`; schemas `docs/schemas/secrets-init.schema.json`, `docs/schemas/secrets-reencrypt.schema.json`); first secret write may set field `secrets_key_auto_created: true` on the same `vps-added` JSON document (never a second stdout event). See [docs/schemas/README.md](schemas/README.md).
 - CRUD success JSON events when JSON is effective: `vps-added`, `vps-edited`, `vps-removed`, `vps-connected`, `vps-import` (with field `secrets_key_auto_created` when a key is auto-created — one document). Catalog: [docs/schemas/README.md](schemas/README.md).
@@ -114,7 +117,7 @@ ssh-cli exec demo "uname -a" --json
 ### Integrity, trees, and metadata
 - Prefer product line **0.5.3+** for all SFTP work. **G1** fixed upload truncation: earlier builds could open the remote file with attributes that zeroed destination content. Always verify with destination checksum (`sha256sum` / remote `sha256sum`) — do not trust client-reported byte counts alone (G15).
 - Recursive trees: `ssh-cli sftp upload --recursive demo ./tree /tmp/tree` and `sftp download --recursive …` (no symlink follow; depth and listing caps apply).
-- SETSTAT sends `atime`+`mtime` together (G3); mutating `set_metadata` is fail-closed (G4); permission bits use `SFTP_PERM_MASK` `0o7777` (G12).
+- SETSTAT sends `atime`+`mtime` together (G3); mutating `set_metadata` is fail-closed (G4); permission bits are masked by direction — upload uses `SFTP_PERM_MASK` `0o7777` (G12), download uses `SFTP_PERM_MASK_UNTRUSTED` `0o0777` so a hostile server cannot put setuid, setgid or sticky on the file you just pulled (A3).
 - Multi-file / batch cancel keeps `results.len() == input.len()` with cancelled remainder filled (G5/G17).
 - Agent JSON: `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch` schemas under `docs/schemas/`.
 - Example integrity check:
@@ -180,6 +183,8 @@ ssh-cli tls acme list
 - Prefer `exec|sudo-exec|su-exec|scp|sftp|health-check --all` when the registry has more than one host — one process, concurrent sessions gated by `--max-concurrency N` (auto CPUs×RAM when omitted, clamp 1..=64).
 - Parse batch JSON via `docs/schemas/*-batch.schema.json` (`health-check-batch`, `exec-batch`, `scp-batch`, `sftp-batch`); envelope includes `max_concurrency`.
 - Example: `ssh-cli --max-concurrency 8 health-check --all --json` then `ssh-cli exec --all 'hostname' --json`.
+- Three selectors exist, and they are mutually exclusive: `--all` (whole registry), `--hosts a,b,c` (explicit subset), and `--tags t1,t2` (every host carrying any of those tags, set with `vps add --tag`). `--tags` is accepted by `exec`, `sudo-exec` and `su-exec` only; `scp`, `sftp` and `health-check` take `--all` and `--hosts`.
+- Example by tag: `ssh-cli exec --tags prod,edge 'uptime' --json` — one process, one `exec-batch` envelope, no need to enumerate names.
 - Do **not** spawn one CLI process per host for fleet work when `--all` is available.
 - On cancel, multi-file SCP/SFTP batch results keep input cardinality (G5/G17).
 
@@ -188,17 +193,67 @@ ssh-cli tls acme list
 - Attach shell comments with `--description` for audit-friendly remote history.
 - Disable elevation for untrusted tasks with `--disable-sudo`.
 - Replace a legitimate host key only after human confirmation using `--replace-host-key` (TOFU).
-- Export redacted inventory with `ssh-cli vps export -o hosts.toml` (default body is TOML, including non-TTY/pipe; non-empty secrets mask as `***` (`FIXED_MASK`); empty secrets stay `""`; never writes fake empty `sshcli-enc:` ciphertext) (EXP-001 / G-E2E-10). List/show empty password is JSON `null` — a different path from export. Help text matches this TOML-default behavior.
+- Export redacted inventory with `ssh-cli --output-format text vps export -o hosts.toml` (without `--output-format text` the body comes out JSON, because it follows the resolved format and an agent's stdout is never a TTY; non-empty secrets mask as `***` (`FIXED_MASK`); empty secrets stay `""`; never writes fake empty `sshcli-enc:` ciphertext) (EXP-001 / G-E2E-10). List/show empty password is JSON `null` — a different path from export.
 - Agent JSON export only with `ssh-cli vps export --json` → envelope `event: "vps-export"` (auto JSON non-TTY does **not** apply to `vps export`).
 - `--include-secrets` requires `-o`/`--output` or `--i-understand-secrets-on-stdout` (pipe/stdout without ack is refused, exit 64).
 - Import hosts with `ssh-cli vps import --file hosts.toml` (TOML EN keys or legacy PT aliases) or a JSON `vps-export` envelope; use `--allow-incomplete` for redacted/skeleton hosts missing full auth.
 - `added_at` / `adicionado_em` are optional on import (serde defaults to now when omitted).
 - Wire inventory uses schema v3: new writes serialize English keys (`name`, `port`, `username`, `password`, `added_at`, …); loads still accept legacy Portuguese aliases (`nome`, `porta`, `usuario`, `senha`, `adicionado_em`).
 - Re-encrypt a plaintext inventory after upgrade: `ssh-cli secrets reencrypt`.
-- Expect auto JSON when stdout is not a TTY unless `--output-format` is set (except `vps export`, which stays TOML unless `--json`).
+- Expect auto JSON when stdout is not a TTY unless `--output-format` is set; `vps export` is NOT an exception, so its body is JSON too, and a TOML body needs `--output-format text`.
 - Expect empty password on key-only hosts as JSON `null` (not `"***"`); non-empty passwords mask as `***`; human text show uses "(não definida)" for empty.
 - On `scp --json` / `sftp --json` failure, parse the JSON error envelope on **stderr** (`exit_code`, `message`), not human prose.
 - Timeout values under 1000 ms warn on stderr (milliseconds, not seconds); password-like values on argv also warn — prefer `--*-stdin`.
+
+
+## Tunnel modes (0.5.4)
+### One bind, one SSH session, four shapes
+- `tunnel` opens **one** local bind and **one** SSH session per invocation (G-PAR-30). Several tunnels means several one-shots with distinct ports.
+- Every mode still requires `--timeout-ms`; a tunnel without a deadline is a daemon, and this CLI does not ship one.
+- Read the JSON `mode` field to know which shape is serving: `local`, `reverse`, `socks5` or `streamlocal`.
+
+Default local forward — reach one fixed remote address:
+
+```bash
+ssh-cli tunnel prod 15432 10.0.0.5 5432 --timeout-ms 60000 --json
+```
+
+`--socks5` — reach **many** destinations through one handshake (G-TUN-R02):
+
+```bash
+ssh-cli tunnel prod 1080 --socks5 --timeout-ms 300000 --json
+```
+
+- Serves a local SOCKS5 proxy (RFC 1928, no-auth plus CONNECT) and chooses the destination **per connection**, so `REMOTE_HOST` and `REMOTE_PORT` are omitted.
+- Prefer this over N `tunnel` processes when an agent must reach N hosts behind one bastion: the SSH handshake is paid once instead of N times.
+
+`--remote-socket` — reach a Unix socket on the server (G-TUN-R03):
+
+```bash
+ssh-cli tunnel prod 2375 --remote-socket /var/run/docker.sock --timeout-ms 60000 --json
+```
+
+- Opens a `direct-streamlocal@openssh.com` channel, which is how targets that never listen on TCP become reachable: Docker, PostgreSQL, systemd.
+- The path must be absolute or the call fails with exit **64**. It is validated as a remote path, so local existence is never consulted — the socket lives on a filesystem this machine cannot see.
+- The client may run on Windows: locally it only speaks TCP. What must support the extension is the server.
+
+`--reverse` — let the **server** listen and deliver back to you (G-TUN-R01):
+
+```bash
+ssh-cli tunnel prod 8080 0.0.0.0 9000 --reverse --i-accept-network-exposure --timeout-ms 120000 --json
+```
+
+- Inverts the direction: the remote host accepts connections and hands them to your local port. This is the path for a callback webhook, a remote debugger pointing at a local IDE, or an inverted bastion.
+- `REMOTE_PORT` may be `0`, which asks the server to allocate and report the port it bound. A local forward cannot accept `0`, because there would be nothing to connect to.
+- Under `--reverse`, `--i-accept-network-exposure` guards the **server's** bind address, since that is the exposed end in this direction.
+
+### Bind safety and shutdown
+- The **local** `--bind` defaults to `127.0.0.1` and is validated by clap as an IP address, so a typo like `127.0.0..1` fails at parse time with exit **2** instead of after resolving the host, opening the session and authenticating (G-TUN-R08).
+- The **remote** bind under `--reverse` is the positional `<remote_host>`, and it is deliberately *not* parsed as an IP: RFC 4254 gives meaning to names and to the empty string (all interfaces), so an IP parser would reject the very forms that matter. A typo there fails at exit **64** from the exposure guard, not exit 2 from clap.
+- Under `--reverse` the `--bind` flag itself is accepted by clap and then **ignored** — delivery is forced to loopback and the flag never reaches the reverse path. Passing `--bind` together with `--reverse` changes nothing and warns about nothing; set the server-side address through `<remote_host>`.
+- Any routable bind requires `--i-accept-network-exposure` (G-TUN-R13). Without it, `--bind 0.0.0.0` used to publish the forwarded remote service to the whole local network in silence.
+- `tunnel --json` emits `tunnel_listening` after the bind — wait for it before using the local port — and `tunnel_closed` on shutdown, carrying `reason`, `forwards_served` and `capacity_waits`.
+- `tunnel_closed` is what distinguishes a clean deadline from a saturated semaphore: all three endings exit 0, so the counters are the only discriminator.
 
 
 ## Global flags of note
@@ -215,6 +270,26 @@ ssh-cli tls acme list
 - `--max-concurrency` — fleet fan-out clamp 1..=64
 - `--fail-fast` — abort remaining multi-host work after first failure
 - `--scp-file-concurrency` — multi-file transfer concurrency bound
+- `--no-input` — refuse to read stdin and fail fast instead of blocking on an absent human
+- `--dry-run` — print the plan for a destructive operation and exit without executing
+- `--select` / `--fields` — keep only these dotted paths in each record
+- `--filter` — keep records matching `key=value`, `key!=value` or `key~substring` (repeatable, AND)
+- `--limit` — emit at most N records (distinct from per-command query limits)
+- `--sort` — sort records ascending by dotted path
+- `--dedupe-by` — drop later records repeating a dotted path's value
+- `--count-only` — replace records with `{"count": N}`, counted after filtering
+- `--truncate-content` — shorten long strings by characters (never bytes; UTF-8 stays valid)
+- `--max-output-bytes` — cap envelope size by dropping trailing records, never slicing JSON
+
+### Where `--dry-run` is accepted
+- Only `vps remove`, `vps import`, `sftp rm`, `sftp rmdir`, `secrets init` and `secrets reencrypt` implement it.
+- Anywhere else it is rejected with exit **64** rather than accepted and ignored, so a rehearsal is never mistaken for an operation that already ran.
+- Example: `ssh-cli vps remove old-host --dry-run --json` prints the plan and changes nothing.
+
+### Why shaping beats piping
+- The eight shaping flags apply **before** serialization, so the oversized envelope is never built.
+- Piping stdout through an external JSON tool pays the full token cost first and shrinks the payload afterwards.
+- Example: `ssh-cli health-check --all --json --select name,ok --filter ok=false` returns only the failures, with two fields each.
 
 
 ## Configuration
@@ -236,8 +311,8 @@ ssh-cli tls acme list
 - `health-check [--timeout <ms>]` probes connectivity and prints latency (`vps add --check` after register); override timeout when the host default is too long or short.
 - Health-check auth parity (0.4.1+ / CLI-006): `--password-stdin` / `--key` / `--key-passphrase` / `--key-passphrase-stdin`.
 - Default tracing level is error; use `-v`/`-vv`/`-vvv` when diagnosing (ambient `RUST_LOG` is ignored).
-- `tunnel` requires local port, remote host, remote port, and `--timeout-ms`.
-- Tunnel `--bind` defaults to `127.0.0.1` (loopback); override only when you intentionally expose the listener.
+- `tunnel` requires a local port and `--timeout-ms`; remote host and port are required for the default local forward but omitted under `--socks5` and `--remote-socket` (see Tunnel modes above).
+- Tunnel `--bind` defaults to `127.0.0.1` (loopback); a routable bind requires `--i-accept-network-exposure`.
 - Optional `tunnel --json` emits structured `event: "tunnel_listening"` on stdout after the local bind (`docs/schemas/tunnel-listening.schema.json`); after the agent receives the event, the post-bind deadline ends with exit 0 (TUN-002); pre-bind timeout still 74.
 - Tunnel auth parity (CLI-005): `--password-stdin` / `--key` / `--key-passphrase` / `--key-passphrase-stdin`.
 - `completions` writes shell completion scripts to stdout.
@@ -257,11 +332,13 @@ ssh-cli tls acme list
 | 66 (`EX_NOINPUT`) | VPS not found, no active VPS, or missing file (`file not found: <path>` on SCP) |
 | 73 (`EX_CANTCREAT`) | Config write / create failure |
 | 74 (`EX_IOERR`) | Connection/IO/timeout |
+| 69 (`EX_UNAVAILABLE`) | A host service the CLI depends on is not answering (OS keyring). **Transient** — the same argv succeeds once it is up (G-ERR-R01) |
+| 70 (`EX_SOFTWARE`) | Internal failure with no user-fixable input (CSPRNG unavailable). **Permanent** — retrying unchanged will not help |
 | 77 (`EX_NOPERM`) | Authentication failed / host-key policy / permission / sudo disabled |
 | 130 | SIGINT |
 | 143 | SIGTERM |
 
-Product line: 0.5.3.
+Product line: 0.5.4.
 
 
 ## Integration With AI Agents

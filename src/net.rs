@@ -8,7 +8,7 @@
 //! never stick on a blackholed first address (`addrs.next().unwrap()` antipattern).
 //!
 //! - **DNS:** async via [`tokio::net::lookup_host`] (cancelable with outer timeouts).
-//! - **Dial:** try all resolved [`SocketAddr`]s; race families with a short delay
+//! - **Dial:** try all resolved [`std::net::SocketAddr`]s; race families with a short delay
 //!   (RFC 8305-inspired) and abort losers on first success.
 //! - **Workload:** pure I/O; no CPU fan-out, no Rayon.
 

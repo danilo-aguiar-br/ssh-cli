@@ -6,7 +6,7 @@
 //! Compile-time values with semantic names live here. Runtime host credentials,
 //! per-VPS timeouts, and primary-key material are **never** hardcoded: they are
 //! loaded once from CLI / OS keyring / XDG files under
-//! [`APP_NAME`] (`directories::ProjectDirs` + optional `--config-dir`).
+//! [`crate::constants::APP_NAME`] (`directories::ProjectDirs` + optional `--config-dir`).
 //!
 //! ## 12-Factor alignment (this product)
 //!
@@ -127,6 +127,36 @@ pub const TUNNEL_CHANNEL_ORIGIN_ADDR: &str = "127.0.0.1";
 /// Origin port advertised on SSH direct-tcpip channels (`0` = ephemeral/unspecified).
 pub const TUNNEL_CHANNEL_ORIGIN_PORT: u16 = 0;
 
+/// Bind address requested from the server for `tunnel --reverse` (loopback default).
+///
+/// Empty would mean "all interfaces" per RFC 4254; loopback keeps the remote
+/// listener private unless the operator asks for exposure, matching the local
+/// `--bind` default rather than silently inverting it.
+pub const DEFAULT_REVERSE_BIND_ADDR: &str = "127.0.0.1";
+
+/// Queue depth for channels the server opens on an active reverse forward.
+///
+/// Bounded on purpose: the peer decides how fast these arrive, so an unbounded
+/// queue would let a hostile server grow our memory without ever connecting.
+pub const REVERSE_FORWARD_QUEUE_DEPTH: usize = 64;
+
+/// Maximum bytes accepted while parsing one SOCKS5 handshake.
+///
+/// RFC 1928 bounds every handshake message: the greeting is at most 257 bytes
+/// (2 + 255 methods) and the request at most 262 (4 + 1 length + 255 name + 2
+/// port), so 519 is the largest legal handshake. The budget sits above that and
+/// far below anything an attacker could use to make the proxy buffer at will.
+pub const SOCKS5_HANDSHAKE_MAX_BYTES: usize = 1024;
+
+/// SOCKS5 protocol version byte (RFC 1928).
+pub const SOCKS5_VERSION: u8 = 0x05;
+
+/// SOCKS5 "no authentication required" method (RFC 1928 §3).
+pub const SOCKS5_METHOD_NO_AUTH: u8 = 0x00;
+
+/// SOCKS5 "no acceptable methods" reply (RFC 1928 §3).
+pub const SOCKS5_METHOD_NONE_ACCEPTABLE: u8 = 0xFF;
+
 // ── Process / async timing (units in the name) ──────────────────────────────
 
 /// Tokio runtime graceful shutdown budget after the one-shot command returns.
@@ -190,12 +220,45 @@ pub const SFTP_SUBSYSTEM: &str = "sftp";
 /// Stream chunk size for SFTP file I/O (bytes). Never load whole files into RAM.
 pub const SFTP_IO_CHUNK: usize = 32 * 1024;
 
+// ── SCP wire (G-SCP) ────────────────────────────────────────────────────────
+
+/// Stream chunk size for SCP file I/O (bytes). Never load whole files into RAM.
+///
+/// B4: this value used to be declared twice as a function-local `const` inside
+/// `src/ssh/client_real_scp.rs`, each carrying a deferral marker admitting it
+/// belonged here. It is deliberately equal to [`SFTP_IO_CHUNK`] — both transfer
+/// paths stream through the same window — but kept as a distinct name so a
+/// future protocol-specific tuning of one does not silently retune the other.
+pub const SCP_IO_CHUNK: usize = 32 * 1024;
+
+/// Max bytes accepted for a single SCP protocol header line.
+///
+/// Headers are a few dozen bytes; the cap only exists so a hostile source cannot
+/// make us grow an unbounded buffer by never sending a newline.
+pub const SCP_HEADER_MAX_BYTES: usize = 16 * 1024;
+
 /// SFTP v3 permission field mask: permission bits only (no `S_IFMT` file-type bits).
 ///
 /// Unix `st_mode` carries type in the high bits (e.g. `0o100644` for a regular
 /// file). The protocol `permissions` attribute must carry permission bits only
 /// (`0o7777` = mode + setuid/setgid/sticky). See G12 / G19.
 pub const SFTP_PERM_MASK: u32 = 0o7777;
+
+/// Permission mask applied to modes that arrive **from the network** (A3).
+///
+/// [`SFTP_PERM_MASK`] keeps setuid/setgid/sticky, which is correct when reading a
+/// mode from a **local** file we own and announcing it to the server. It is *not*
+/// correct in the opposite direction: a malicious or compromised server can mark a
+/// remote file setuid and have the download reproduce that bit on the local disk.
+/// Elevation bits must never be attacker-controlled, so inbound modes are clamped
+/// to plain `rwx` triples.
+pub const SFTP_PERM_MASK_UNTRUSTED: u32 = 0o0777;
+
+/// Max characters kept from a server-sent pre-auth banner before truncation (A1).
+///
+/// The banner is remote input that arrives *before* authentication. It is logged
+/// for diagnostics only, so a small cap is enough and keeps hostile input bounded.
+pub const AUTH_BANNER_MAX_CHARS: usize = 512;
 
 /// Max recursion depth for `sftp upload|download --recursive`.
 pub const SFTP_MAX_RECURSION_DEPTH: u32 = 64;
@@ -280,6 +343,11 @@ const _: () = assert!(!DEFAULT_TUNNEL_BIND_ADDR.is_empty());
 const _: () = assert!(RUNTIME_SHUTDOWN_TIMEOUT_SECS > 0);
 const _: () = assert!(TUNNEL_SIGNAL_POLL_INTERVAL_MS > 0);
 const _: () = assert!(TUNNEL_FORWARD_DRAIN_TIMEOUT_SECS > 0);
+const _: () = assert!(REVERSE_FORWARD_QUEUE_DEPTH > 0);
+// 519 is the largest handshake RFC 1928 permits; a smaller cap would reject
+// valid clients, which is a bug that only shows up against unusual peers.
+const _: () = assert!(SOCKS5_HANDSHAKE_MAX_BYTES >= 519);
+const _: () = assert!(SOCKS5_VERSION == 0x05);
 const _: () = assert!(FAN_OUT_SIGNAL_POLL_INTERVAL_MS > 0);
 const _: () = assert!(HAPPY_EYEBALLS_ATTEMPT_DELAY_MS > 0);
 const _: () = assert!(SSH_KEEPALIVE_INTERVAL_SECS > 0);

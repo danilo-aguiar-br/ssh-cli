@@ -124,10 +124,88 @@ pub fn pack_su(command: &str, su_password: &SecretString) -> PackedCommand {
     }
 }
 
+/// Random bytes behind a remote job marker.
+///
+/// 128 bits make an accidental collision between two concurrent invocations
+/// impossible in practice, which is what keeps `pkill -f` from reaching a
+/// process this invocation does not own.
+const ABORT_MARKER_RANDOM_BYTES: usize = 16;
+
+/// Fixed, greppable prefix of the remote job marker.
+///
+/// The prefix exists for humans reading `ps` output on the target host; the
+/// uniqueness comes from the random suffix, never from the prefix.
+const ABORT_MARKER_PREFIX: &str = "sshcli-job-";
+
+/// Lowercase hex alphabet used to render the marker without a formatting machinery.
+const HEX_DIGITS: [u8; 16] = *b"0123456789abcdef";
+
+/// Mints a per-invocation marker to be embedded in the remote command line.
+///
+/// A5: the previous abort path derived the `pkill -f` pattern from the *command
+/// text*, which for elevated runs degraded to the literal `sudo -S -p`. That
+/// pattern matches every `sudo` process on the target host, so a local timeout
+/// killed unrelated sessions of other users and of concurrent `ssh-cli` runs.
+/// A marker that only this process knows makes the kill self-scoped.
+///
+/// The marker is derived from the OS CSPRNG, never from the clock: two
+/// invocations started in the same millisecond must still not collide, and a
+/// skewed client clock must not be able to make one invocation adopt another's
+/// identity.
+///
+/// Returns `None` when the CSPRNG is unavailable; callers must then skip the
+/// remote abort entirely rather than fall back to a guessable identifier.
+#[must_use]
+pub fn new_remote_job_marker() -> Option<String> {
+    let mut raw = [0u8; ABORT_MARKER_RANDOM_BYTES];
+    if getrandom::fill(&mut raw).is_err() {
+        return None;
+    }
+    let mut marker = String::with_capacity(ABORT_MARKER_PREFIX.len() + raw.len() * 2);
+    marker.push_str(ABORT_MARKER_PREFIX);
+    for byte in raw {
+        marker.push(HEX_DIGITS[usize::from(byte >> 4)] as char);
+        marker.push(HEX_DIGITS[usize::from(byte & 0x0f)] as char);
+    }
+    Some(marker)
+}
+
+/// True when `value` has the shape produced by [`new_remote_job_marker`].
+///
+/// Used as a guard before building a kill command: an abort pattern that is not
+/// a marker would widen the blast radius back to arbitrary command text.
+#[must_use]
+pub fn is_remote_job_marker(value: &str) -> bool {
+    value.strip_prefix(ABORT_MARKER_PREFIX).is_some_and(|hex| {
+        hex.len() == ABORT_MARKER_RANDOM_BYTES * 2 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+    })
+}
+
+/// Wraps `command` so the remote process carries `marker` in its argv.
+///
+/// `sh -c '<command>' '<marker>'` runs the command unchanged and binds the
+/// marker to `$0`, which is what lands in `/proc/<pid>/cmdline` and therefore
+/// what `pkill -f` can match. The marker is not a secret and never carries one.
+///
+/// Caveat kept deliberately: only processes whose argv contains the marker are
+/// reachable by the abort, i.e. the wrapper shell and anything that inherits the
+/// text. Grandchildren that re-exec with a fresh argv survive. Leaking a stray
+/// child is strictly safer than the previous behaviour of killing third-party
+/// processes.
+#[must_use]
+pub fn wrap_with_abort_marker(command: &str, marker: &str) -> String {
+    let cmd_esc = escape_shell_single_quotes(command);
+    let marker_esc = escape_shell_single_quotes(marker);
+    format!("sh -c {cmd_esc} {marker_esc}")
+}
+
 /// Sanitizes a command fragment for best-effort use with `pkill -f`.
 ///
-/// Accepts alphanumerics and a restricted symbol set; stops at the first dangerous
-/// metacharacter. Requires at least 3 characters. Never embeds passwords (pattern only).
+/// Kept for callers that need the sanitizer itself. It is **no longer** used to
+/// build remote aborts: a pattern taken from user command text matches foreign
+/// processes (see [`new_remote_job_marker`]). Accepts alphanumerics and a
+/// restricted symbol set; stops at the first dangerous metacharacter. Requires
+/// at least 3 characters. Never embeds passwords (pattern only).
 #[must_use]
 pub fn remote_abort_pattern(command: &str) -> Option<String> {
     let mut cleaned = String::with_capacity(command.len().min(128));
@@ -151,7 +229,9 @@ pub fn remote_abort_pattern(command: &str) -> Option<String> {
 
 /// Builds a best-effort remote abort command (TERM, then KILL).
 ///
-/// Does not embed secrets; uses only the sanitized command pattern.
+/// Does not embed secrets. `pattern` must be a marker from
+/// [`new_remote_job_marker`]; anything else re-opens A5 by matching processes
+/// this invocation does not own.
 #[must_use]
 pub fn pack_abort_pkill(pattern: &str) -> String {
     let esc = escape_shell_single_quotes(pattern);
@@ -225,5 +305,50 @@ mod tests {
         // GAP-SSH-TEST-003: dangerous metacharacter → reject (not a tautology).
         assert_eq!(remote_abort_pattern("$(rm -rf)"), None);
         assert!(remote_abort_pattern("ab").is_none());
+    }
+
+    #[test]
+    fn job_markers_are_unique_per_invocation() {
+        // A5: the abort of one invocation must not reach another invocation.
+        let a = new_remote_job_marker().expect("csprng available");
+        let b = new_remote_job_marker().expect("csprng available");
+        assert_ne!(a, b);
+        assert!(is_remote_job_marker(&a) && is_remote_job_marker(&b));
+
+        let kill_a = pack_abort_pkill(&a);
+        let kill_b = pack_abort_pkill(&b);
+        // Neither kill command carries the other invocation's marker, so the
+        // remote `pkill -f` cannot select the foreign process.
+        assert!(!kill_a.contains(&b));
+        assert!(!kill_b.contains(&a));
+
+        let cmd_a = wrap_with_abort_marker("sleep 999", &a);
+        let cmd_b = wrap_with_abort_marker("sleep 999", &b);
+        assert!(cmd_a.contains(&a) && !cmd_a.contains(&b));
+        assert!(cmd_b.contains(&b) && !cmd_b.contains(&a));
+    }
+
+    #[test]
+    fn abort_marker_never_matches_third_party_sudo() {
+        // A5 regression: the old pattern degraded to `sudo -S -p`, which
+        // `pkill -f` matches on every sudo process of every user.
+        let password = SecretString::from("s3cr3t".to_string());
+        let pack = pack_sudo("systemctl restart nginx", Some(&password));
+        let marker = new_remote_job_marker().expect("csprng available");
+        let kill = pack_abort_pkill(&marker);
+        assert!(!kill.contains("sudo"));
+        assert!(kill.contains(&marker));
+
+        // The wrapper keeps the secret off the remote command line.
+        let wrapped = wrap_with_abort_marker(&pack.command, &marker);
+        assert!(!wrapped.contains("s3cr3t"));
+        assert!(wrapped.contains(&marker));
+    }
+
+    #[test]
+    fn marker_shape_is_validated() {
+        assert!(!is_remote_job_marker("sudo -S -p"));
+        assert!(!is_remote_job_marker("sshcli-job-"));
+        assert!(!is_remote_job_marker("sshcli-job-zz"));
     }
 }

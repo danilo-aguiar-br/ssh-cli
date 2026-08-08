@@ -6,6 +6,7 @@
 //! focused on connect/auth/exec (one-shot lifecycle).
 #![forbid(unsafe_code)]
 
+use crate::constants::SFTP_PERM_MASK_UNTRUSTED;
 use crate::errors::{SshCliError, SshCliResult};
 
 /// SCP protocol ACK/OK byte (also used as payload terminator).
@@ -95,7 +96,10 @@ pub(crate) fn parse_scp_header(header: &str) -> SshCliResult<(u32, u64)> {
     let size = partes[1]
         .parse()
         .map_err(|_| SshCliError::channel_msg(format!("invalid size in header: {}", partes[1])))?;
-    Ok((mode & 0o7777, size))
+    // A3: this header is produced by the *server*, so the mode is untrusted. Masking
+    // with 0o7777 would carry setuid/setgid/sticky from a hostile peer onto the local
+    // file. Only plain permission triples may cross the network inbound.
+    Ok((mode & SFTP_PERM_MASK_UNTRUSTED, size))
 }
 
 /// Octal mode for the SCP `C` header derived from local metadata.
@@ -164,7 +168,7 @@ pub(crate) fn normalize_scp_missing_path(msg: &str) -> String {
     s
 }
 
-/// Interpreta o primeiro byte de status SCP: `0`=OK, `1`/`2`=err (+ mensagem).
+/// Interprets the first SCP status byte: `0`=OK, `1`/`2`=error (+ message).
 pub(crate) fn interpret_scp_status(bytes: &[u8]) -> SshCliResult<()> {
     if bytes.is_empty() {
         return Err(SshCliError::channel_msg(
@@ -229,6 +233,11 @@ pub(crate) async fn apply_local_mode(path: &std::path::Path, mode: u32) -> SshCl
 }
 
 /// Reads the next non-empty `ChannelMsg::Data` from the SCP channel.
+///
+/// A6: gated with the rest of the russh surface so the `--no-default-features`
+/// diagnostic build resolves. The generic parameter mentions `russh` types in its
+/// bounds, so the signature itself cannot exist without the crate.
+#[cfg(feature = "ssh-real")]
 pub(crate) async fn scp_read_data<S>(channel: &mut russh::Channel<S>) -> SshCliResult<Vec<u8>>
 where
     S: From<(russh::ChannelId, russh::ChannelMsg)> + Send + Sync + 'static,
@@ -269,7 +278,8 @@ where
     }
 }
 
-/// Aguarda ACK de status SCP (`0x00`) ou propaga err `1`/`2`.
+/// Waits for the SCP status ACK (`0x00`) or propagates error status `1` / `2`.
+#[cfg(feature = "ssh-real")]
 pub(crate) async fn scp_wait_status<S>(channel: &mut russh::Channel<S>) -> SshCliResult<()>
 where
     S: From<(russh::ChannelId, russh::ChannelMsg)> + Send + Sync + 'static,
@@ -278,27 +288,57 @@ where
     interpret_scp_status(&data)
 }
 
+use crate::constants::SCP_HEADER_MAX_BYTES;
+
+/// Splits a possibly coalesced SCP read at the first newline.
+///
+/// Returns `(line, rest)`, where `line` keeps its terminating newline. SSH gives
+/// no framing guarantee, so a source is free to pack the `C`/`T` header and the
+/// first payload bytes into one `ChannelMsg::Data`. Returning only the line and
+/// dropping `rest` truncates the download by exactly the coalesced amount while
+/// still reporting success, so callers must carry `rest` into the payload loop.
+pub(crate) fn split_scp_line(mut buf: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
+    match buf.iter().position(|b| *b == b'\n') {
+        Some(pos) => {
+            let rest = buf.split_off(pos + 1);
+            (buf, rest)
+        }
+        None => (buf, Vec::new()),
+    }
+}
+
 /// Reads bytes until a newline (header `C`/`T`) or error status `1`/`2`.
+///
+/// `carry` is both input and output: it is drained first (bytes a previous read
+/// left over) and refilled with whatever followed the newline in this read.
+#[cfg(feature = "ssh-real")]
 pub(crate) async fn scp_read_until_newline<S>(
     channel: &mut russh::Channel<S>,
+    carry: &mut Vec<u8>,
 ) -> SshCliResult<Vec<u8>>
 where
     S: From<(russh::ChannelId, russh::ChannelMsg)> + Send + Sync + 'static,
 {
-    // Resource: headers are short; pre-size and hard-cap to avoid remote flood.
-    let mut buf = Vec::with_capacity(256);
+    let mut buf = std::mem::take(carry);
     loop {
-        let chunk = scp_read_data(channel).await?;
-        if buf.is_empty() && matches!(chunk.first().copied(), Some(1 | 2)) {
-            return Ok(chunk);
+        if buf.is_empty() {
+            let chunk = scp_read_data(channel).await?;
+            // A status frame replaces the header outright and carries no newline.
+            if matches!(chunk.first().copied(), Some(1 | 2)) {
+                return Ok(chunk);
+            }
+            buf = chunk;
         }
-        buf.extend_from_slice(&chunk);
         if buf.contains(&b'\n') {
-            return Ok(buf);
+            let (line, rest) = split_scp_line(buf);
+            *carry = rest;
+            return Ok(line);
         }
-        if buf.len() > 16_384 {
+        if buf.len() > SCP_HEADER_MAX_BYTES {
             return Err(SshCliError::channel_msg("SCP header excessively long"));
         }
+        let chunk = scp_read_data(channel).await?;
+        buf.extend_from_slice(&chunk);
     }
 }
 
@@ -322,5 +362,44 @@ mod wire_adversarial_tests {
             let _ = parse_scp_t_line(s);
             let _ = interpret_scp_status(s.as_bytes());
         }
+    }
+
+    /// B2: a source may coalesce header and payload in one packet. The line must
+    /// come back intact and the payload must survive as `rest`.
+    #[test]
+    fn split_line_keeps_coalesced_payload() {
+        let packet = b"C0644 5 f.txt\nhello\0".to_vec();
+        let (line, rest) = split_scp_line(packet);
+        assert_eq!(line, b"C0644 5 f.txt\n");
+        assert_eq!(rest, b"hello\0");
+        let (mode, size) = parse_scp_header(&String::from_utf8_lossy(&line)).expect("header");
+        assert_eq!(mode, 0o644);
+        assert_eq!(size, 5);
+    }
+
+    /// A `T` line coalesced with the `C` header must not lose the header.
+    #[test]
+    fn split_line_keeps_coalesced_header_after_t_line() {
+        let packet = b"T1700000000 0 1700000000 0\nC0600 2 a\n".to_vec();
+        let (t_line, rest) = split_scp_line(packet);
+        assert_eq!(
+            parse_scp_t_line(&String::from_utf8_lossy(&t_line)).expect("t"),
+            (1_700_000_000, 1_700_000_000)
+        );
+        let (header, tail) = split_scp_line(rest);
+        assert!(tail.is_empty());
+        assert_eq!(
+            parse_scp_header(&String::from_utf8_lossy(&header)).expect("header"),
+            (0o600, 2)
+        );
+    }
+
+    /// Without a newline the whole buffer is the (incomplete) line and nothing is
+    /// silently dropped.
+    #[test]
+    fn split_line_without_newline_returns_everything() {
+        let (line, rest) = split_scp_line(b"C0644 5 f".to_vec());
+        assert_eq!(line, b"C0644 5 f");
+        assert!(rest.is_empty());
     }
 }

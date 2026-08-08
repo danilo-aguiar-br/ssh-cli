@@ -9,10 +9,10 @@
 //!
 //! # Errors contract (G-ERR)
 //!
-//! - Prefer typed variants over [`SshCliError::Generic`].
-//! - Preserve [`std::error::Error::source`] via helpers [`SshCliError::tls_src`] /
-//!   [`SshCliError::channel_src`] instead of embedding `{e}` in a flat string.
-//! - Agents must read [`SshCliError::error_code`] + [`ErrorClass`], not parse Display.
+//! - Prefer typed variants over [`crate::errors::SshCliError::Generic`].
+//! - Preserve [`std::error::Error::source`] via helpers [`crate::errors::SshCliError::tls_src`] /
+//!   [`crate::errors::SshCliError::channel_src`] instead of embedding `{e}` in a flat string.
+//! - Agents must read [`crate::errors::SshCliError::error_code`] + [`crate::errors::ErrorClass`], not parse Display.
 
 use thiserror::Error;
 
@@ -160,6 +160,29 @@ pub enum SshCliError {
     #[error("configuration error: {0}")]
     Config(String),
 
+    /// A host service the CLI depends on is not answering (exit 69).
+    ///
+    /// G-ERR-R01: `Config` was the default landing spot for every `map_err` without an
+    /// obvious variant, so a locked OS keyring exited 65 — the same code as corrupt
+    /// TOML — and inherited `retryable: false`. An agent therefore gave up permanently
+    /// on the one failure in the list that a plain retry actually fixes.
+    #[error("service unavailable: {service}")]
+    Unavailable {
+        /// Stable service id (`keyring`, …).
+        service: &'static str,
+    },
+
+    /// Internal failure with no user-fixable input (exit 70).
+    ///
+    /// G-ERR-R01: reserved for conditions the caller cannot influence at all, such as
+    /// a CSPRNG that refuses to produce bytes. Kept apart from [`Self::Unavailable`]
+    /// because waiting and retrying is useless here, while there it is the remedy.
+    #[error("internal failure: {op}")]
+    Software {
+        /// Stable operation id (`rng`, …).
+        op: &'static str,
+    },
+
     /// Generic timeout.
     #[error("timeout exceeded after {0}ms")]
     Timeout(u64),
@@ -175,6 +198,23 @@ pub enum SshCliError {
         expected: u32,
         /// Found schema version.
         found: u32,
+    },
+
+    /// Multi-host fan-out where some targets failed and others succeeded.
+    ///
+    /// Partial success is the *normal* outcome of a fan-out, not malformed data. It
+    /// previously reused [`Self::Config`], which meant an agent could not tell
+    /// "1 of 10 hosts failed" apart from "the TOML is corrupt" — both exited 65.
+    /// This variant exits [`exit_codes::EX_GENERAL`] and carries the counts so the
+    /// agent can branch on scale of failure without parsing prose.
+    #[error("{failed}/{total} hosts failed during {op}")]
+    PartialFailure {
+        /// Number of targets that failed.
+        failed: usize,
+        /// Total number of targets attempted.
+        total: usize,
+        /// Stable operation id (`exec`, `health-check`, `scp upload`, …).
+        op: &'static str,
     },
 
     /// Uncategorized error — last resort (prefer typed variants).
@@ -206,6 +246,18 @@ pub mod exit_codes {
     pub const EX_DATAERR: i32 = 65;
     /// Input not found.
     pub const EX_NOINPUT: i32 = 66;
+    /// A required host service is unavailable (OS keyring, secret service).
+    ///
+    /// G-ERR-R01: these failures used to exit [`EX_DATAERR`], which told an agent the
+    /// *input* was malformed and that retrying was pointless. A locked keyring is the
+    /// opposite: the argv is fine and the very same invocation succeeds once the
+    /// service is up, so it is classified transient.
+    pub const EX_UNAVAILABLE: i32 = 69;
+    /// Internal software failure with no user-fixable input (CSPRNG unavailable).
+    ///
+    /// G-ERR-R01: distinct from [`EX_UNAVAILABLE`] because waiting does not help —
+    /// nothing the caller can change makes the next attempt succeed.
+    pub const EX_SOFTWARE: i32 = 70;
     /// Cannot create output.
     pub const EX_CANTCREAT: i32 = 73;
     /// I/O error.
@@ -222,6 +274,8 @@ pub mod exit_codes {
     // Compile-time invariants for sysexits-aligned codes.
     const _: () = assert!(EX_OK == 0);
     const _: () = assert!(EX_USAGE == 64);
+    const _: () = assert!(EX_UNAVAILABLE == 69);
+    const _: () = assert!(EX_SOFTWARE == 70);
     const _: () = assert!(EX_PIPE == 141);
     const _: () = assert!(EX_SIGINT == 130);
     const _: () = assert!(EX_SIGTERM == 143);
@@ -282,6 +336,8 @@ pub enum ErrorClass {
     Permanent,
     /// Signal or broken pipe — do not retry.
     Cancelled,
+    /// Fan-out where some targets succeeded and others failed; inspect per-host detail.
+    Partial,
 }
 
 /// Stack layer where the failure was observed (diagnostic only).
@@ -334,7 +390,7 @@ impl SshCliError {
         }
     }
 
-    /// TLS error preserving [`Error::source`] (G-ERR-04 / G-ERR-16 DRY).
+    /// TLS error preserving [`std::error::Error::source`] (G-ERR-04 / G-ERR-16 DRY).
     #[must_use]
     pub fn tls_src(
         message: impl AsRef<str>,
@@ -373,6 +429,18 @@ impl SshCliError {
         Self::Crypto { op }
     }
 
+    /// Builds an [`Self::Unavailable`] for a host service that is not answering.
+    #[must_use]
+    pub fn unavailable(service: &'static str) -> Self {
+        Self::Unavailable { service }
+    }
+
+    /// Builds a [`Self::Software`] for an internal failure with no user-fixable input.
+    #[must_use]
+    pub fn software(op: &'static str) -> Self {
+        Self::Software { op }
+    }
+
     /// Stable machine-oriented code for JSON envelopes (G-ERR-08).
     #[must_use]
     pub fn error_code(&self) -> &'static str {
@@ -402,9 +470,12 @@ impl SshCliError {
             Self::Tls { .. } => "tls",
             Self::Crypto { .. } => "crypto",
             Self::Config(_) => "config",
+            Self::Unavailable { .. } => "unavailable",
+            Self::Software { .. } => "software",
             Self::Timeout(_) => "timeout",
             Self::XdgDirectory => "xdg_directory",
             Self::SchemaIncompatible { .. } => "schema_incompatible",
+            Self::PartialFailure { .. } => "partial_failure",
             Self::Generic(_) => "generic",
         }
     }
@@ -440,9 +511,14 @@ impl SshCliError {
             Self::Tls { .. } => exit_codes::EX_IOERR,
             Self::Crypto { .. } => exit_codes::EX_NOPERM,
             Self::Config(_) => exit_codes::EX_DATAERR,
+            Self::Unavailable { .. } => exit_codes::EX_UNAVAILABLE,
+            Self::Software { .. } => exit_codes::EX_SOFTWARE,
             Self::Timeout(_) => exit_codes::EX_IOERR,
             Self::XdgDirectory => exit_codes::EX_CANTCREAT,
             Self::SchemaIncompatible { .. } => exit_codes::EX_DATAERR,
+            // Partial fan-out is not a data error: EX_DATAERR (65) is reserved for
+            // malformed input. Per-host detail travels in the JSON envelope.
+            Self::PartialFailure { .. } => exit_codes::EX_GENERAL,
             Self::Generic(_) => exit_codes::EX_GENERAL,
         }
     }
@@ -463,6 +539,14 @@ impl SshCliError {
             | Self::AuthenticationFailed
             | Self::HostKeyChanged { .. } => RetryKind::PermanentAuth,
             Self::ConnectionFailed(_) | Self::Tls { .. } => RetryKind::TransientNetwork,
+            // G-ERR-R01: a keyring that is locked, not yet started, or momentarily
+            // busy answers the *same* argv successfully a moment later. This is the
+            // one case in the old `Config` bucket where retrying is the fix, and
+            // classifying it permanent is what made agents give up on it.
+            Self::Unavailable { .. } => RetryKind::TransientTimeout,
+            // No amount of waiting repairs a CSPRNG, so this stays permanent even
+            // though it is not the caller's fault.
+            Self::Software { .. } => RetryKind::PermanentClient,
             Self::CommandTooLong { .. }
             | Self::SudoDisabled
             | Self::SuPasswordMissing
@@ -475,6 +559,8 @@ impl SshCliError {
             | Self::XdgDirectory
             | Self::SchemaIncompatible { .. }
             | Self::Generic(_) => RetryKind::PermanentClient,
+            // Never blind-retry a batch: the hosts that succeeded would run twice.
+            Self::PartialFailure { .. } => RetryKind::NotRetryable,
             Self::ChannelFailed { .. } => RetryKind::TransientSsh,
             Self::SshTimeout(_) | Self::Timeout(_) => RetryKind::TransientTimeout,
             Self::CommandFailed { .. } => RetryKind::PermanentRemoteCommand,
@@ -499,6 +585,12 @@ impl SshCliError {
     /// High-level class for the JSON envelope `error_class` field.
     #[must_use]
     pub fn classify(&self) -> ErrorClass {
+        // Partial fan-out is its own class: not transient (retrying the whole batch
+        // re-runs the hosts that already succeeded) and not plain permanent (part of
+        // the work did land). The agent must read per-host detail to decide.
+        if matches!(self, Self::PartialFailure { .. }) {
+            return ErrorClass::Partial;
+        }
         match self.retry_kind() {
             RetryKind::TransientNetwork | RetryKind::TransientTimeout | RetryKind::TransientSsh => {
                 ErrorClass::Transient
@@ -526,7 +618,9 @@ impl SshCliError {
             | Self::AuthenticationFailed
             | Self::HostKeyChanged { .. }
             | Self::SudoDisabled
-            | Self::Crypto { .. } => ErrorLayer::Auth,
+            | Self::Crypto { .. }
+            // Keyring failures are credential-material failures, not application ones.
+            | Self::Unavailable { .. } => ErrorLayer::Auth,
             Self::Json(_)
             | Self::TomlDe(_)
             | Self::TomlSer(_)
@@ -540,8 +634,10 @@ impl SshCliError {
             | Self::FileNotFound(_)
             | Self::InvalidArgument(_)
             | Self::Config(_)
+            | Self::Software { .. }
             | Self::XdgDirectory
             | Self::SchemaIncompatible { .. }
+            | Self::PartialFailure { .. }
             | Self::Generic(_) => ErrorLayer::Application,
         }
     }
@@ -556,6 +652,25 @@ impl SshCliError {
     /// Short agent-facing suggestion for the JSON envelope.
     #[must_use]
     pub fn suggestion(&self) -> Option<&'static str> {
+        // G-ERR-R01: these two share a `RetryKind` with unrelated failures, and the
+        // generic hint derived from it would be actively misleading — telling an
+        // operator to raise `--timeout` when the OS keyring is locked sends them to
+        // the wrong knob entirely. Matching the variant first keeps the advice true.
+        match self {
+            Self::Unavailable { .. } => {
+                return Some(
+                    "unlock or start the OS keyring, or fall back to XDG `secrets.key` \
+                     (`--secrets-key-file`); the same argv succeeds once it answers (exit 69)",
+                );
+            }
+            Self::Software { .. } => {
+                return Some(
+                    "internal failure with no user-fixable input; report it — retrying \
+                     unchanged will not help (exit 70)",
+                );
+            }
+            _ => {}
+        }
         match self.retry_kind() {
             RetryKind::TransientNetwork | RetryKind::TransientSsh => {
                 Some("retry at most twice with exponential full-jitter backoff (exit 74)")
@@ -600,6 +715,39 @@ pub fn io_error_is_transient_network(err: &std::io::Error) -> bool {
 
 /// Result alias using [`SshCliError`].
 pub type SshCliResult<T> = std::result::Result<T, SshCliError>;
+
+/// Turns a multi-host fan-out tally into the batch outcome.
+///
+/// Single source for the "N of M failed" verdict. The same eight-line block used to
+/// be copy-pasted across the SCP, SFTP, exec and health-check batch paths, each one
+/// building a [`SshCliError::Config`] (exit 65) by hand — so a partial fan-out was
+/// indistinguishable from corrupt TOML. Callers now report the tally and let this
+/// decide.
+///
+/// `total` must count **every** target the caller was asked to reach, including ones
+/// skipped by `--fail-fast`; otherwise the ratio understates the work not done.
+///
+/// # Errors
+/// [`SshCliError::PartialFailure`] when `failed > 0`.
+///
+/// # Examples
+///
+/// ```
+/// use ssh_cli::errors::{finish_batch, SshCliError};
+///
+/// assert!(finish_batch(0, 10, "exec").is_ok());
+///
+/// let err = finish_batch(3, 10, "exec").unwrap_err();
+/// assert_eq!(err.exit_code(), ssh_cli::errors::exit_codes::EX_GENERAL);
+/// assert_eq!(err.error_code(), "partial_failure");
+/// assert!(matches!(err, SshCliError::PartialFailure { failed: 3, total: 10, .. }));
+/// ```
+pub fn finish_batch(failed: usize, total: usize, op: &'static str) -> SshCliResult<()> {
+    if failed == 0 {
+        return Ok(());
+    }
+    Err(SshCliError::PartialFailure { failed, total, op })
+}
 
 #[cfg(test)]
 #[path = "errors_tests.rs"]

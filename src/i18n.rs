@@ -26,6 +26,15 @@
 use anyhow::Result;
 use unic_langid::LanguageIdentifier;
 
+use crate::errors::SshCliError;
+
+// C3: the translation tables are data, one exhaustive `match` arm per variant,
+// and they made this file the second-largest in the crate. Splitting them out by
+// locale keeps the exhaustiveness guarantee (each `match` still has to cover
+// every variant) while making a one-sided edit visible as a single-file diff.
+mod en;
+mod pt;
+
 /// Text direction for terminal rendering (LTR MVP; RTL reserved for `i18n-rtl`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -129,8 +138,6 @@ pub enum Message {
     // VPS
     /// No VPS registered in the configuration file.
     VpsRegistryEmpty,
-    /// Header for the registered VPS listing.
-    VpsListTitle,
     /// VPS successfully added to the registry.
     VpsAdded {
         /// Name of the added VPS.
@@ -156,33 +163,77 @@ pub enum Message {
         /// Name of the selected VPS.
         name: String,
     },
-    // Config
-    /// Label for the configuration file path.
-    ConfigPathLabel,
-    /// Current configuration file path.
-    ConfigPath {
-        /// Absolute configuration file path.
+    // Errors (B2).
+    //
+    // These are reached exclusively from [`localized_error_text`], which is
+    // called on the *human* branch of the top-level error emitter. The `--json`
+    // envelope keeps `SshCliError`'s English `Display`, because agents branch on
+    // the stable `error_code` discriminator and must never parse localized
+    // prose. Every variant carries the upstream detail verbatim so no diagnostic
+    // information is lost in translation.
+    /// Configuration could not be read or written.
+    ErrorConfig {
+        /// Underlying failure detail (English, from the source error).
+        detail: String,
+    },
+    /// Error establishing an SSH connection to the remote server.
+    ErrorSshConnection {
+        /// Underlying failure detail.
+        detail: String,
+    },
+    /// SSH authentication was rejected by the server.
+    ErrorAuthentication {
+        /// Underlying failure detail.
+        detail: String,
+    },
+    /// Remote SSH command execution failed.
+    ErrorCommandFailed {
+        /// Underlying failure detail.
+        detail: String,
+    },
+    /// Remote host key no longer matches the pinned entry.
+    ErrorHostKeyChanged {
+        /// Underlying failure detail.
+        detail: String,
+    },
+    /// Operation exceeded its deadline.
+    ErrorTimeout {
+        /// Underlying failure detail.
+        detail: String,
+    },
+    /// Requested file was not found.
+    ErrorFileNotFound {
+        /// Path that was not found.
         path: String,
     },
-    /// No API keys configured in the system.
-    ConfigNoKeys,
-    // Erros
-    /// Failed to load the configuration file.
-    ErrorLoadConfig,
-    /// Failed to save the configuration file.
-    ErrorSaveConfig,
-    /// Error establishing SSH connection to the remote server.
-    ErrorSshConnection,
-    /// Remote SSH command execution failed.
-    ErrorCommandFailed,
+    /// A required external service is unavailable.
+    ErrorUnavailable {
+        /// Service name (for example `keyring`).
+        service: String,
+    },
+    /// The program itself failed in a way retrying cannot fix.
+    ErrorSoftware {
+        /// Failing operation name (for example `rng`).
+        op: String,
+    },
+    /// A multi-host fan-out succeeded only in part.
+    ErrorPartialFailure {
+        /// Underlying failure detail.
+        detail: String,
+    },
     /// Invalid argument supplied to the operation.
     ErrorInvalidArgument {
         /// Detail of the invalid argument.
         detail: String,
     },
-    /// Generic error with a textual description.
-    ErrorGeneric {
-        /// Error description.
+    /// A failure that carries no product error type.
+    ///
+    /// Reached from the last branch of `resolve_exit_code`, where an `anyhow`
+    /// chain held neither `SshCliError` nor `DomainError`. That branch printed
+    /// the raw English chain regardless of `--lang`, so the one error a user is
+    /// least equipped to interpret was also the only one never translated.
+    ErrorUnexpected {
+        /// Underlying failure detail (English, from the `anyhow` chain).
         detail: String,
     },
     /// VPS record edited successfully.
@@ -209,23 +260,7 @@ pub enum Message {
         /// Host count.
         hosts: usize,
     },
-    /// Generic human success line (already localized payload).
-    Success {
-        /// Success text.
-        detail: String,
-    },
     // Tunnel
-    /// Active SSH tunnel with port and host information.
-    TunnelActive {
-        /// Local tunnel port.
-        local_port: u16,
-        /// Remote destination host.
-        remote_host: String,
-        /// Remote destination port.
-        remote_port: u16,
-        /// Name of the VPS used as relay.
-        vps_name: String,
-    },
     /// Instruction to stop the tunnel via Ctrl+C.
     TunnelPressCtrlC,
     // Health Check
@@ -233,22 +268,6 @@ pub enum Message {
     HealthCheckOk {
         /// Name of the checked VPS.
         name: String,
-    },
-    /// No active VPS selected for health check.
-    HealthCheckNoVps,
-    /// VPS connectivity check failed.
-    HealthCheckFailed {
-        /// Name of the checked VPS.
-        name: String,
-        /// Error detail.
-        detail: String,
-    },
-    /// Health-check result with latency.
-    HealthCheckLatency {
-        /// Name of the checked VPS.
-        name: String,
-        /// Latency in milliseconds.
-        latency_ms: u64,
     },
     /// Operation cancelled by user signal (Ctrl+C or SIGTERM).
     OperationCancelled,
@@ -285,6 +304,31 @@ pub enum Message {
         /// Duration in milliseconds.
         ms: u64,
     },
+    /// SFTP filesystem operation completed on a single path (A4).
+    ///
+    /// A4: `mkdir`, `rmdir`, `rm` and `stat` built their human line with an inline
+    /// English `format!`, so `--lang pt-BR` silently produced English for exactly the
+    /// commands an operator reads most often. This is the same defect already recorded
+    /// for the tunnel banner: a translation that existed but no call site could reach.
+    SftpFsOpDone {
+        /// Operation name (`mkdir`, `rmdir`, `rm`, `stat`).
+        op: String,
+        /// Remote path acted upon.
+        path: String,
+        /// Duration in milliseconds.
+        ms: u64,
+    },
+    /// SFTP filesystem operation completed with a destination path (`rename`).
+    SftpFsOpDoneTo {
+        /// Operation name (`rename`).
+        op: String,
+        /// Source path.
+        path: String,
+        /// Destination path.
+        to: String,
+        /// Duration in milliseconds.
+        ms: u64,
+    },
     // Locale diagnostics / preference
     /// Locale preference saved.
     LocalePreferenceSaved {
@@ -297,6 +341,61 @@ pub enum Message {
     LocalePreferenceCleared,
     /// Header for `locale` show output.
     LocaleStatusTitle,
+    // Tunnel banners (human TTY only; agents read the JSON events instead)
+    /// Local forward is listening.
+    TunnelLocalListening {
+        /// Effective local bind address.
+        bind: String,
+        /// Effective local port (OS-assigned when 0 was requested).
+        port: u16,
+        /// Remote destination host.
+        remote_host: String,
+        /// Remote destination port.
+        remote_port: u16,
+        /// Registry name of the host.
+        vps: String,
+        /// Deadline in milliseconds.
+        timeout_ms: u64,
+    },
+    /// SOCKS5 proxy is listening.
+    TunnelSocks5Listening {
+        /// Effective local bind address.
+        bind: String,
+        /// Effective local port.
+        port: u16,
+        /// Registry name of the host.
+        vps: String,
+        /// Deadline in milliseconds.
+        timeout_ms: u64,
+    },
+    /// Forward to a remote Unix socket is listening.
+    TunnelStreamLocalListening {
+        /// Effective local bind address.
+        bind: String,
+        /// Effective local port.
+        port: u16,
+        /// Remote Unix socket path.
+        socket_path: String,
+        /// Registry name of the host.
+        vps: String,
+        /// Deadline in milliseconds.
+        timeout_ms: u64,
+    },
+    /// Reverse forward established on the server.
+    TunnelReverseListening {
+        /// Address the server bound.
+        remote_bind: String,
+        /// Port the server allocated.
+        remote_port: u16,
+        /// Local delivery host.
+        local_host: String,
+        /// Local delivery port.
+        local_port: u16,
+        /// Registry name of the host.
+        vps: String,
+        /// Deadline in milliseconds.
+        timeout_ms: u64,
+    },
 }
 
 impl Message {
@@ -305,8 +404,8 @@ impl Message {
     /// Deterministic method for tests — does not depend on global state.
     pub fn text(&self, language: Language) -> String {
         match language {
-            Language::English => en(self),
-            Language::Portuguese => pt(self),
+            Language::English => en::en(self),
+            Language::Portuguese => pt::pt(self),
         }
     }
 }
@@ -359,156 +458,118 @@ pub fn t(msg: Message) -> String {
     msg.text(current_language())
 }
 
-/// American English translations.
-fn en(msg: &Message) -> String {
-    match msg {
-        Message::VpsRegistryEmpty => "No VPS registered.".to_string(),
-        Message::VpsListTitle => "Registered VPS:".to_string(),
-        Message::VpsAdded { name } => format!("VPS '{name}' added successfully."),
-        Message::VpsRemoved { name } => format!("VPS '{name}' removed successfully."),
-        Message::VpsDuplicate { name } => format!("VPS '{name}' is already registered."),
-        Message::VpsNotFound { name } => format!("VPS '{name}' not found."),
-        Message::VpsActiveSelected { name } => format!("Active VPS: '{name}'."),
-        Message::ConfigPathLabel => "Configuration file:".to_string(),
-        Message::ConfigPath { path } => path.clone(),
-        Message::ConfigNoKeys => "No API keys configured.".to_string(),
-        Message::ErrorLoadConfig => "Failed to load configuration.".to_string(),
-        Message::ErrorSaveConfig => "Failed to save configuration.".to_string(),
-        Message::ErrorSshConnection => "SSH connection error.".to_string(),
-        Message::ErrorCommandFailed => "Command execution failed.".to_string(),
-        Message::ErrorInvalidArgument { detail } => format!("Invalid argument: {detail}"),
-        Message::ErrorGeneric { detail } => detail.clone(),
-        Message::VpsEdited { name } => format!("VPS '{name}' edited."),
-        Message::ExportCompleted { path } => format!("exported to {path}"),
-        Message::ImportCompleted => "import completed".to_string(),
-        Message::PrimaryKeyReady { source, key_file } => {
-            format!("primary-key ready (source={source}; key_file={key_file})")
-        }
-        Message::ReencryptCompleted { hosts } => {
-            format!("re-encrypt completed for {hosts} host(s)")
-        }
-        Message::Success { detail } => detail.clone(),
-        Message::TunnelActive {
-            local_port,
-            remote_host,
-            remote_port,
-            vps_name,
-        } => format!(
-            "SSH tunnel active: {}:{local_port} -> {remote_host}:{remote_port} via {vps_name}",
-            crate::constants::DEFAULT_TUNNEL_BIND_ADDR
-        ),
-        Message::TunnelPressCtrlC => "Press Ctrl+C to terminate.".to_string(),
-        Message::HealthCheckOk { name } => format!("Health check passed for '{name}'."),
-        Message::HealthCheckNoVps => {
-            "No active VPS. Use 'ssh-cli connect <NAME>' first.".to_string()
-        }
-        Message::HealthCheckFailed { name, detail } => {
-            format!("Health check FAILED for '{name}': {detail}")
-        }
-        Message::HealthCheckLatency { name, latency_ms } => {
-            format!("Health check OK for '{name}' ({latency_ms}ms)")
-        }
-        Message::OperationCancelled => "Operation cancelled by user.".to_string(),
-        Message::ScpUploadCompleted { bytes, ms } => {
-            format!("Upload completed: {bytes} bytes in {ms}ms")
-        }
-        Message::ScpDownloadCompleted { bytes, ms } => {
-            format!("Download completed: {bytes} bytes in {ms}ms")
-        }
-        Message::ScpUploadFileOnly => {
-            "upload only supports regular files (no directories / no -r)".to_string()
-        }
-        Message::ScpDownloadLocalNotDirectory => {
-            "download local path must be a file path, not an existing directory".to_string()
-        }
-        Message::SftpUploadCompleted { bytes, ms } => {
-            format!("SFTP upload completed: {bytes} bytes in {ms}ms")
-        }
-        Message::SftpDownloadCompleted { bytes, ms } => {
-            format!("SFTP download completed: {bytes} bytes in {ms}ms")
-        }
-        Message::LocalePreferenceSaved { lang, path } => {
-            format!("language preference saved: {lang} ({path})")
-        }
-        Message::LocalePreferenceCleared => "language preference cleared.".to_string(),
-        Message::LocaleStatusTitle => "Locale status:".to_string(),
-    }
+/// Localizes the human line for a failure that carries no product error type.
+///
+/// # Why this exists (C2)
+///
+/// [`localized_error_text`] only accepts an [`SshCliError`]. The last branch of
+/// `resolve_exit_code` handles an `anyhow` chain that downcast to neither
+/// [`SshCliError`] nor `DomainError`, and it printed the raw chain regardless of
+/// `--lang`. B2 localized every *typed* error and left that one untranslated, so
+/// the failure a user is least equipped to interpret stayed English-only.
+///
+/// Unlike the typed path there is nothing to fail open to — the caller has no
+/// alternative rendering — so this returns [`String`], never [`Option`]. The
+/// `detail` is the upstream chain verbatim and stays English; only the label
+/// that classifies it is translated.
+///
+/// The `--json` envelope is untouched and keeps `error_code` `"unexpected"`.
+#[must_use]
+pub fn localized_unexpected_text(detail: &str) -> String {
+    t(Message::ErrorUnexpected {
+        detail: detail.to_string(),
+    })
 }
 
-/// Brazilian Portuguese translations.
-fn pt(msg: &Message) -> String {
-    match msg {
-        Message::VpsRegistryEmpty => "Nenhum VPS cadastrado.".to_string(),
-        Message::VpsListTitle => "VPS cadastrados:".to_string(),
-        Message::VpsAdded { name } => format!("VPS '{name}' adicionada com sucesso."),
-        Message::VpsRemoved { name } => format!("VPS '{name}' removida com sucesso."),
-        Message::VpsDuplicate { name } => format!("VPS '{name}' já está cadastrada."),
-        Message::VpsNotFound { name } => format!("VPS '{name}' não encontrada."),
-        Message::VpsActiveSelected { name } => format!("VPS ativa: '{name}'."),
-        Message::ConfigPathLabel => "Arquivo de configuração:".to_string(),
-        Message::ConfigPath { path } => path.clone(),
-        Message::ConfigNoKeys => "Nenhuma chave de API configurada.".to_string(),
-        Message::ErrorLoadConfig => "Falha ao carregar configuração.".to_string(),
-        Message::ErrorSaveConfig => "Falha ao salvar configuração.".to_string(),
-        Message::ErrorSshConnection => "Erro de conexão SSH.".to_string(),
-        Message::ErrorCommandFailed => "Falha na execução do comando.".to_string(),
-        Message::ErrorInvalidArgument { detail } => format!("Argumento inválido: {detail}"),
-        Message::ErrorGeneric { detail } => detail.clone(),
-        Message::VpsEdited { name } => format!("VPS '{name}' editada."),
-        Message::ExportCompleted { path } => format!("exportado para {path}"),
-        Message::ImportCompleted => "importação concluída".to_string(),
-        Message::PrimaryKeyReady { source, key_file } => {
-            format!("primary-key pronta (source={source}; key_file={key_file})")
+/// Renders a domain error in the operator's language, for **human output only**.
+///
+/// # Why this exists (B2)
+///
+/// Six `Error*` variants shipped with full English and Brazilian Portuguese
+/// translations and never had a single call site: every failure reached the user
+/// through `thiserror`'s `#[error("…")]` attribute literal instead, so
+/// `--lang pt-BR` produced byte-identical English output. This is the seam that
+/// makes the translations reachable.
+///
+/// # Contract boundary
+///
+/// This is **not** used for the `--json` envelope. There, `message` stays the
+/// English [`std::fmt::Display`] of [`SshCliError`] by contract: agents branch on
+/// the stable `error_code` discriminator, and a locale-dependent `message` would
+/// silently change the payload an agent parses when the host locale changes.
+///
+/// Returns [`None`] for any error code without a translation, so the caller falls
+/// back to the English `Display`. That fail-open shape means adding a new
+/// [`SshCliError`] variant can never blank out the human error line.
+#[must_use]
+pub fn localized_error_text(err: &SshCliError) -> Option<String> {
+    use std::fmt::Write as _;
+
+    // Matched on the variant, not on `error_code()`. Every `#[error("…")]`
+    // attribute already carries an English label ("vps '{0}' not found in
+    // registry"), so feeding `to_string()` into a template that adds its own
+    // label produces "VPS 'vps 'x' not found in registry' not found." Only the
+    // inner payload may cross into the translated sentence.
+    let msg = match err {
+        SshCliError::Config(detail) => Message::ErrorConfig {
+            detail: detail.clone(),
+        },
+        SshCliError::SshConnection(detail) | SshCliError::ConnectionFailed(detail) => {
+            Message::ErrorSshConnection {
+                detail: detail.clone(),
+            }
         }
-        Message::ReencryptCompleted { hosts } => {
-            format!("re-cifragem concluída para {hosts} host(s)")
+        SshCliError::SshAuthentication(detail) => Message::ErrorAuthentication {
+            detail: detail.clone(),
+        },
+        SshCliError::AuthenticationFailed => Message::ErrorAuthentication {
+            // Unit variant: the remedy hint is the only payload worth carrying.
+            detail: "try --password-stdin, --key PATH, --key-passphrase-stdin, \
+                     or verify the user"
+                .to_string(),
+        },
+        SshCliError::CommandFailed { exit_code, stderr } => {
+            let mut detail = format!("exit {exit_code}");
+            if !stderr.is_empty() {
+                let _ = write!(detail, ": {stderr}");
+            }
+            Message::ErrorCommandFailed { detail }
         }
-        Message::Success { detail } => detail.clone(),
-        Message::TunnelActive {
-            local_port,
-            remote_host,
-            remote_port,
-            vps_name,
-        } => format!(
-            "Tunnel SSH: {}:{local_port} -> {remote_host}:{remote_port} via {vps_name}",
-            crate::constants::DEFAULT_TUNNEL_BIND_ADDR
-        ),
-        Message::TunnelPressCtrlC => "Pressione Ctrl+C para encerrar.".to_string(),
-        Message::HealthCheckOk { name } => format!("Health check bem-sucedido para '{name}'."),
-        Message::HealthCheckNoVps => {
-            "Nenhuma VPS ativa. Use 'ssh-cli connect <NOME>' primeiro.".to_string()
-        }
-        Message::HealthCheckFailed { name, detail } => {
-            format!("Health check FALHOU para '{name}': {detail}")
-        }
-        Message::HealthCheckLatency { name, latency_ms } => {
-            format!("Health check OK para '{name}' ({latency_ms}ms)")
-        }
-        Message::OperationCancelled => "Operação cancelada pelo usuário.".to_string(),
-        Message::ScpUploadCompleted { bytes, ms } => {
-            format!("Upload concluído: {bytes} bytes em {ms}ms")
-        }
-        Message::ScpDownloadCompleted { bytes, ms } => {
-            format!("Download concluído: {bytes} bytes em {ms}ms")
-        }
-        Message::ScpUploadFileOnly => {
-            "upload só suporta arquivos regulares (sem diretórios / sem -r)".to_string()
-        }
-        Message::ScpDownloadLocalNotDirectory => {
-            "caminho local de download deve ser arquivo, não diretório existente".to_string()
-        }
-        Message::SftpUploadCompleted { bytes, ms } => {
-            format!("Upload SFTP concluído: {bytes} bytes em {ms}ms")
-        }
-        Message::SftpDownloadCompleted { bytes, ms } => {
-            format!("Download SFTP concluído: {bytes} bytes em {ms}ms")
-        }
-        Message::LocalePreferenceSaved { lang, path } => {
-            format!("preferência de idioma salva: {lang} ({path})")
-        }
-        Message::LocalePreferenceCleared => "preferência de idioma removida.".to_string(),
-        Message::LocaleStatusTitle => "Status do locale:".to_string(),
-    }
+        SshCliError::HostKeyChanged {
+            host,
+            port,
+            expected,
+            obtained,
+        } => Message::ErrorHostKeyChanged {
+            detail: format!(
+                "{host}:{port} expected {expected}, got {obtained} \
+                 (use --replace-host-key if legitimate)"
+            ),
+        },
+        SshCliError::SshTimeout(ms) | SshCliError::Timeout(ms) => Message::ErrorTimeout {
+            detail: format!("{ms}ms"),
+        },
+        SshCliError::FileNotFound(path) => Message::ErrorFileNotFound { path: path.clone() },
+        SshCliError::Unavailable { service } => Message::ErrorUnavailable {
+            service: (*service).to_string(),
+        },
+        SshCliError::Software { op } => Message::ErrorSoftware {
+            op: (*op).to_string(),
+        },
+        SshCliError::PartialFailure { failed, total, op } => Message::ErrorPartialFailure {
+            detail: format!("{failed}/{total} ({op})"),
+        },
+        SshCliError::InvalidArgument(detail) => Message::ErrorInvalidArgument {
+            detail: detail.clone(),
+        },
+        SshCliError::VpsNotFound(name) => Message::VpsNotFound { name: name.clone() },
+        SshCliError::VpsDuplicate(name) => Message::VpsDuplicate { name: name.clone() },
+        // Untranslated variants (io, json, toml_*, broken_pipe, crypto, tls, …)
+        // keep the English Display: they are machine-facing plumbing, not
+        // operator prose.
+        _ => return None,
+    };
+    Some(t(msg))
 }
 
 #[cfg(test)]

@@ -1,5 +1,8 @@
 # Testing Guide
 
+> **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
+
+
 > Run the right ssh-cli test profile without hanging on remote networks.
 
 - Read this document in [Portuguese (pt-BR)](TESTING.pt-BR.md).
@@ -29,7 +32,7 @@
 - Post-0.3.9 / **0.4.0** suite `tests/gaps_v040_integration.rs`
 - AUD-POST suite `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006, DOC-041)
 - AUD-E2E suite `tests/gaps_v042_integration.rs` (TUN-003, IO-010, UX-001, REL-007, ENV-001, DOC-042, SCP-024)
-- **0.5.2** suite `tests/gaps_v051_integration.rs` (export TOML default, `vps-export` JSON, schema v3 dual-read, secrets-init event, include-secrets guard, CRUD `vps-added`, empty command, import exit 65)
+- **0.5.2** suite `tests/gaps_v051_integration.rs` (export redaction roundtrip, `vps-export` JSON, schema v3 dual-read, secrets-init event, include-secrets guard, CRUD `vps-added`, empty command, import exit 65)
 - G-TLS residual suite `tests/gaps_v052_tls_policy.rs`
 - Domain types suite `tests/gaps_v053_domain_types.rs`
 - Error handling suite `tests/gaps_v054_error_handling.rs`
@@ -41,8 +44,12 @@
 - Snapshot tests under `tests/snapshot_tests.rs`
 - SCP surface under `tests/scp_integration.rs`
 - Tunnel surface under `tests/tunnel_integration.rs`
+- Tunnel mode surface under `tests/gaps_v060_tunnel_modes.rs` — the 0.5.4 modes `--reverse`, `--socks5` and `--remote-socket`, their mutual exclusion, the `mode` wire label (`local` / `reverse` / `socks5` / `streamlocal`), the `--i-accept-network-exposure` guard on both ends, and the `tunnel_closed` event
 - Property tests under `tests/proptest_tests.rs`
 - i18n integration under `tests/i18n_integration.rs`
+- Gate battery runner `scripts/check_all_gates.sh` — runs all ten mandatory gates in one invocation
+- Advisory freshness gate `scripts/check_advisory_freshness.sh` — only reachable through the battery runner
+- Gate battery coverage contract `tests/gaps_v064_gate_runner.rs`
 - Install resolve script `scripts/verify_install_resolve.sh`
 - English identifier gate `scripts/check_en_identifiers.sh`
 - Real SSH E2E (optional, machine-local): `scripts/e2e_real_ssh.sh` — official matrix **E01–E18** (E10–E14 cover SCP upload/download/cmp/missing/preserve; **E17/E18** cover SFTP checksum + recursive tree — G7)
@@ -50,6 +57,18 @@
 
 
 ## How to Run
+### Full battery (required before declaring a gate green)
+- One invocation runs every mandatory gate and reports every result.
+
+```bash
+bash scripts/check_all_gates.sh
+```
+
+- Add `--json` for NDJSON, `--only ID[,ID...]` for a subset, `--list` for the gate ids.
+- `cargo clippy` and `cargo test` abort on the first unbuildable target, so a single broken test file hides every gate behind it.
+- The run always reports how many gates it skipped, so a partial run cannot read as a full one.
+- The battery is sequential on purpose: the cargo gates contend for one `target/` lock, so running them concurrently buys nothing.
+
 ### Local developer loop
 
 ```bash

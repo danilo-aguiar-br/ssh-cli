@@ -64,6 +64,25 @@ pub async fn run_secrets_command(
                 None
             };
 
+            // C2: `--force` rotates the primary key, which invalidates every stored
+            // secret that is not re-encrypted in the same run. The plan states how
+            // many hosts that is, because "0" and "12" call for very different
+            // amounts of care before pressing enter.
+            if crate::cli::dry_run_stop(
+                "secrets-init",
+                &[
+                    ("force", serde_json::json!(force)),
+                    ("keyring", serde_json::json!(keyring)),
+                    (
+                        "hosts_to_reencrypt",
+                        serde_json::json!(hosts_to_reencrypt.as_ref().map_or(0, |f| f.hosts.len())),
+                    ),
+                    ("config_path", serde_json::json!(path.display().to_string())),
+                ],
+            )? {
+                return Ok(());
+            }
+
             let seg = crate::secrets::init_primary_key(keyring, force)?;
             let mut reencrypted_hosts = 0usize;
 
@@ -96,6 +115,23 @@ pub async fn run_secrets_command(
         }
         SecretsAction::Reencrypt { json } => {
             let path = resolve_config_path(config_override.as_deref())?;
+            // C2: rewrites every secret in `config.toml` under the current key.
+            if crate::cli::dry_run_stop(
+                "secrets-reencrypt",
+                &[
+                    ("config_path", serde_json::json!(path.display().to_string())),
+                    (
+                        "hosts",
+                        serde_json::json!(if path.is_file() {
+                            load(&path)?.hosts.len()
+                        } else {
+                            0
+                        }),
+                    ),
+                ],
+            )? {
+                return Ok(());
+            }
             run_reencrypt(&path, json || format == OutputFormat::Json)?;
             Ok(())
         }

@@ -12,30 +12,60 @@ use super::{
     use_json, HostSelection,
 };
 use crate::cli::OutputFormat;
-use crate::errors::SshCliError;
+use crate::errors::{finish_batch, SshCliError};
 use crate::output;
 use crate::ssh::client::{SshClient, SshClientTrait};
 use anyhow::Result;
 use secrecy::SecretString;
 use std::path::PathBuf;
 
+/// Everything one `health-check` invocation needs.
+///
+/// # Why a struct (B3)
+///
+/// The single-host and fan-out entry points each took nine positional
+/// parameters, four of them `Option<String>` / `Option<SecretString>` in a row.
+/// A transposed key path and passphrase compiles and only fails against a live
+/// host. `too_many_arguments` — the one lint that measures this — was suppressed
+/// on both, so the coupling never showed up in a green gate.
+pub struct HealthCheckRequest {
+    /// Single host, explicit list, tag set or the whole registry.
+    pub selection: HostSelection,
+    /// Alternate config directory.
+    pub config_override: Option<PathBuf>,
+    /// Global output format.
+    pub format: OutputFormat,
+    /// Subcommand-local `--json`.
+    pub json_local: bool,
+    /// SSH password override.
+    pub password_override: Option<SecretString>,
+    /// Connect timeout override.
+    pub timeout_override: Option<crate::domain::TimeoutMs>,
+    /// Private key path override.
+    pub key_override: Option<String>,
+    /// Key passphrase override.
+    pub key_passphrase_override: Option<SecretString>,
+    /// Replace a diverging host key in TOFU `known_hosts`.
+    pub replace_host_key: bool,
+}
+
 /// Health-check SSH (single host or multi-host bounded fan-out).
 ///
 /// Workload: **I/O-bound** connect probe. One-shot auth parity (GAP-SSH-CLI-006)
 /// and TOFU (M1). Multi-host saturates sockets/auth — gated by concurrency budget.
 /// Batch JSON when [`HostSelection::is_batch`] (G-PAR-36).
-#[allow(clippy::too_many_arguments)]
-pub async fn run_health_check(
-    selection: HostSelection,
-    config_override: Option<PathBuf>,
-    format: OutputFormat,
-    json_local: bool,
-    password_override: Option<SecretString>,
-    timeout_override: Option<crate::domain::TimeoutMs>,
-    key_override: Option<String>,
-    key_passphrase_override: Option<SecretString>,
-    replace_host_key: bool,
-) -> Result<()> {
+pub async fn run_health_check(req: HealthCheckRequest) -> Result<()> {
+    let HealthCheckRequest {
+        selection,
+        config_override,
+        format,
+        json_local,
+        password_override,
+        timeout_override,
+        key_override,
+        key_passphrase_override,
+        replace_host_key,
+    } = req;
     // M2: local --json or global format → JSON error envelope on failure.
     if json_local || format == OutputFormat::Json {
         crate::output::set_json_errors(true);
@@ -46,8 +76,8 @@ pub async fn run_health_check(
         )));
     }
     if selection.is_batch() {
-        return run_health_check_all(
-            &selection,
+        return run_health_check_all(HealthCheckRequest {
+            selection,
             config_override,
             format,
             json_local,
@@ -56,7 +86,7 @@ pub async fn run_health_check(
             key_override,
             key_passphrase_override,
             replace_host_key,
-        )
+        })
         .await;
     }
     let HostSelection::Single(resolved_name) = selection else {
@@ -78,14 +108,13 @@ pub async fn run_health_check(
     // Ordem: password, sudo, su, timeout, key_path, key_passphrase.
     apply_overrides(
         &mut vps,
-        password_override,
-        None,
-        None,
-        timeout_override,
-        key_override,
-        key_passphrase_override,
-        false,
-        None,
+        crate::vps::AuthOverrides {
+            password: password_override,
+            timeout: timeout_override,
+            key_path: key_override,
+            key_passphrase: key_passphrase_override,
+            ..Default::default()
+        },
     );
     // M1: honra --replace-host-key global (paridade exec/scp/tunnel).
     let cfg = build_connection_config(&vps, Some(&path), replace_host_key);
@@ -112,7 +141,6 @@ pub(super) async fn collect_health_check_batch(
 }
 
 /// Parallel health-check fan-out (I/O-bound, map_bounded); returns results + limit.
-#[allow(clippy::too_many_arguments)]
 async fn collect_health_check_batch_with_opts(
     selection: &HostSelection,
     config_override: Option<PathBuf>,
@@ -153,7 +181,16 @@ async fn collect_health_check_batch_with_opts(
                     error: Some("operation cancelled by signal".into()),
                 };
             }
-            apply_overrides(&mut vps, pw, None, None, to, key, kp, false, None);
+            apply_overrides(
+                &mut vps,
+                crate::vps::AuthOverrides {
+                    password: pw,
+                    timeout: to,
+                    key_path: key,
+                    key_passphrase: kp,
+                    ..Default::default()
+                },
+            );
             let start = std::time::Instant::now();
             let cfg = build_connection_config(&vps, Some(&path_c), replace_host_key);
             match <SshClient as SshClientTrait>::connect(cfg).await {
@@ -199,20 +236,20 @@ async fn collect_health_check_batch_with_opts(
 }
 
 /// Parallel health-check for `--all` / `--hosts` (I/O-bound, map_bounded).
-#[allow(clippy::too_many_arguments)]
-async fn run_health_check_all(
-    selection: &HostSelection,
-    config_override: Option<PathBuf>,
-    format: OutputFormat,
-    json_local: bool,
-    password_override: Option<SecretString>,
-    timeout_override: Option<crate::domain::TimeoutMs>,
-    key_override: Option<String>,
-    key_passphrase_override: Option<SecretString>,
-    replace_host_key: bool,
-) -> Result<()> {
-    let (host_results, limit) = collect_health_check_batch_with_opts(
+async fn run_health_check_all(req: HealthCheckRequest) -> Result<()> {
+    let HealthCheckRequest {
         selection,
+        config_override,
+        format,
+        json_local,
+        password_override,
+        timeout_override,
+        key_override,
+        key_passphrase_override,
+        replace_host_key,
+    } = req;
+    let (host_results, limit) = collect_health_check_batch_with_opts(
+        &selection,
         config_override,
         password_override,
         timeout_override,
@@ -225,13 +262,7 @@ async fn run_health_check_all(
     let failures = host_results.iter().filter(|h| !h.ok).count();
     let as_json = use_json(json_local, format);
     output::print_health_batch(&host_results, limit, as_json)?;
-    if failures > 0 {
-        return Err(SshCliError::Config(format!(
-            "{failures}/{} hosts failed health-check",
-            host_results.len()
-        ))
-        .into());
-    }
+    finish_batch(failures, host_results.len(), "health-check")?;
     Ok(())
 }
 

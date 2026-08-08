@@ -85,8 +85,21 @@ fn export_json_flag_envelope() {
         .stdout(predicate::str::contains("\"ok\""));
 }
 
+/// The export body is pinned in BOTH formats, because the old name lied about one of them.
+///
+/// This test used to be called `export_import_toml_roundtrip` and never asserted TOML. It
+/// checked only that `sshcli-enc:` was absent and that import accepted the file — and since
+/// import accepts TOML *and* JSON envelopes, the roundtrip closed with the wrong body while
+/// looking green. That apparent coverage is what let some twenty documents claim for three
+/// releases that the body "stays TOML unless `--json`", which is false: the body follows the
+/// resolved output format, and that resolves to JSON whenever stdout is not a TTY, which is
+/// every agent invocation and every invocation of this harness.
+///
+/// A test whose name asserts what it never verifies is worse than an absent test: the gap is
+/// invisible precisely where someone would look for it. So both branches are now pinned by
+/// the shape of the bytes on disk, not by the filename they were written into.
 #[test]
-fn export_import_toml_roundtrip() {
+fn export_body_follows_resolved_format_and_both_import() {
     let tmp = TempDir::new().unwrap();
     // Plaintext at-rest so export include-secrets is portable without copying secrets.key.
     cmd(&tmp)
@@ -122,22 +135,60 @@ fn export_import_toml_roundtrip() {
         !text.contains("sshcli-enc:"),
         "plaintext export expected: {text}"
     );
-    let tmp2 = TempDir::new().unwrap();
-    cmd(&tmp2)
+    // The filename says .toml and the bytes are JSON: that is the whole point.
+    assert!(
+        text.trim_start().starts_with('{') && text.contains("\"event\":\"vps-export\""),
+        "with a non-TTY stdout the body MUST be the JSON envelope even into a .toml \
+         filename; got: {text}"
+    );
+
+    // The only route to a TOML body is an explicit text format.
+    let export_toml = tmp.path().join("exp-text.toml");
+    cmd(&tmp)
         .args([
             "--allow-plaintext-secrets",
+            "--output-format",
+            "text",
             "vps",
-            "import",
-            "--file",
-            export.to_str().unwrap(),
+            "export",
+            "--include-secrets",
+            "--output",
+            export_toml.to_str().unwrap(),
         ])
         .assert()
         .success();
-    cmd(&tmp2)
-        .args(["vps", "list"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("rt"));
+    let toml_text = std::fs::read_to_string(&export_toml).unwrap();
+    assert!(
+        !toml_text.trim_start().starts_with('{') && toml_text.contains("schema_version ="),
+        "`--output-format text` MUST produce a TOML body; got: {toml_text}"
+    );
+    // TOML names the field `username` where the JSON envelope names it `user`; an import
+    // written with the envelope spelling is exit 65 on an unknown field.
+    assert!(
+        toml_text.contains("username"),
+        "TOML body MUST use `username`, not the envelope's `user`; got: {toml_text}"
+    );
+
+    // Import accepts both bodies, which is exactly why the old assertion proved nothing.
+    for (label, path) in [("json", &export), ("toml", &export_toml)] {
+        let dest = TempDir::new().unwrap();
+        cmd(&dest)
+            .args([
+                "--allow-plaintext-secrets",
+                "vps",
+                "import",
+                "--file",
+                path.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        cmd(&dest)
+            .args(["vps", "list"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("rt"));
+        assert!(!label.is_empty());
+    }
 }
 
 #[test]

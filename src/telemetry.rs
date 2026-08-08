@@ -31,8 +31,8 @@
 //!
 //! # Lifecycle
 //!
-//! 1. [`bootstrap_logs`] — before clap parse (phase 1b).
-//! 2. [`initialize_logs`] — after parse, reloads `EnvFilter` from `-v` only (G-E2E-09).
+//! 1. [`crate::telemetry::bootstrap_logs`] — before clap parse (phase 1b).
+//! 2. [`crate::telemetry::initialize_logs`] — after parse, reloads `EnvFilter` from `-v` only (G-E2E-09).
 //! 3. Process exit — `main` flushes stderr; no file worker to join.
 
 use std::sync::OnceLock;
@@ -41,7 +41,7 @@ use tracing_error::ErrorLayer;
 use tracing_subscriber::reload;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
 
-/// Reload handle: bootstrap installs once; [`initialize_logs`] reloads the filter.
+/// Reload handle: bootstrap installs once; [`crate::telemetry::initialize_logs`] reloads the filter.
 ///
 /// `OnceLock` (not `lazy_static`): value is created only when the binary path
 /// installs the global subscriber.
@@ -74,7 +74,7 @@ pub fn build_env_filter(verbose: u8) -> EnvFilter {
 
 /// Installs stderr tracing **before** clap parse (one-shot lifecycle phase 1b).
 ///
-/// Default filter is `error` so agents stay quiet; [`initialize_logs`] reloads
+/// Default filter is `error` so agents stay quiet; [`crate::telemetry::initialize_logs`] reloads
 /// from `-v` after parse (ambient `RUST_LOG` ignored).
 ///
 /// Safe to call more than once: subsequent calls are no-ops once the reload

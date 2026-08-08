@@ -11,7 +11,11 @@ use secrecy::ExposeSecret;
 use std::io::{self, Write};
 
 /// Prints the doctor report as human text (GAP-SSH-IO-005).
-#[allow(clippy::too_many_arguments)] // doctor report is a flat field set (stable agent surface)
+// B3: kept deliberately. The doctor report is a flat, stable agent surface — the
+// text renderer mirrors the JSON field set one-for-one. Wrapping it in a context
+// struct would create a second definition of the same contract that could drift
+// from the wire DTO, which is a worse failure than a long parameter list.
+#[allow(clippy::too_many_arguments)]
 pub fn print_doctor_text(
     layer: &str,
     config_path: &str,

@@ -1,5 +1,8 @@
 # Guia de testes
 
+> **0.5.4** — release de segurança e agent-native. Corrige DoS remoto pré-auth no banner SSH (A1), impede que bits setuid enviados pelo servidor caiam no arquivo baixado (A3), fecha a janela de leitura pública em chaves privadas ACME/mTLS (A2) e adiciona flags de redução de payload (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) aplicadas antes da serialização. BREAKING: falha parcial multi-host agora sai com exit **1** (era 65); `--bind` fora do loopback exige `--i-accept-network-exposure`. Novo evento `tunnel_closed`.
+
+
 > Rode o perfil certo de testes do ssh-cli sem travar em redes remotas.
 
 - Leia este documento em [inglês](TESTING.md).
@@ -29,7 +32,7 @@
 - Suite residual pós-0.3.9 / **0.4.0** em `tests/gaps_v040_integration.rs`
 - Suite AUD-POST em `tests/gaps_v041_integration.rs` (EXP-001 export empty, TUN-002 exit 0 pós-bind, CLI-005/006 paridade auth, IO-009 `event: scp-transfer`, REL-006, DOC-041 honesty)
 - Suite AUD-E2E em `tests/gaps_v042_integration.rs` (TUN-003, IO-010, UX-001, REL-007, ENV-001, DOC-042, SCP-024)
-- Suite **0.5.2** em `tests/gaps_v051_integration.rs` (export TOML padrão, JSON `vps-export`, dual-read schema v3, evento secrets-init, guarda include-secrets, CRUD `vps-added`, empty command, import exit 65)
+- Suite **0.5.2** em `tests/gaps_v051_integration.rs` (roundtrip de redaction do export, JSON `vps-export`, dual-read schema v3, evento secrets-init, guarda include-secrets, CRUD `vps-added`, empty command, import exit 65)
 - Suite residual G-TLS em `tests/gaps_v052_tls_policy.rs`
 - Suite de tipos de domínio em `tests/gaps_v053_domain_types.rs`
 - Suite de tratamento de erros em `tests/gaps_v054_error_handling.rs`
@@ -41,8 +44,12 @@
 - Snapshot tests em `tests/snapshot_tests.rs`
 - Superfície SCP em `tests/scp_integration.rs`
 - Superfície tunnel em `tests/tunnel_integration.rs`
+- Superfície dos modos de tunnel em `tests/gaps_v060_tunnel_modes.rs` — os modos `--reverse`, `--socks5` e `--remote-socket` da 0.5.4, a exclusão mútua entre eles, o rótulo `mode` no wire (`local` / `reverse` / `socks5` / `streamlocal`), o guard `--i-accept-network-exposure` nas duas pontas e o evento `tunnel_closed`
 - Property tests em `tests/proptest_tests.rs`
 - i18n integration em `tests/i18n_integration.rs`
+- Runner da bateria de gates `scripts/check_all_gates.sh` — roda os dez gates obrigatórios numa invocação
+- Gate de frescor de advisories `scripts/check_advisory_freshness.sh` — alcançável somente pelo runner da bateria
+- Contrato de cobertura da bateria `tests/gaps_v064_gate_runner.rs`
 - Script de install resolve `scripts/verify_install_resolve.sh`
 - Gate de identificadores em inglês `scripts/check_en_identifiers.sh`
 - E2E SSH real (opcional, local da máquina): `scripts/e2e_real_ssh.sh` — matriz oficial **E01–E18** (E10–E14 cobrem SCP upload/download/cmp/missing/preserve; **E17/E18** cobrem SFTP checksum + árvore recursiva — G7)
@@ -50,6 +57,18 @@
 
 
 ## Como rodar
+### Bateria completa (obrigatória antes de declarar gate verde)
+- Uma invocação roda todo gate obrigatório e reporta todo resultado.
+
+```bash
+bash scripts/check_all_gates.sh
+```
+
+- Acrescente `--json` para NDJSON, `--only ID[,ID...]` para subconjunto e `--list` para ver os ids.
+- `cargo clippy` e `cargo test` abortam no primeiro alvo que não compila, então um único arquivo de teste quebrado esconde todo gate atrás dele.
+- A execução sempre reporta quantos gates pulou, então rodada parcial não pode ler como completa.
+- A bateria é sequencial de propósito: os gates de cargo disputam um lock de `target/`, então rodá-los em paralelo não ganha nada.
+
 ### Loop local do desenvolvedor
 
 ```bash

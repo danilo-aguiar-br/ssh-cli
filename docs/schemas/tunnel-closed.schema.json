@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/tunnel-closed.schema.json",
+  "title": "tunnel closed JSON",
+  "description": "Structured stdout payload emitted when `ssh-cli tunnel ... --json` stops serving (G-TUN-R07). Emitted on every ending, including the clean deadline path. Before this event three very different endings shared exit 0 — deadline reached, signal received, and a fatal accept error that broke the loop early — so a tunnel that died three seconds into a five-minute deadline was indistinguishable from one that served its full lifetime.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ok",
+    "event",
+    "vps",
+    "reason",
+    "bind",
+    "local_port",
+    "forwards_served",
+    "capacity_waits",
+    "duration_ms"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "description": "True when the tunnel served its full lifetime; false when it stopped on a fatal accept error (the process still exits 0 because the bind succeeded)"
+    },
+    "event": {
+      "type": "string",
+      "const": "tunnel_closed"
+    },
+    "vps": {
+      "type": "string",
+      "description": "Registered VPS name used for the tunnel"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "deadline",
+        "signal",
+        "accept_error"
+      ],
+      "description": "Why the tunnel stopped: `deadline` = --timeout-ms elapsed after a successful bind; `signal` = SIGINT/SIGTERM; `accept_error` = the accept loop hit a fatal error and stopped early"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "local",
+        "socks5",
+        "streamlocal",
+        "reverse"
+      ],
+      "default": "local",
+      "description": "Which tunnel was serving; mirrors the `mode` of the matching `tunnel_listening` event. Absent in events written before 0.5.4, which can only have been plain local forwards."
+    },
+    "bind": {
+      "type": "string",
+      "description": "Effective bind address that was served — the local one for `local`/`socks5`/`streamlocal`, the address requested from the server for `reverse`"
+    },
+    "local_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "Port that was served (OS-assigned when the requested port was 0; the server-allocated port under `reverse`)"
+    },
+    "forwards_served": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Connections accepted and forwarded during the tunnel's lifetime (G-TUN-R11). Answers the most basic diagnostic question: did anything ever connect? Zero distinguishes a client misconfiguration from a tunnel fault"
+    },
+    "capacity_waits": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Times a new connection had to wait for a concurrency permit (G-TUN-R12). Non-zero means --max-concurrency was the bottleneck, which otherwise appears only as unexplained latency"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Wall-clock lifetime in milliseconds, measured from before the SSH connect"
+    }
+  }
+}

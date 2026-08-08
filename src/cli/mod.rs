@@ -167,6 +167,65 @@ pub struct CliArgs {
     #[arg(long, global = true, action = ArgAction::SetTrue)]
     pub json: bool,
 
+    /// Keep only these dotted paths in each record (CSV; alias `--fields`).
+    ///
+    /// Agent-native shaping: applied **before** serialization, so the full envelope is
+    /// never built. Without it an agent must pipe through `jaq`, by which point the
+    /// oversized payload has already been written and the tokens already spent.
+    #[arg(
+        long,
+        global = true,
+        alias = "fields",
+        value_name = "PATHS",
+        value_delimiter = ','
+    )]
+    pub select: Vec<String>,
+
+    /// Keep records matching `key=value`, `key!=value` or `key~substring` (repeatable, AND).
+    ///
+    /// A malformed predicate is rejected at parse time rather than silently matching
+    /// nothing — a typo must not be indistinguishable from an empty result.
+    #[arg(long, global = true, value_name = "EXPR")]
+    pub filter: Vec<String>,
+
+    /// Emit at most N records (distinct from per-command query limits).
+    #[arg(long, global = true, value_name = "N")]
+    pub limit: Option<usize>,
+
+    /// Sort records ascending by dotted path (numbers compare numerically).
+    #[arg(long, global = true, value_name = "PATH")]
+    pub sort: Option<String>,
+
+    /// Drop later records repeating this dotted path's value.
+    #[arg(long, global = true, value_name = "PATH")]
+    pub dedupe_by: Option<String>,
+
+    /// Replace the record collection with `{"count": N}`, counted after all filtering.
+    #[arg(long, global = true, action = ArgAction::SetTrue)]
+    pub count_only: bool,
+
+    /// Shorten strings longer than N **characters** (never bytes; UTF-8 stays valid).
+    #[arg(long, global = true, value_name = "CHARS")]
+    pub truncate_content: Option<usize>,
+
+    /// Cap envelope size by dropping trailing records (never by slicing the JSON text).
+    #[arg(long, global = true, value_name = "BYTES")]
+    pub max_output_bytes: Option<usize>,
+
+    /// Refuse to read stdin; fail fast instead of blocking on an absent human.
+    #[arg(long, global = true, action = ArgAction::SetTrue)]
+    pub no_input: bool,
+
+    /// Print the plan for a destructive operation and exit without executing it.
+    ///
+    /// Accepted only by commands that implement it (see
+    /// [`supports_dry_run`]); anywhere else it is rejected with exit 64 rather
+    /// than accepted and ignored. A global flag that silently does nothing on
+    /// half the surface is worse than no flag at all — that is exactly how
+    /// `--no-input` shipped broken on `vps add`.
+    #[arg(long, global = true, action = ArgAction::SetTrue)]
+    pub dry_run: bool,
+
     /// Disables sudo-exec/su-exec for this invocation (alias --disableSudo).
     #[arg(long, global = true, alias = "disableSudo", action = ArgAction::SetTrue)]
     pub disable_sudo: bool,
@@ -357,10 +416,188 @@ pub(crate) fn read_stdin_if(
     value: Option<String>,
 ) -> Result<Option<secrecy::SecretString>> {
     if flag {
+        // C2: `--no-input` refuses stdin declaratively. Without it, an agent that
+        // passed `--password-stdin` with nothing piped in would block forever waiting
+        // on a human who is not there — the failure mode is a hung process rather than
+        // an error, which is the worst outcome for unattended automation.
+        //
+        // The refusal lives inside `read_secret_stdin` so every caller inherits it;
+        // duplicating it here would leave `vps add`/`vps edit` uncovered again.
         Ok(Some(crate::vps::read_secret_stdin()?))
     } else {
         Ok(value.map(secrecy::SecretString::from))
     }
+}
+
+/// Process-wide `--no-input` switch.
+static NO_INPUT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Installs the `--no-input` policy for this one-shot process.
+pub fn set_no_input(value: bool) {
+    NO_INPUT.store(value, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether stdin reads must fail instead of blocking.
+#[must_use]
+pub fn is_no_input() -> bool {
+    NO_INPUT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Resolves the tunnel mode from the mutually exclusive mode flags.
+///
+/// Pure: no registry, no socket, no clock. The positional arguments mean
+/// different things per mode — `remote_host` is a destination for a local
+/// forward and a *server bind address* under `--reverse` — so getting this wrong
+/// points the tunnel somewhere the caller never asked for. Keeping the decision
+/// in one testable function is what lets every combination be covered without a
+/// server.
+///
+/// # Errors
+/// [`crate::errors::SshCliError::InvalidArgument`] (exit 64) when a mode is given
+/// arguments it cannot use, or is missing arguments it requires.
+pub fn resolve_tunnel_mode(
+    socks5: bool,
+    remote_socket: Option<String>,
+    reverse: bool,
+    remote_host: Option<String>,
+    remote_port: Option<u16>,
+) -> Result<crate::tunnel::TunnelMode, crate::errors::SshCliError> {
+    use crate::errors::SshCliError::InvalidArgument;
+    use crate::tunnel::TunnelMode;
+
+    let positional_given = remote_host.is_some() || remote_port.is_some();
+
+    if socks5 {
+        if positional_given {
+            return Err(InvalidArgument(
+                "--socks5 chooses a destination per connection; remove REMOTE_HOST and REMOTE_PORT"
+                    .to_string(),
+            ));
+        }
+        return Ok(TunnelMode::Socks5);
+    }
+
+    if let Some(socket_path) = remote_socket {
+        if positional_given {
+            return Err(InvalidArgument(
+                "--remote-socket replaces the destination; remove REMOTE_HOST and REMOTE_PORT"
+                    .to_string(),
+            ));
+        }
+        return Ok(TunnelMode::StreamLocal { socket_path });
+    }
+
+    let (Some(host), Some(port)) = (remote_host, remote_port) else {
+        return Err(InvalidArgument(
+            "tunnel requires REMOTE_HOST and REMOTE_PORT unless --socks5 or --remote-socket \
+             is used"
+                .to_string(),
+        ));
+    };
+
+    if reverse {
+        // Port 0 is meaningful here and only here: the server allocates and reports
+        // back, exactly like a local ephemeral bind.
+        return Ok(TunnelMode::Reverse {
+            remote_bind: host,
+            remote_port: port,
+        });
+    }
+
+    if port == 0 {
+        return Err(InvalidArgument(
+            "REMOTE_PORT 0 is only valid with --reverse, where the server allocates the port"
+                .to_string(),
+        ));
+    }
+    Ok(TunnelMode::Local {
+        remote_host: host,
+        remote_port: port,
+    })
+}
+
+/// Process-wide `--dry-run` switch.
+static DRY_RUN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Installs the `--dry-run` policy for this one-shot process.
+pub fn set_dry_run(value: bool) {
+    DRY_RUN.store(value, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether destructive operations must emit a plan instead of executing.
+#[must_use]
+pub fn is_dry_run() -> bool {
+    DRY_RUN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether this command implements `--dry-run`.
+///
+/// C2 covers the operations that destroy state without a prior read: registry
+/// removal and import, remote unlink and rmdir, and the two `secrets` writes
+/// that can invalidate every stored credential at once. Transfers and `exec`
+/// are deliberately absent — their effect is the remote command itself, which
+/// this CLI cannot preview without running it.
+#[must_use]
+pub fn supports_dry_run(command: &Command) -> bool {
+    use crate::cli::{SecretsAction, SftpAction, VpsAction};
+    match command {
+        Command::Vps { action } => {
+            matches!(action, VpsAction::Remove { .. } | VpsAction::Import { .. })
+        }
+        Command::Sftp { action, .. } => {
+            matches!(action, SftpAction::Rm { .. } | SftpAction::Rmdir { .. })
+        }
+        Command::Secrets { action } => matches!(
+            action,
+            SecretsAction::Init { .. } | SecretsAction::Reencrypt { .. }
+        ),
+        _ => false,
+    }
+}
+
+/// Rejects `--dry-run` on a command that cannot honour it.
+///
+/// # Errors
+/// [`crate::errors::SshCliError::InvalidArgument`] (exit 64) when the flag was
+/// passed to an unsupported command.
+pub fn guard_dry_run_supported(command: &Command) -> Result<(), crate::errors::SshCliError> {
+    if !is_dry_run() || supports_dry_run(command) {
+        return Ok(());
+    }
+    Err(crate::errors::SshCliError::InvalidArgument(
+        "--dry-run is not implemented for this command; it is accepted only by \
+         `vps remove`, `vps import`, `sftp rm`, `sftp rmdir`, `secrets init` and \
+         `secrets reencrypt`"
+            .to_string(),
+    ))
+}
+
+/// Emits the plan for a destructive operation and reports whether to stop.
+///
+/// Returns `true` when the caller must return without mutating anything. The
+/// plan always reaches stdout as JSON, even in text mode: the point of a
+/// preview is that a machine can diff it against what it intended, and prose
+/// cannot be diffed.
+///
+/// # Errors
+/// stdout write failures (including `BrokenPipe`).
+pub fn dry_run_stop(
+    operation: &str,
+    fields: &[(&str, serde_json::Value)],
+) -> Result<bool, crate::errors::SshCliError> {
+    if !is_dry_run() {
+        return Ok(false);
+    }
+    let mut map = std::collections::BTreeMap::new();
+    map.insert("operation".to_string(), serde_json::json!(operation));
+    map.insert("dry_run".to_string(), serde_json::json!(true));
+    map.insert("executed".to_string(), serde_json::json!(false));
+    for (k, v) in fields {
+        map.insert((*k).to_string(), v.clone());
+    }
+    crate::json_wire::print_json_line(&crate::json_wire::SuccessEnvelope::new("dry-run", map))
+        .map_err(crate::errors::SshCliError::Io)?;
+    Ok(true)
 }
 
 /// Warns only when a secret value is present on argv (not stdin flags).

@@ -39,7 +39,7 @@ use multi_host::{
 /// Runtime overrides for the `scp` subcommand (parity with exec).
 ///
 /// G-SECDEV-02: secrets are [`secrecy::SecretString`] from the CLI boundary.
-/// G-TYPE-18: `timeout` is refined [`TimeoutMs`].
+/// G-TYPE-18: `timeout` is refined [`crate::domain::TimeoutMs`].
 #[derive(Debug, Default, Clone)]
 pub struct ScpOptions {
     /// SSH password (already resolved from flag or stdin).
@@ -308,8 +308,7 @@ pub async fn run_scp_upload_with_client(
             vps_name,
             &local.display().to_string(),
             &remote.display().to_string(),
-            result.bytes_transferred,
-            result.duration_ms,
+            &result,
         )?;
     } else {
         output::print_success(&i18n::t(Message::ScpUploadCompleted {
@@ -337,8 +336,7 @@ pub async fn run_scp_download_with_client(
             vps_name,
             &local.display().to_string(),
             &remote.display().to_string(),
-            result.bytes_transferred,
-            result.duration_ms,
+            &result,
         )?;
     } else {
         output::print_success(&i18n::t(Message::ScpDownloadCompleted {

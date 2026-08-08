@@ -19,6 +19,30 @@ fn exists(rel: &str) -> bool {
     workspace_root().join(rel).is_file()
 }
 
+/// Reads a subsystem as one string: the facade plus every sibling module.
+///
+/// A7 split `src/sftp/mod.rs` into `setup.rs`, `dispatch.rs` and `emit.rs`. An
+/// assertion pinned to `mod.rs` alone would go green simply because the code it
+/// guards moved next door — the same trap `gaps_v061_error_taxonomy.rs` already
+/// documents for the `secrets` split.
+fn read_subsystem(dir_rel: &str) -> String {
+    let dir = workspace_root().join(dir_rel);
+    let mut out = String::new();
+    let entries = fs::read_dir(&dir).unwrap_or_else(|e| panic!("read dir {dir_rel}: {e}"));
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "rs") {
+            out.push_str(&fs::read_to_string(&path).expect("read module"));
+            out.push('\n');
+        }
+    }
+    assert!(
+        !out.is_empty(),
+        "{dir_rel} produced no sources — the walk is broken, not the product"
+    );
+    out
+}
+
 #[test]
 fn g_sftp_01_cargo_has_russh_sftp_feature() {
     let cargo = read("Cargo.toml");
@@ -90,7 +114,7 @@ fn g_sftp_17_18_agent_on_transfer_options() {
         scp.contains("use_agent") && scp.contains("agent_socket"),
         "G-SFTP-17: ScpOptions agent fields required"
     );
-    let sftp = read("src/sftp/mod.rs");
+    let sftp = read_subsystem("src/sftp");
     assert!(
         sftp.contains("use_agent") && sftp.contains("agent_socket"),
         "G-SFTP-18: SftpOptions agent fields required"
@@ -128,15 +152,16 @@ fn g_sftp_r01_tree_uses_entry_name_and_local_under() {
         "G-SFTP-R05: under_timeout helper required"
     );
     // Partial cleanup on any download error (not only cancel).
+    // Both operands were the same string, so the `||` added nothing.
     assert!(
-        s.contains("remove_file(&partial)") || s.contains("remove_file(&partial)"),
+        s.contains("remove_file(&partial)"),
         "G-SFTP-R04: partial cleanup path required"
     );
 }
 
 #[test]
 fn g_sftp_r05_multi_file_and_fs_timeout() {
-    let m = read("src/sftp/mod.rs");
+    let m = read_subsystem("src/sftp");
     assert!(
         m.contains("under_timeout"),
         "G-SFTP-R05: sftp/mod multi-file/FS must use under_timeout"
@@ -168,7 +193,7 @@ fn g_sftp_r13_fallback_basename_constant() {
         c.contains("SFTP_FALLBACK_BASENAME"),
         "G-SFTP-R13: named fallback basename constant"
     );
-    let m = read("src/sftp/mod.rs");
+    let m = read_subsystem("src/sftp");
     assert!(
         m.contains("SFTP_FALLBACK_BASENAME"),
         "multi-file must use SFTP_FALLBACK_BASENAME not bare \"file\""
@@ -183,10 +208,10 @@ fn g_sftp_r13_fallback_basename_constant() {
 fn g_sftp_r06_upload_tree_no_follow_root() {
     let s = read("src/ssh/sftp_session.rs");
     // upload_tree_rec must use symlink_metadata (not bare metadata) for no-follow.
+    // The first two operands were the same string and the third — a bare count
+    // of any `symlink_metadata` mention — passed even with the root call gone.
     assert!(
-        s.contains("symlink_metadata(local_dir)")
-            || s.contains("symlink_metadata(local_dir)")
-            || s.matches("symlink_metadata").count() >= 3,
+        s.contains("symlink_metadata(local_dir)"),
         "G-SFTP-R06: upload tree root must use symlink_metadata (no-follow)"
     );
 }

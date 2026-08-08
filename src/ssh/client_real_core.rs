@@ -20,6 +20,13 @@
         /// Authenticated SSH session for low-level operations.
         pub session: russh::client::Handle<ClientHandler>,
         cfg: ConnectionConfig,
+        /// Inbound `forwarded-tcpip` channels (G-TUN-R01).
+        ///
+        /// `tokio::sync::Mutex` rather than `std::sync::Mutex`: the guard is held
+        /// across an `await` in `accept_forwarded_channel`, which the std guard
+        /// cannot be (it is not `Send`). Contention is nil — a reverse forward has
+        /// exactly one consumer.
+        forwarded: tokio::sync::Mutex<crate::ssh::client_handler::ForwardedSource>,
     }
 
     impl std::fmt::Debug for SshClient {
@@ -130,6 +137,7 @@
             Ok(Self {
                 session: auth.session,
                 cfg: auth.cfg,
+                forwarded: tokio::sync::Mutex::new(auth.forwarded),
             })
         }
 
@@ -153,6 +161,21 @@
         ) -> SshCliResult<ExecutionOutput> {
             let start = Instant::now();
             let timeout = Duration::from_millis(self.cfg.timeout_ms.get());
+
+            // A5: when a local timeout may trigger a remote abort, tag this
+            // invocation with a unique marker and kill by that marker only.
+            // Deriving the `pkill -f` pattern from the command text used to
+            // match `sudo` processes belonging to other users and to concurrent
+            // ssh-cli runs on the same host.
+            let job_marker = if abort_on_timeout {
+                crate::ssh::packing::new_remote_job_marker()
+            } else {
+                None
+            };
+            let marked_command = job_marker
+                .as_deref()
+                .map(|marker| crate::ssh::packing::wrap_with_abort_marker(command, marker));
+            let command: &str = marked_command.as_deref().unwrap_or(command);
 
             // Zeroizing: scrub password bytes on drop even if timeout cancels the future.
 
@@ -229,16 +252,13 @@
                     Ok(Ok(t)) => t,
                     Ok(Err(err)) => return Err(err),
                     Err(_) => {
-                        if abort_on_timeout {
-                            if let Some(pattern) = crate::ssh::packing::remote_abort_pattern(command)
-                            {
-                                let abort_cmd = crate::ssh::packing::pack_abort_pkill(&pattern);
-                                tracing::warn!(
-                                    pattern = %pattern,
-                                    "local timeout; attempting best-effort remote abort"
-                                );
-                                let _ = self.try_remote_abort(&abort_cmd).await;
-                            }
+                        if let Some(marker) = job_marker.as_deref() {
+                            let abort_cmd = crate::ssh::packing::pack_abort_pkill(marker);
+                            tracing::warn!(
+                                marker = %marker,
+                                "local timeout; attempting best-effort remote abort of this invocation only"
+                            );
+                            let _ = self.try_remote_abort(&abort_cmd).await;
                         }
                         return Err(SshCliError::SshTimeout(self.cfg.timeout_ms.get()));
                     }

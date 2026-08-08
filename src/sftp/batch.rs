@@ -41,44 +41,82 @@ fn cancelled_host_sftp(name: String, local: Option<String>) -> HostSftpResult {
     }
 }
 
+/// B4: a host that `map_bounded` never admitted (`--fail-fast`, cancel) produces no
+/// `IndexedResult` at all. Emitting nothing for it would silently shrink the batch and
+/// make "3/3 ok" mean "3 of the 5 you asked for". Every requested host gets a row.
+const HOST_NOT_ATTEMPTED: &str = "not attempted (fan-out admission stopped)";
+
+fn not_attempted_host_sftp(name: String) -> HostSftpResult {
+    HostSftpResult {
+        name,
+        ok: false,
+        bytes: None,
+        duration_ms: None,
+        local: None,
+        error: Some(HOST_NOT_ATTEMPTED.to_owned()),
+    }
+}
+
+/// Batch op label for [`crate::errors::finish_batch`] (needs `&'static str`).
+fn sftp_batch_op(direction: &str) -> &'static str {
+    if direction == "upload" {
+        "multi-host sftp upload"
+    } else {
+        "multi-host sftp download"
+    }
+}
+
+/// Collapses fan-out outcomes into one row per **requested** host, in `names` order.
+///
+/// `names` is the host list handed to `map_bounded`, so index `i` of a result maps
+/// back to `names[i]`.
 fn finish_batch(
-    direction: &str,
+    direction: &'static str,
     results: Vec<crate::concurrency::IndexedResult<HostSftpResult>>,
+    names: &[String],
     limit: usize,
     json: bool,
 ) -> anyhow::Result<()> {
-    let mut host_results = Vec::with_capacity(results.len());
-    let mut failures = 0usize;
+    let mut slots: Vec<Option<HostSftpResult>> = (0..names.len()).map(|_| None).collect();
+    // Indices outside `names` cannot happen, but dropping a row would be worse than
+    // appending one, so keep any surplus instead of discarding it.
+    let mut surplus: Vec<HostSftpResult> = Vec::new();
+
     for r in results {
-        match r.outcome {
-            Ok(h) => {
-                if !h.ok {
-                    failures += 1;
-                }
-                host_results.push(h);
-            }
+        let row = match r.outcome {
+            Ok(h) => h,
             Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
-            Err(e) => {
-                failures += 1;
-                host_results.push(HostSftpResult {
-                    name: format!("task-{}", r.index),
-                    ok: false,
-                    bytes: None,
-                    duration_ms: None,
-                    local: None,
-                    error: Some(e.to_string()),
-                });
-            }
+            Err(e) => HostSftpResult {
+                name: names
+                    .get(r.index)
+                    .cloned()
+                    .unwrap_or_else(|| format!("task-{}", r.index)),
+                ok: false,
+                bytes: None,
+                duration_ms: None,
+                local: None,
+                error: Some(e.to_string()),
+            },
+        };
+        match slots.get_mut(r.index) {
+            Some(slot) => *slot = Some(row),
+            None => surplus.push(row),
         }
     }
-    output::print_sftp_batch(direction, &host_results, limit, json)?;
-    if failures > 0 {
-        return Err(SshCliError::Config(format!(
-            "{failures}/{} transfers failed multi-host sftp {direction}",
-            host_results.len()
-        ))
-        .into());
+
+    let mut host_results = Vec::with_capacity(slots.len().saturating_add(surplus.len()));
+    for (i, slot) in slots.into_iter().enumerate() {
+        host_results.push(match slot {
+            Some(row) => row,
+            None => not_attempted_host_sftp(names[i].clone()),
+        });
     }
+    host_results.extend(surplus);
+
+    let failures = host_results.iter().filter(|h| !h.ok).count();
+    let total = host_results.len();
+    output::print_sftp_batch(direction, &host_results, limit, json)?;
+    crate::errors::finish_batch(failures, total, sftp_batch_op(direction))?;
     Ok(())
 }
 
@@ -92,6 +130,7 @@ pub(crate) async fn run_sftp_all_upload(
     let path = vps::resolve_config_path(config_override.as_deref())?;
     let file = vps::load(&path)?;
     let jobs = vps::resolve_host_jobs(selection, &file)?;
+    let names: Vec<String> = jobs.iter().map(|(n, _)| n.clone()).collect();
     let limit = crate::concurrency::effective_limit();
     let local_owned = local.to_path_buf();
     let remote_owned = remote.to_owned();
@@ -152,7 +191,7 @@ pub(crate) async fn run_sftp_all_upload(
     })
     .await;
 
-    finish_batch("upload", results, limit, json)
+    finish_batch("upload", results, &names, limit, json)
 }
 
 pub(crate) async fn run_sftp_all_download(
@@ -165,6 +204,7 @@ pub(crate) async fn run_sftp_all_download(
     let path = vps::resolve_config_path(config_override.as_deref())?;
     let file = vps::load(&path)?;
     let jobs = vps::resolve_host_jobs(selection, &file)?;
+    let names: Vec<String> = jobs.iter().map(|(n, _)| n.clone()).collect();
     let limit = crate::concurrency::effective_limit();
     let remote_owned = remote.to_owned();
     let local_owned = local.to_path_buf();
@@ -239,7 +279,7 @@ pub(crate) async fn run_sftp_all_download(
     })
     .await;
 
-    finish_batch("download", results, limit, json)
+    finish_batch("download", results, &names, limit, json)
 }
 
 pub(crate) async fn run_sftp_multi_host_multi_file_upload(
@@ -252,6 +292,7 @@ pub(crate) async fn run_sftp_multi_host_multi_file_upload(
     let path = vps::resolve_config_path(config_override.as_deref())?;
     let file = vps::load(&path)?;
     let jobs = vps::resolve_host_jobs(selection, &file)?;
+    let names: Vec<String> = jobs.iter().map(|(n, _)| n.clone()).collect();
     let limit = crate::concurrency::effective_limit();
     let dest = dest_dir.to_owned();
     let path_c = path.clone();
@@ -275,17 +316,23 @@ pub(crate) async fn run_sftp_multi_host_multi_file_upload(
                     let outcome = sftp_session::under_timeout(timeout_ms, async {
                         let sftp = client.open_sftp().await?;
                         let mut bytes = 0_u64;
+                        // B5: `?` inside this block would jump over `close_sftp` and
+                        // leak the subsystem channel until the SSH session is torn
+                        // down. Capture the first error, close, then return it.
+                        let mut err: Option<SshCliError> = None;
                         for src in sources.iter() {
-                            let name = src
-                                .file_name()
-                                .map(|n| n.to_string_lossy().into_owned())
-                                .unwrap_or_else(|| SFTP_FALLBACK_BASENAME.to_owned());
-                            validate_entry_name(&name)?;
-                            let remote = crate::ssh::sftp_path::join_remote(&dest, &name);
-                            let r = sftp_session::upload_file(&sftp, src, &remote).await?;
-                            bytes = bytes.saturating_add(r.bytes_transferred);
+                            match upload_one_file(&sftp, src, &dest).await {
+                                Ok(n) => bytes = bytes.saturating_add(n),
+                                Err(e) => {
+                                    err = Some(e);
+                                    break;
+                                }
+                            }
                         }
                         sftp_session::close_sftp(&sftp).await;
+                        if let Some(e) = err {
+                            return Err(e);
+                        }
                         Ok::<_, SshCliError>(bytes)
                     })
                     .await;
@@ -324,7 +371,47 @@ pub(crate) async fn run_sftp_multi_host_multi_file_upload(
     })
     .await;
 
-    finish_batch("upload", results, limit, json)
+    finish_batch("upload", results, &names, limit, json)
+}
+
+/// One file of a multi-file upload: basename validation + remote join + transfer.
+///
+/// Extracted so the caller's loop can use `match` and still reach `close_sftp`.
+async fn upload_one_file(
+    sftp: &russh_sftp::client::SftpSession,
+    src: &Path,
+    dest_dir: &str,
+) -> Result<u64, SshCliError> {
+    let name = src
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| SFTP_FALLBACK_BASENAME.to_owned());
+    validate_entry_name(&name)?;
+    // Remote paths are always `/`-separated: `Path::join` would emit `\` on Windows.
+    let remote = crate::ssh::sftp_path::join_remote(dest_dir, &name);
+    let r = sftp_session::upload_file(sftp, src, &remote).await?;
+    Ok(r.bytes_transferred)
+}
+
+/// One file of a multi-file download: basename validation + jail check + transfer.
+///
+/// Extracted so the caller's loop can use `match` and still reach `close_sftp`.
+async fn download_one_file(
+    sftp: &russh_sftp::client::SftpSession,
+    remote_p: &Path,
+    host_dir: &Path,
+    host_root: &Path,
+) -> Result<u64, SshCliError> {
+    let remote = remote_p.to_string_lossy().into_owned();
+    let fname = remote_p
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| SFTP_FALLBACK_BASENAME.to_owned());
+    validate_entry_name(&fname)?;
+    let local = host_dir.join(&fname);
+    ensure_local_under(host_root, &local)?;
+    let r = sftp_session::download_file(sftp, &remote, &local).await?;
+    Ok(r.bytes_transferred)
 }
 
 pub(crate) async fn run_sftp_multi_host_multi_file_download(
@@ -337,6 +424,7 @@ pub(crate) async fn run_sftp_multi_host_multi_file_download(
     let path = vps::resolve_config_path(config_override.as_deref())?;
     let file = vps::load(&path)?;
     let jobs = vps::resolve_host_jobs(selection, &file)?;
+    let names: Vec<String> = jobs.iter().map(|(n, _)| n.clone()).collect();
     let limit = crate::concurrency::effective_limit();
     let local_base = local_dir.to_path_buf();
     let path_c = path.clone();
@@ -364,19 +452,21 @@ pub(crate) async fn run_sftp_multi_host_multi_file_download(
                             .map_err(SshCliError::Io)?;
                         let sftp = client.open_sftp().await?;
                         let mut bytes = 0_u64;
+                        // B5: same leak as the upload path — never `?` past `close_sftp`.
+                        let mut err: Option<SshCliError> = None;
                         for remote_p in remotes.iter() {
-                            let remote = remote_p.to_string_lossy().into_owned();
-                            let fname = remote_p
-                                .file_name()
-                                .map(|n| n.to_string_lossy().into_owned())
-                                .unwrap_or_else(|| SFTP_FALLBACK_BASENAME.to_owned());
-                            validate_entry_name(&fname)?;
-                            let local = host_dir.join(&fname);
-                            ensure_local_under(&host_root, &local)?;
-                            let r = sftp_session::download_file(&sftp, &remote, &local).await?;
-                            bytes = bytes.saturating_add(r.bytes_transferred);
+                            match download_one_file(&sftp, remote_p, &host_dir, &host_root).await {
+                                Ok(n) => bytes = bytes.saturating_add(n),
+                                Err(e) => {
+                                    err = Some(e);
+                                    break;
+                                }
+                            }
                         }
                         sftp_session::close_sftp(&sftp).await;
+                        if let Some(e) = err {
+                            return Err(e);
+                        }
                         Ok::<_, SshCliError>(bytes)
                     })
                     .await;
@@ -415,5 +505,5 @@ pub(crate) async fn run_sftp_multi_host_multi_file_download(
     })
     .await;
 
-    finish_batch("download", results, limit, json)
+    finish_batch("download", results, &names, limit, json)
 }

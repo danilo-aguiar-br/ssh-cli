@@ -145,8 +145,17 @@ impl KnownHosts {
         if let Some(parent_dir) = self.path.parent() {
             std::fs::create_dir_all(parent_dir)?;
         }
-        let mut body = String::new();
-        body.push_str("# ssh-cli known_hosts (TOFU)\n");
+        // The final size is known before the first push: one line per entry plus the
+        // header. Growing from empty reallocates and memcpies the whole buffer roughly
+        // log2(n) times, and this runs on every TOFU write — the hot path for a fleet
+        // command that touches many hosts in one process.
+        const HEADER: &str = "# ssh-cli known_hosts (TOFU)\n";
+        let body_len = self
+            .entries
+            .iter()
+            .fold(HEADER.len(), |acc, (k, v)| acc + k.len() + v.len() + 2);
+        let mut body = String::with_capacity(body_len);
+        body.push_str(HEADER);
         for (k, v) in &self.entries {
             body.push_str(k);
             body.push(' ');
@@ -173,9 +182,9 @@ impl KnownHosts {
 
 /// Verify TOFU fingerprint under exclusive flock (G-PAR-49 / G-TLS-10).
 ///
-/// - Sem entrada: aceita e grava (TOFU).
-/// - Com entrada igual: aceita.
-/// - Com entrada diferente: recusa, a menos que `replace` seja true.
+/// - No entry: accept and record (TOFU).
+/// - Matching entry: accept.
+/// - Differing entry: refuse, unless `replace` is true.
 ///
 /// Reloads from disk under the lock so concurrent multi-host first-connect
 /// sees peers' writes before deciding.

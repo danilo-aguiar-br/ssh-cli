@@ -125,8 +125,11 @@ fn g_err_14_resolve_limit_ignores_env() {
 fn g_err_12_client_monolith_split_files_exist() {
     // Structural gate: monólito split artifacts present.
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // layout-pinned on purpose: G-ERR-12 is the monolith split itself, so the
+    // artifacts' existence *is* the contract. `client_real.rs` was listed twice
+    // by copy-paste; the second slot now covers the facade it fronts.
     for rel in [
-        "src/ssh/client_real.rs",
+        "src/ssh/client.rs",
         "src/ssh/client_real.rs",
         "src/ssh/client_stub.rs",
         "src/ssh/client_tests.rs",

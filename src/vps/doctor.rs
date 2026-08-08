@@ -8,7 +8,7 @@
 
 use super::health::{collect_health_check_batch, HostHealthResult};
 use super::{load, winning_layer, HostSelection};
-use crate::errors::SshCliError;
+use crate::errors::finish_batch;
 use crate::ssh::known_hosts::KnownHosts;
 use anyhow::Result;
 use std::path::Path;
@@ -130,13 +130,7 @@ pub(super) async fn run_doctor_with_optional_probe(
         crate::output::print_json_value(&envelope)?;
         if let Some((results, _)) = probe_data {
             let failures = results.iter().filter(|h| !h.ok).count();
-            if failures > 0 {
-                return Err(SshCliError::Config(format!(
-                    "{failures}/{} hosts failed health-check",
-                    results.len()
-                ))
-                .into());
-            }
+            finish_batch(failures, results.len(), "health-check")?;
         }
         return Ok(());
     }
@@ -227,13 +221,7 @@ pub(super) async fn run_doctor_with_optional_probe(
     if let Some((results, limit)) = probe_data {
         crate::output::print_health_batch(&results, limit, false)?;
         let failures = results.iter().filter(|h| !h.ok).count();
-        if failures > 0 {
-            return Err(SshCliError::Config(format!(
-                "{failures}/{} hosts failed health-check",
-                results.len()
-            ))
-            .into());
-        }
+        finish_batch(failures, results.len(), "health-check")?;
     }
     Ok(())
 }

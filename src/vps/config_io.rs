@@ -115,24 +115,63 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> SshCliResult<()> {
     apply_permissions_600(path)?;
     #[cfg(unix)]
     {
-        if let Ok(dir) = std::fs::File::open(&parent_dir) {
-            let _ = dir.sync_all();
+        // G-SCP-R02 (same class): the registry rename is atomic, but the directory
+        // entry is not durable until the parent is flushed. Kept best-effort — several
+        // filesystems reject `sync_all` on a directory handle — yet no longer silent,
+        // so a lost `vps add` after a power cut leaves a trace instead of a mystery.
+        match std::fs::File::open(&parent_dir).and_then(|dir| dir.sync_all()) {
+            Ok(()) => {}
+            Err(e) => tracing::warn!(
+                err = %e,
+                dir = %parent_dir.display(),
+                "config parent dir fsync failed; registry write may not survive a crash"
+            ),
         }
     }
     Ok(())
 }
 
-/// Saves the configuration file atomically with flock and 0o600.
+/// Exclusive hold on the config file for a whole read-modify-write cycle.
+///
+/// `flock` around the write alone was not enough: two one-shot invocations could both
+/// [`load`], mutate their own copy and write in turn, so the second one silently
+/// dropped the first one's host. Callers that mutate must take this guard **before**
+/// `load` and keep it until [`ConfigGuard::save`] returns.
+///
+/// The guard must never be held across network I/O — `flock` is process-wide and a
+/// blocked peer would wait for an SSH round trip. Drop it (or scope it) before any
+/// connect. Re-locking while holding it would deadlock: the second `flock` on a new
+/// file descriptor blocks on the first.
+#[derive(Debug)]
+pub struct ConfigGuard {
+    /// Sibling lock file; `flock` is released on drop with the descriptor.
+    lock_file: std::fs::File,
+}
+
+impl ConfigGuard {
+    /// Writes the file while still holding the lock (see [`save`] for the standalone form).
+    ///
+    /// # Errors
+    /// Returns an error if serialization, atomic write, or permission hardening fails.
+    pub fn save(&self, path: &Path, file: &ConfigFile) -> SshCliResult<()> {
+        save_locked(path, file)
+    }
+}
+
+impl Drop for ConfigGuard {
+    fn drop(&mut self) {
+        let _ = fs2::FileExt::unlock(&self.lock_file);
+    }
+}
+
+/// Takes the exclusive config lock for a read-modify-write cycle.
 ///
 /// # Errors
-/// Returns an error if serialization, atomic write, or permission hardening fails.
-pub fn save(path: &Path, file: &ConfigFile) -> SshCliResult<()> {
+/// Returns an error if the sibling lock file cannot be created, hardened or locked.
+pub fn lock_config(path: &Path) -> SshCliResult<ConfigGuard> {
     if let Some(parent_dir) = path.parent() {
         std::fs::create_dir_all(parent_dir)?;
     }
-    let text = toml::to_string_pretty(file)
-        .map_err(|e| SshCliError::Config(format!("failed to serialize TOML: {e}")))?;
-
     // Sibling lock file to serialize concurrent mutations (N one-shots).
     let lock_path = path.with_extension("toml.lock");
     let lock_file = std::fs::OpenOptions::new()
@@ -144,11 +183,29 @@ pub fn save(path: &Path, file: &ConfigFile) -> SshCliResult<()> {
     // GAP-SSH-PERM-001: lock with 0o600 (not umask 0644).
     apply_permissions_600(&lock_path)?;
     fs2::FileExt::lock_exclusive(&lock_file)?;
+    Ok(ConfigGuard { lock_file })
+}
 
-    write_atomic(path, text.as_bytes())?;
+/// Serializes and writes atomically. Caller must already hold the config lock.
+fn save_locked(path: &Path, file: &ConfigFile) -> SshCliResult<()> {
+    if let Some(parent_dir) = path.parent() {
+        std::fs::create_dir_all(parent_dir)?;
+    }
+    let text = toml::to_string_pretty(file)
+        .map_err(|e| SshCliError::Config(format!("failed to serialize TOML: {e}")))?;
+    write_atomic(path, text.as_bytes())
+}
 
-    let _ = fs2::FileExt::unlock(&lock_file);
-    Ok(())
+/// Saves the configuration file atomically with flock and 0o600.
+///
+/// Takes the lock for the write only. Callers that read, mutate and write back must
+/// use `lock_config` instead, or they race with a concurrent invocation.
+///
+/// # Errors
+/// Returns an error if serialization, atomic write, or permission hardening fails.
+pub fn save(path: &Path, file: &ConfigFile) -> SshCliResult<()> {
+    let guard = lock_config(path)?;
+    guard.save(path, file)
 }
 
 /// Expands leading `~` in a path (user home).

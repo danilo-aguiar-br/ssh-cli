@@ -345,9 +345,19 @@ fn gap_deny_002_deny_toml_sem_ignore_cve() {
         deny.contains("ignore = []") || deny.contains("ignore=[]"),
         "ignore deve permanecer vazio"
     );
+    // A3: the assertion used to pin `multiple-versions = "warn"` literally, which meant
+    // *tightening* the policy broke the test while loosening it to `allow` would have
+    // passed unnoticed — the check was anchored to the wrong side of the risk. It now
+    // requires the setting to be at least as strict as `warn`, so `deny` is accepted
+    // and `allow` is rejected.
     assert!(
-        deny.contains("multiple-versions = \"warn\"") || deny.contains("GAP-SSH-DENY-002"),
-        "política DENY-002 documentada"
+        deny.contains("multiple-versions = \"deny\"")
+            || deny.contains("multiple-versions = \"warn\""),
+        "duplicate-version policy must stay at warn or deny, never allow"
+    );
+    assert!(
+        !deny.contains("multiple-versions = \"allow\""),
+        "silently allowing duplicate versions hides dual crypto stacks (A3)"
     );
 }
 
@@ -381,6 +391,69 @@ fn gap_sec_001_setting_cyber_ignorado_por_diretorio() {
     assert!(
         cargoignore.lines().any(|l| l.trim() == ".setting.cyber/"),
         ".cargoignore DEVE listar .setting.cyber/"
+    );
+}
+
+/// Every dotted tooling sidecar at the repo root MUST be barred from the published crate.
+///
+/// `gap_sec_001` above pins one sidecar by name, and naming them one at a time is exactly how
+/// `.atomwrite/` slipped through: `.serena/`, `.claude/`, `.setting.cyber/` and `.cursor/` were
+/// all listed, and the one directory that the agent's own editing tool creates was not. Measured
+/// with the pre-publish gate, `cargo package --list` shipped `.atomwrite/scratch/old.txt` and
+/// `.atomwrite/scratch/new.txt`, because Cargo packages any file that is neither tracked nor
+/// ignored — being untracked is no protection at all.
+///
+/// So this gate discovers instead of enumerating: whatever dotted directory exists at the root
+/// must be either deliberately packaged (the allowlist) or barred on all three surfaces. A new
+/// sidecar therefore turns this test red on the day it appears, which a by-name list cannot do.
+///
+/// Only `.gitignore` and the manifest `exclude` are real protections; `.cargoignore` is inert as
+/// far as Cargo's engine is concerned. It is asserted anyway because the repository maintains it
+/// and a half-updated hygiene file is worse than a consistent one.
+#[test]
+fn gap_sec_001b_todo_sidecar_pontuado_esta_barrado_do_pacote() {
+    // Deliberately packaged or invisible to Cargo; everything else must be barred.
+    const ALLOWED: &[&str] = &[".git", ".cargo"];
+
+    let mut sidecars: Vec<String> = std::fs::read_dir(".")
+        .expect("repo root")
+        .filter_map(|e| {
+            let e = e.ok()?;
+            if !e.file_type().ok()?.is_dir() {
+                return None;
+            }
+            let name = e.file_name().to_string_lossy().into_owned();
+            (name.starts_with('.') && !ALLOWED.contains(&name.as_str())).then_some(name)
+        })
+        .collect();
+    // `read_dir` order is unspecified and platform-dependent, so sort to keep failures stable.
+    sidecars.sort_unstable();
+
+    let gitignore = std::fs::read_to_string(".gitignore").expect(".gitignore");
+    let cargo_toml = std::fs::read_to_string("Cargo.toml").expect("Cargo.toml");
+    let cargoignore = std::fs::read_to_string(".cargoignore").expect(".cargoignore");
+
+    let mut missing = Vec::new();
+    for name in &sidecars {
+        let dir = format!("{name}/");
+        if !gitignore.lines().any(|l| l.trim() == dir) {
+            missing.push(format!("{dir} ausente em .gitignore"));
+        }
+        if !cargo_toml.contains(&format!("\"{dir}\"")) {
+            missing.push(format!("{dir} ausente no exclude de Cargo.toml"));
+        }
+        if !cargoignore.lines().any(|l| l.trim() == dir) {
+            missing.push(format!("{dir} ausente em .cargoignore"));
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "sidecar pontuado sem barreira de empacotamento:\n  {}\n\
+         Cargo empacota arquivo nao rastreado E nao ignorado, entao nao estar no git NAO protege. \
+         Barre o diretorio em .gitignore, no exclude de Cargo.toml e em .cargoignore, ou \
+         acrescente-o a ALLOWED se ele deve mesmo ser publicado.",
+        missing.join("\n  ")
     );
 }
 

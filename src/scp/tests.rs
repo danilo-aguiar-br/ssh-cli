@@ -45,6 +45,7 @@ impl SshClientTrait for FakeScpClient {
             Ok(TransferResult {
                 bytes_transferred: self.bytes_upload,
                 duration_ms: 10,
+                ..Default::default()
             })
         } else {
             Err(SshCliError::channel_msg("upload failed"))
@@ -56,6 +57,7 @@ impl SshClientTrait for FakeScpClient {
             Ok(TransferResult {
                 bytes_transferred: self.bytes_download,
                 duration_ms: 20,
+                ..Default::default()
             })
         } else {
             Err(SshCliError::channel_msg("download failed"))
@@ -149,6 +151,7 @@ impl SshClientTrait for CountingSessionClient {
         Ok(TransferResult {
             bytes_transferred: 1,
             duration_ms: 1,
+            ..Default::default()
         })
     }
 
@@ -158,6 +161,7 @@ impl SshClientTrait for CountingSessionClient {
         Ok(TransferResult {
             bytes_transferred: 2,
             duration_ms: 1,
+            ..Default::default()
         })
     }
 
@@ -176,8 +180,14 @@ impl SshClientTrait for CountingSessionClient {
     }
 }
 
+/// `#[serial]` is required: the transfer loop polls the process-wide cancel flags,
+/// and sibling tests in this file (and in `concurrency_tests`) legitimately set them.
+/// Run in parallel, this test observes a foreign cancellation and every result comes
+/// back `ok: false` — a failure with no relation to the code under test.
 #[tokio::test]
+#[serial]
 async fn multi_file_upload_on_session_n_files_one_client() {
+    crate::signals::reset_flags_for_tests();
     let client = CountingSessionClient {
         uploads: std::sync::atomic::AtomicUsize::new(0),
         downloads: std::sync::atomic::AtomicUsize::new(0),
@@ -202,8 +212,11 @@ async fn multi_file_upload_on_session_n_files_one_client() {
     );
 }
 
+/// See the upload counterpart: `#[serial]` protects against a foreign cancel flag.
 #[tokio::test]
+#[serial]
 async fn multi_file_download_on_session_n_files_one_client() {
+    crate::signals::reset_flags_for_tests();
     let client = CountingSessionClient {
         uploads: std::sync::atomic::AtomicUsize::new(0),
         downloads: std::sync::atomic::AtomicUsize::new(0),

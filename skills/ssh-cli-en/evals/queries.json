@@ -126,7 +126,7 @@
       "should_trigger": true
     },
     {
-      "query": "vps export default body is TOML even on pipe non-TTY use --json only for event vps-export",
+      "query": "vps export body follows the resolved format so an agent gets JSON even into a .toml file, TOML needs --output-format text",
       "should_trigger": true
     },
     {

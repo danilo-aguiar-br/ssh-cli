@@ -1,6 +1,9 @@
 # ssh-cli
 
-- Historical note: **0.4.2** closed TUN-003 / IO-010; **0.5.0** was the EN/API rename + secrets force-init reencrypt; current product line is **0.5.3** (export/import agent roundtrip, wire schema v3 dual-read, secrets CLI flags, tunnel `--bind`). **0.5.3** also closes **G1–G19**: SFTP integrity (no zero-byte truncate), crate-scoped graduated verbosity `-v`/`-vv`/`-vvv` (no russh password dump), SETSTAT `atime`+`mtime`, batch cancel cardinality, single-step `exec` JSON, SCP `sync_data`, E2E SFTP checksum E17/E18.
+> **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
+
+
+- Historical note: **0.4.2** closed TUN-003 / IO-010; **0.5.0** was the EN/API rename + secrets force-init reencrypt; current product line is **0.5.4** (tunnel `--reverse` / `--socks5` / `--remote-socket`, eight payload-shaping flags, `tunnel_closed`, partial multi-host exit **1**, security fixes A1–A3). **0.5.3** brought export/import agent roundtrip, wire schema v3 dual-read, secrets CLI flags and tunnel `--bind`, and also closed **G1–G19**: SFTP integrity (no zero-byte truncate), crate-scoped graduated verbosity `-v`/`-vv`/`-vvv` (no russh password dump), SETSTAT `atime`+`mtime`, batch cancel cardinality, single-step `exec` JSON, SCP `sync_data`, E2E SFTP checksum E17/E18.
 
 [![docs.rs](https://img.shields.io/docsrs/ssh-cli)](https://docs.rs/ssh-cli)
 [![crates.io](https://img.shields.io/crates/v/ssh-cli)](https://crates.io/crates/ssh-cli)
@@ -20,7 +23,7 @@
 - Follow first use in [docs/HOW_TO_USE.md](docs/HOW_TO_USE.md).
 - Copy recipes from [docs/COOKBOOK.md](docs/COOKBOOK.md).
 - Check platforms in [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md).
-- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.5.3**).
+- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.5.4**).
 - Run tests via [docs/TESTING.md](docs/TESTING.md).
 - Consume JSON contracts under [docs/schemas/README.md](docs/schemas/README.md).
 - Teach LLMs with [skills/ssh-cli-en/SKILL.md](skills/ssh-cli-en/SKILL.md).
@@ -57,7 +60,7 @@
 - Timeout with best-effort remote abort
 - Bounded tunnel via mandatory `--timeout-ms`; optional `--bind` (default `127.0.0.1`)
 - Wire **schema v3**: serialize English TOML keys; dual-read EN + legacy PT aliases on load
-- `vps export` body is **TOML by default** (TTY and pipe); agent JSON envelope only with `--json`; redacted by default; empty secrets stay `""`; non-empty redacted secrets mask as `***` (`FIXED_MASK`); `--include-secrets` to pipe/non-TTY needs `-o`/`--output` or `--i-understand-secrets-on-stdout`
+- `vps export` body **follows the resolved output format**: JSON whenever stdout is not a TTY, which is every agent invocation and holds even when `-o` names a `.toml` file; a TOML body requires `--output-format text`; redacted by default; empty secrets stay `""`; non-empty redacted secrets mask as `***` (`FIXED_MASK`); `--include-secrets` to pipe/non-TTY needs `-o`/`--output` or `--i-understand-secrets-on-stdout`
 - `vps import` accepts TOML (EN keys + PT aliases) **or** JSON `vps-export` envelopes; redacted skeletons need `--allow-incomplete`
 - SCP upload and download of **regular files only** (no recursive directories on SCP; first solid wire fix in **0.4.0**; prefer **0.5.3+** — avoid crates.io 0.3.9 SCP); SCP download propagates `sync_data` failure before atomic rename (G9)
 - **SFTP** subsystem (`ssh-cli sftp`, prefer **0.5.3+** for integrity): upload/download (optional `--recursive` trees, symlink no-follow), `ls`/`mkdir`/`rmdir`/`rm`/`stat`/`rename`; JSON events `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`
@@ -66,7 +69,7 @@
 - Batch cancel pads cancelled remainder so results length matches input (G5/G17)
 - `exec --json` single-step emits exactly one NDJSON success object (G8)
 - SCP flag parity with exec: `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` (contract `docs/schemas/scp-transfer.schema.json`)
-- SCP download writes `{path}.ssh-cli.partial` then atomic rename; preserve remote mtime/mode bi-directional; upload streams 32 KiB chunks
+- SCP download writes `{path}.ssh-cli.partial` then atomic rename; upload streams 32 KiB chunks; remote mtime/mode preservation is best-effort and reported as `mtime_preserved` / `durable`
 - SCP JSON success requires `event: "scp-transfer"` (0.4.1 IO-009); missing remote → `file not found: <path>` exit **66**
 - `tunnel --json` emits structured `tunnel_listening` after local bind
 - Tunnel post-bind deadline exits **0** after `tunnel_listening` (pre-bind timeout still **74**) (0.4.1 TUN-002)
@@ -80,7 +83,7 @@
 - TOFU `known_hosts` and atomic config writes with flock
 - Key-only hosts: empty password serializes as JSON `null` (not `"***"`) in `vps list` / `show`
 - Default tracing filter is `error` (agent-first clean stderr); ambient `RUST_LOG` is ignored (use `-v`/`-vv`/`-vvv`)
-- Install with russh 0.62.2 for clean `cargo install --locked`
+- Install with russh 0.62.5 for clean `cargo install --locked`
 
 
 ## Quick Start
@@ -152,7 +155,7 @@ ssh-cli exec prod "hostname" --json
 - Elevate with `sudo-exec` or `su-exec` when configured.
 - Diagnose XDG paths with `doctor --json` (or `vps doctor --json`).
 - Discover contracts with `ssh-cli schema` / `ssh-cli commands`.
-- Export redacted inventory with `vps export` (TOML default; `--json` for agent envelope).
+- Export redacted inventory with `vps export` (JSON envelope on any non-TTY stdout; add `--output-format text` for a TOML body).
 
 
 ## Commands
@@ -170,7 +173,7 @@ ssh-cli exec prod "hostname" --json
 | `ssh-cli doctor [--json]` | Root alias of `vps doctor` (G-E2E-03) |
 | `ssh-cli schema [NAME]` | Emit embedded JSON Schema catalog or one schema body (G-E2E-02) |
 | `ssh-cli commands` | Emit full command tree as JSON (agent discovery) |
-| `ssh-cli vps export` | Export hosts as **TOML by default** (TTY and pipe); JSON agent envelope only with `--json`; secrets redacted by default; empty secrets stay `""` (never fake `sshcli-enc:`); `--include-secrets` to pipe/non-TTY requires `-o`/`--output` or `--i-understand-secrets-on-stdout` |
+| `ssh-cli vps export` | Export hosts in the **resolved output format**: JSON on any non-TTY stdout, even into a `.toml` filename; `--output-format text` for a TOML body; secrets redacted by default; empty secrets stay `""` (never fake `sshcli-enc:`); `--include-secrets` to pipe/non-TTY requires `-o`/`--output` or `--i-understand-secrets-on-stdout` |
 | `ssh-cli vps import --file` | Import hosts from **TOML** (EN keys + PT aliases) **or** JSON `vps-export` envelope; redacted skeletons need `--allow-incomplete` |
 | `ssh-cli connect <name>` | Write sibling `active` file |
 | `ssh-cli exec <vps> <cmd>` | One-shot remote command |
@@ -180,6 +183,10 @@ ssh-cli exec prod "hostname" --json
 | `ssh-cli scp upload|download` | Regular files only (no `-r` on SCP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--use-agent`, `--json` → `scp-transfer` schema; missing remote → exit **66**; **`--all`** → `scp-batch` |
 | `ssh-cli sftp upload\|download\|ls\|mkdir\|rmdir\|rm\|stat\|rename` | SFTP v3 subsystem (**0.5.3** integrity: no zero-byte truncate); `--recursive` trees (no symlink follow); auth parity with scp; JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch` |
 | `ssh-cli tunnel ... --timeout-ms N [--bind ADDR] [--json]` | Bounded local port forward; `--bind` default `127.0.0.1`; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`; `--json` emits `tunnel_listening` after bind; post-bind deadline exits **0** (pre-bind timeout still **74**); concurrent accepts gated by `--max-concurrency` |
+| `ssh-cli tunnel <vps> <port> --socks5 --timeout-ms N` | SOCKS5 proxy (RFC 1928, no-auth `CONNECT`); each connection opens one SSH channel; host names resolve on the remote side; `BIND`/`UDP ASSOCIATE` answered `0x07` |
+| `ssh-cli tunnel <vps> <port> --remote-socket PATH --timeout-ms N` | Forwards a local port to a Unix domain socket on the remote host; `PATH` must be absolute (it names the **server's** filesystem) |
+| `ssh-cli tunnel <vps> <port> <bind> <rport> --reverse --timeout-ms N` | Server listens on `<bind>:<rport>` and delivers back to local `<port>`; `<rport> 0` lets the server allocate and report it in `local_port`; a non-loopback `<bind>` requires `--i-accept-network-exposure` |
+| `ssh-cli --dry-run <destructive command>` | Prints the plan and exits without executing (`vps remove`, `vps import`, `sftp rm`, `sftp rmdir`, `secrets init`, `secrets reencrypt`); rejected with exit **64** on any other command |
 | `ssh-cli health-check [<vps>] [--timeout N]` / `--all` | Connectivity probe; optional `--timeout` ms; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`; **`--all`** → fleet probe (`health-check-batch`) |
 | `ssh-cli secrets status|init|reencrypt` | Master-key and at-rest encryption (never prints key); `--json` emits `secrets-init` / `secrets-reencrypt`; first secret write folds `secrets_key_auto_created: true` into the same `vps-added` JSON (one document); flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` |
 | `ssh-cli completions <shell>` | Shell completion scripts |
@@ -274,7 +281,7 @@ ssh-cli exec prod "hostname" --json
 
 ## Troubleshooting FAQ
 ### Fix common install and runtime failures
-- Install fails on crypto RC drift: rerun with `--locked` or use release **0.5.3+** (russh 0.62.2) (`scripts/verify_install_resolve.sh`).
+- Install fails on crypto RC drift: rerun with `--locked` or use release **0.5.3+** (russh 0.62.5) (`scripts/verify_install_resolve.sh`).
 - Auth fails on key-only hosts: set `--key` on `vps add` or pass `--key` / `--password-stdin` to `exec` (rejected auth exits **77**).
 - Auth fails with passphrase keys: use `--key-passphrase-stdin` (exit **77** on reject).
 - Host key changed: confirm legitimacy then rerun with `--replace-host-key`.

@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/dry-run.schema.json",
+  "title": "dry-run plan JSON",
+  "description": "Structured stdout payload emitted instead of executing a destructive operation when `--dry-run` is passed (C2). Emitted as JSON even in text mode: the point of a preview is that a machine can diff it against what it intended, and prose cannot be diffed. `--dry-run` is accepted only by `vps remove`, `vps import`, `sftp rm`, `sftp rmdir`, `secrets init` and `secrets reencrypt`; on any other command it is rejected with exit 64 rather than accepted and ignored.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ok",
+    "event",
+    "operation",
+    "dry_run",
+    "executed"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true,
+      "description": "True: producing a plan is itself a success. A plan for an operation that would fail is not produced — preconditions that the real run checks (host exists, import validates) run first, so a refusal surfaces as the same error the real run would give."
+    },
+    "event": {
+      "type": "string",
+      "const": "dry-run"
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "vps-remove",
+        "vps-import",
+        "sftp-rm",
+        "sftp-rmdir",
+        "secrets-init",
+        "secrets-reencrypt"
+      ],
+      "description": "Which operation was previewed"
+    },
+    "dry_run": {
+      "type": "boolean",
+      "const": true
+    },
+    "executed": {
+      "type": "boolean",
+      "const": false,
+      "description": "Always false. Present as an explicit field so a consumer never has to infer non-execution from the absence of a success event."
+    },
+    "name": {
+      "type": "string",
+      "description": "`vps-remove`: the host that would be removed"
+    },
+    "config_path": {
+      "type": "string",
+      "description": "Registry file that would be rewritten"
+    },
+    "source": {
+      "type": "string",
+      "description": "`vps-import`: the file that would be read"
+    },
+    "imported": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "`vps-import`: how many hosts would be written"
+    },
+    "hosts": {
+      "description": "`vps-import`: one entry per host that would be written. `secrets-reencrypt` / `secrets-init`: a count instead, since no host is named.",
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "replaces_existing",
+              "incomplete"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "replaces_existing": {
+                "type": "boolean",
+                "description": "True when a host of the same name already exists and would be overwritten. This is the field that decides whether the import is safe to run; a bare count would hide it."
+              },
+              "incomplete": {
+                "type": "boolean",
+                "description": "True when the host lacks full auth and is only accepted because of --allow-incomplete"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "vps": {
+      "type": "string",
+      "description": "`sftp-rm` / `sftp-rmdir`: the registered host the operation targets"
+    },
+    "remote": {
+      "type": "string",
+      "description": "`sftp-rm` / `sftp-rmdir`: the remote path that would be removed. Not confirmed to exist: doing so would cost a full connect and authentication, which would make the preview visible in the server's auth log exactly like a real run."
+    },
+    "force": {
+      "type": "boolean",
+      "description": "`secrets-init`: whether the primary key would be rotated"
+    },
+    "keyring": {
+      "type": "boolean",
+      "description": "`secrets-init`: whether the key would be stored in the OS keyring"
+    },
+    "hosts_to_reencrypt": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "`secrets-init --force`: how many hosts would be re-encrypted under the new key. Rotating without re-encrypting these would permanently lose their at-rest secrets, so the count is the number that matters before proceeding."
+    }
+  }
+}

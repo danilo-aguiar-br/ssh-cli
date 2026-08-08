@@ -33,7 +33,7 @@ pub use exec_ops::{
     run_exec, run_exec_with_client, run_su_exec, run_sudo_exec, run_sudo_exec_with_client,
     ExecOptions, HostExecResult,
 };
-pub use health::{run_health_check, HostHealthResult};
+pub use health::{run_health_check, HealthCheckRequest, HostHealthResult};
 pub use import_export::parse_import_payload;
 pub use secrets_cmd::run_secrets_command;
 pub use selection::{dedupe_host_names, resolve_host_jobs, HostSelection};
@@ -70,7 +70,23 @@ const _: () = assert!(MAX_SECRET_STDIN_BYTES <= 1024 * 1024);
 /// G-SECDEV-01: returns [`SecretString`] immediately (rules: never keep
 /// credentials in bare `String` after the trust boundary). The read buffer is
 /// [`zeroize::Zeroizing`] so leftover CR/LF bytes are scrubbed on drop.
+///
+/// C2: the `--no-input` refusal lives *here*, not in the callers. Guarding
+/// `read_stdin_if` alone covered only the exec/scp/tunnel override path — `vps add`
+/// and `vps edit` call this function directly, so `--no-input` silently did nothing
+/// on the two commands most likely to be scripted unattended.
+///
+/// # Errors
+/// [`SshCliError::InvalidArgument`] when `--no-input` is in effect, or when the
+/// payload exceeds [`MAX_SECRET_STDIN_BYTES`].
 pub fn read_secret_stdin() -> SshCliResult<SecretString> {
+    if crate::cli::is_no_input() {
+        return Err(SshCliError::InvalidArgument(
+            "--no-input forbids reading secrets from stdin; pass the value via flag \
+             or drop --no-input"
+                .to_string(),
+        ));
+    }
     use std::io::Read;
     use zeroize::Zeroizing;
     let mut limited = std::io::stdin().take(MAX_SECRET_STDIN_BYTES + 1);
@@ -85,44 +101,72 @@ pub fn read_secret_stdin() -> SshCliResult<SecretString> {
     Ok(SecretString::from(trimmed.to_owned()))
 }
 
+/// Per-invocation credential overrides applied on top of a stored `VpsRecord`.
+///
+/// # Why a struct (B3)
+///
+/// This cluster travelled as eight positional parameters through `exec`, `scp`,
+/// `sftp`, `tunnel` and `health-check`. Six of the eight are
+/// `Option<SecretString>` / `Option<String>` / `bool`, so transposing password
+/// with sudo-password — or key path with agent socket — compiled cleanly and
+/// only surfaced as an authentication failure against a real host. Naming the
+/// fields makes that class of mistake a compile error.
+///
+/// G-SECDEV-02: secret overrides arrive already wrapped in [`SecretString`]
+/// (zeroize-on-drop); never re-accept a bare password `String` past the CLI
+/// boundary.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct AuthOverrides {
+    /// SSH password override.
+    pub password: Option<SecretString>,
+    /// `sudo` password override.
+    pub sudo_password: Option<SecretString>,
+    /// `su -` password override.
+    pub su_password: Option<SecretString>,
+    /// Connection timeout override (already refined at the CLI boundary).
+    pub timeout: Option<crate::domain::TimeoutMs>,
+    /// Private key path override.
+    pub key_path: Option<String>,
+    /// Key passphrase override.
+    pub key_passphrase: Option<SecretString>,
+    /// Force ssh-agent authentication.
+    pub use_agent: bool,
+    /// Explicit agent socket (implies [`Self::use_agent`]).
+    pub agent_socket: Option<String>,
+}
+
 /// Applies runtime overrides onto a cloned `VpsRecord`.
-///
-/// Parameter order: password, sudo, su, timeout, key_path, key_passphrase, use_agent, agent_socket.
-///
-/// G-SECDEV-02: secret overrides are already [`SecretString`] (zeroize-on-drop);
-/// never re-accept bare password `String` past the CLI boundary.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn apply_overrides(
-    vps: &mut VpsRecord,
-    password_override: Option<SecretString>,
-    sudo_password_override: Option<SecretString>,
-    su_password_override: Option<SecretString>,
-    timeout_override: Option<crate::domain::TimeoutMs>,
-    key_path_override: Option<String>,
-    key_passphrase_override: Option<SecretString>,
-    use_agent: bool,
-    agent_socket: Option<String>,
-) {
+pub(crate) fn apply_overrides(vps: &mut VpsRecord, overrides: AuthOverrides) {
     use crate::domain::KeyPath;
-    if let Some(pwd) = password_override {
+    let AuthOverrides {
+        password,
+        sudo_password,
+        su_password,
+        timeout,
+        key_path,
+        key_passphrase,
+        use_agent,
+        agent_socket,
+    } = overrides;
+    if let Some(pwd) = password {
         vps.password = pwd;
     }
-    if let Some(spwd) = sudo_password_override {
+    if let Some(spwd) = sudo_password {
         vps.sudo_password = Some(spwd);
     }
-    if let Some(sp) = su_password_override {
+    if let Some(sp) = su_password {
         vps.su_password = Some(sp);
     }
     // G-TYPE-18: timeout already refined at the CLI / options boundary.
-    if let Some(t) = timeout_override {
+    if let Some(t) = timeout {
         vps.timeout_ms = t;
     }
-    if let Some(k) = key_path_override {
+    if let Some(k) = key_path {
         if let Ok(kp) = KeyPath::try_new(k) {
             vps.key_path = Some(kp);
         }
     }
-    if let Some(kp) = key_passphrase_override {
+    if let Some(kp) = key_passphrase {
         vps.key_passphrase = Some(kp);
     }
     if use_agent {

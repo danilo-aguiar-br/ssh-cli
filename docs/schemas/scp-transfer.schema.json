@@ -50,6 +50,16 @@
       "type": "integer",
       "minimum": 0,
       "description": "Wall time of the transfer in milliseconds"
+    },
+    "mtime_preserved": {
+      "type": "boolean",
+      "default": true,
+      "description": "G-SCP-R01: whether the remote modification time was applied to the local file. Preservation is best-effort, not a guarantee: destination filesystems that cannot represent it (FAT32, exFAT, some bind mounts, WSL interop paths) yield false while the payload itself is byte-exact and fsynced. Additive since the 0.5.4 line; absent means true."
+    },
+    "durable": {
+      "type": "boolean",
+      "default": true,
+      "description": "G-SCP-R02: whether the parent directory was fsynced after the atomic rename. False means the file content reached stable storage but the directory entry may not survive a crash. Additive since the 0.5.4 line; absent means true."
     }
   }
 }

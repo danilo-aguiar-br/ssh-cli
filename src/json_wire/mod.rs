@@ -33,7 +33,7 @@ pub use emit::{
 pub use execution::{
     ExecBatchJson, ExecHostJson, ExecutionJson, HealthBatchJson, HealthCheckJson, HealthHostJson,
     ScpBatchJson, ScpHostJson, ScpTransferJson, SftpBatchJson, SftpFsOpJson, SftpListEntryJson,
-    SftpListJson, SftpTransferJson, TunnelListeningJson,
+    SftpListJson, SftpTransferJson, TunnelCloseReason, TunnelClosedJson, TunnelListeningJson,
 };
 pub use vps_export::{
     ExportHostJson, ImportDefaults, ImportEnvelope, ImportHostEntry, MaskedVpsJson, VpsExportJson,

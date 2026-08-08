@@ -7,7 +7,7 @@
         /// - [`SshCliError::FileNotFound`] if the local file does not exist.
         /// - [`SshCliError::InvalidArgument`] if the local path is not a regular file.
         /// - [`SshCliError::ChannelFailed`] if opening the SCP channel or remote status fails.
-        /// - [`SshCliError::SshTimeout`] se exceder o timeout.
+        /// - [`SshCliError::SshTimeout`] if the deadline expires.
         pub async fn upload(
             &self,
             local: &std::path::Path,
@@ -16,6 +16,9 @@
             use russh::ChannelMsg;
             use std::time::Instant;
             use tokio::io::AsyncReadExt;
+
+            // Streaming window for the SCP payload (never load the whole file).
+            use crate::constants::SCP_IO_CHUNK;
 
             let local_str = local.display().to_string();
 
@@ -93,20 +96,41 @@
                     // SCP-018 + latency: async disk read so the runtime worker is not
                     // blocked on synchronous `read(2)` mid-transfer.
                     let mut file = tokio::fs::File::open(local).await.map_err(SshCliError::Io)?;
-                    let mut buf = vec![0u8; 32_768];
-                    loop {
+                    let mut buf = vec![0u8; SCP_IO_CHUNK];
+                    // B3 (TOCTOU): `size` was read by `metadata` *before* this open. A
+                    // concurrent writer can grow or shrink the file in between, and the
+                    // header already promised `size` bytes. Clamp every read to the
+                    // announced remainder so a grown file cannot spill extra bytes into
+                    // the next protocol frame, and refuse to finish short.
+                    let mut sent: u64 = 0;
+                    while sent < size {
                         if crate::signals::should_stop() {
                             return Err(SshCliError::InvalidArgument(crate::i18n::t(
                                 crate::i18n::Message::OperationCancelled,
                             )));
                         }
-                        let n = file.read(&mut buf).await.map_err(SshCliError::Io)?;
+                        let remaining =
+                            usize::try_from(size.saturating_sub(sent)).unwrap_or(usize::MAX);
+                        let window = remaining.min(buf.len());
+                        let n = file
+                            .read(&mut buf[..window])
+                            .await
+                            .map_err(SshCliError::Io)?;
                         if n == 0 {
                             break;
                         }
                         channel.data(&buf[..n]).await.map_err(|e| {
                             SshCliError::channel_msg(format!("send SCP payload block: {e}"))
                         })?;
+                        sent = sent.saturating_add(u64::try_from(n).unwrap_or(u64::MAX));
+                    }
+                    if sent != size {
+                        // Truncated mid-transfer: the sink is still waiting for
+                        // `size - sent` bytes, so the stream is desynchronised. Fail
+                        // loudly instead of letting the terminator land inside payload.
+                        return Err(SshCliError::channel_msg(format!(
+                            "local file shrank during SCP upload: announced {size} bytes, read {sent}"
+                        )));
                     }
 
                     // File terminator = byte 0x00 (not empty data).
@@ -123,17 +147,19 @@
                         }
                     }
 
-                    Ok::<_, SshCliError>(())
+                    Ok::<_, SshCliError>(sent)
                 })
                 .await;
 
-            result.map_err(|_| SshCliError::SshTimeout(self.cfg.timeout_ms.get()))??;
+            // B2: report what actually crossed the wire, not what `metadata` promised.
+            let sent = result.map_err(|_| SshCliError::SshTimeout(self.cfg.timeout_ms.get()))??;
 
             let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
 
             Ok(TransferResult {
-                bytes_transferred: size,
+                bytes_transferred: sent,
                 duration_ms,
+                ..Default::default()
             })
         }
 
@@ -144,7 +170,7 @@
         /// # Errors
         /// - [`SshCliError::Io`] if the local file cannot be written.
         /// - [`SshCliError::ChannelFailed`] if opening the SCP channel or remote status fails.
-        /// - [`SshCliError::SshTimeout`] se exceder o timeout.
+        /// - [`SshCliError::SshTimeout`] if the deadline expires.
         pub async fn download(
             &self,
             remote: &std::path::Path,
@@ -153,6 +179,9 @@
             use russh::ChannelMsg;
             use std::time::{Duration as StdDuration, Instant, UNIX_EPOCH};
             use tokio::io::AsyncWriteExt;
+
+            // Streaming window for the SCP payload (never load the whole file).
+            use crate::constants::SCP_IO_CHUNK;
 
             if local.is_dir() {
                 return Err(SshCliError::InvalidArgument(crate::i18n::t(
@@ -189,8 +218,12 @@
                     .await
                     .map_err(|e| SshCliError::channel_msg(format!("send initial SCP ack: {e}")))?;
 
+                // B2: bytes the source coalesced after a header line. Reused as the
+                // payload window below so nothing read here is ever discarded.
+                let mut pending: Vec<u8> = Vec::with_capacity(SCP_IO_CHUNK);
+
                 let mut times: Option<(u64, u64)> = None;
-                let mut header_bytes = scp_read_until_newline(&mut channel).await?;
+                let mut header_bytes = scp_read_until_newline(&mut channel, &mut pending).await?;
                 // Remote error: status 1/2 in the first byte.
                 if !header_bytes.is_empty() && matches!(header_bytes[0], 1 | 2) {
                     interpret_scp_status(&header_bytes)?;
@@ -203,7 +236,7 @@
                         .data([SCP_OK].as_slice())
                         .await
                         .map_err(|e| SshCliError::channel_msg(format!("send T-line ack: {e}")))?;
-                    header_bytes = scp_read_until_newline(&mut channel).await?;
+                    header_bytes = scp_read_until_newline(&mut channel, &mut pending).await?;
                     if !header_bytes.is_empty() && matches!(header_bytes[0], 1 | 2) {
                         interpret_scp_status(&header_bytes)?;
                     }
@@ -229,8 +262,6 @@
                     .await
                     .map_err(SshCliError::Io)?;
                 let mut received: u64 = 0;
-                // Resource: reuse pending window (~upload chunk size); stream to disk, not full file.
-                let mut pending: Vec<u8> = Vec::with_capacity(32_768);
 
                 while received < size {
                     if crate::signals::should_stop() {
@@ -252,13 +283,19 @@
                     pending.drain(..use_n);
                 }
 
-                // After payload, source sends final 0x00 (may already be in `pending`).
+                // B2: the payload loop only exits when `received == size`, so the old
+                // `Err(_) if received == size` arm swallowed *every* terminator error —
+                // including the channel dying mid-file. The terminator is mandatory in
+                // the SCP source protocol, so a failure here means the transfer is not
+                // provably complete and must surface.
                 if pending.is_empty() {
-                    match scp_read_data(&mut channel).await {
-                        Ok(trail) => pending.extend_from_slice(&trail),
-                        Err(_) if received == size => {}
-                        Err(e) => return Err(e),
-                    }
+                    let trail = scp_read_data(&mut channel).await?;
+                    pending.extend_from_slice(&trail);
+                }
+                if received != size {
+                    return Err(SshCliError::channel_msg(format!(
+                        "truncated SCP download: announced {size} bytes, received {received}"
+                    )));
                 }
                 if pending.first() == Some(&SCP_OK) {
                     pending.remove(0);
@@ -290,48 +327,86 @@
                 // So metadata failure does not leave `local` with partial success content.
                 // G-PAR-50: async permissions; FileTimes/parent fsync via spawn_blocking.
                 apply_local_mode(&partial, remote_mode).await?;
+                // G-SCP-R01: the outcome now travels back instead of being dropped. Both
+                // the `open` and the `set_times` used to be swallowed by `let _ =`, so
+                // three distinct failures — unsupported filesystem, missing permission,
+                // incompatible open mode — were indistinguishable from success.
+                let mut mtime_preserved = true;
                 if let Some((mtime, atime)) = times {
                     let partial_c = partial.clone();
-                    let _ = tokio::task::spawn_blocking(move || {
+                    let stamped = tokio::task::spawn_blocking(move || {
                         let mtime_st = UNIX_EPOCH + StdDuration::from_secs(mtime);
                         let atime_st = UNIX_EPOCH + StdDuration::from_secs(atime);
                         let ft = std::fs::FileTimes::new()
                             .set_modified(mtime_st)
                             .set_accessed(atime_st);
-                        if let Ok(f) = std::fs::File::options().write(true).open(&partial_c) {
-                            let _ = f.set_times(ft);
-                        }
+                        let f = std::fs::File::options().write(true).open(&partial_c)?;
+                        f.set_times(ft)
                     })
                     .await;
+                    mtime_preserved = match stamped {
+                        Ok(Ok(())) => true,
+                        Ok(Err(e)) => {
+                            // Deliberately not fatal: the payload is byte-exact and
+                            // fsynced. Refusing the transfer over a timestamp would
+                            // break every download onto a filesystem that cannot
+                            // represent one.
+                            tracing::debug!(
+                                err = %e,
+                                path = %partial.display(),
+                                "scp: mtime not preserved"
+                            );
+                            false
+                        }
+                        Err(e) => {
+                            tracing::warn!(err = %e, "scp: mtime task failed to join");
+                            false
+                        }
+                    };
                 }
 
                 tokio::fs::rename(&partial, local)
                     .await
                     .map_err(SshCliError::Io)?;
-                // Atomic write: fsync parent_dir after rename (best-effort, blocking pool).
+                // G-SCP-R02: the rename is atomic, but the directory entry is not on
+                // stable storage until the parent is flushed. Still best-effort — many
+                // filesystems refuse `sync_all` on a directory handle — but the caller
+                // is now told, instead of receiving an unqualified exit 0.
+                let mut durable = true;
                 if let Some(parent_dir) = local.parent() {
                     if !parent_dir.as_os_str().is_empty() {
                         let parent_dir = parent_dir.to_path_buf();
-                        let _ = tokio::task::spawn_blocking(move || {
-                            if let Ok(dir) = std::fs::File::open(&parent_dir) {
-                                let _ = dir.sync_all();
-                            }
+                        let flushed = tokio::task::spawn_blocking(move || {
+                            std::fs::File::open(&parent_dir)?.sync_all()
                         })
                         .await;
+                        durable = match flushed {
+                            Ok(Ok(())) => true,
+                            Ok(Err(e)) => {
+                                tracing::warn!(err = %e, "scp: parent dir fsync failed");
+                                false
+                            }
+                            Err(e) => {
+                                tracing::warn!(err = %e, "scp: fsync task failed to join");
+                                false
+                            }
+                        };
                     }
                 }
 
-                Ok::<_, SshCliError>(received)
+                Ok::<_, SshCliError>((received, mtime_preserved, durable))
             })
             .await;
 
             match result {
-                Ok(Ok(received)) => {
+                Ok(Ok((received, mtime_preserved, durable))) => {
                     let duration_ms =
                         u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
                     Ok(TransferResult {
                         bytes_transferred: received,
                         duration_ms,
+                        mtime_preserved,
+                        durable,
                     })
                 }
                 Ok(Err(e)) => {

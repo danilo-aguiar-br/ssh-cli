@@ -173,13 +173,28 @@ pub enum Command {
     Tunnel {
         /// VPS name (single host only — no `--all` / `--hosts`).
         vps_name: String,
-        /// Local port.
+        /// Local port to bind — with `--reverse`, the local port that receives.
         local_port: u16,
-        /// Remote host.
-        remote_host: String,
-        /// Remote port.
-        #[arg(value_parser = clap::value_parser!(u16).range(1..=65535))]
-        remote_port: u16,
+        /// Remote host — with `--reverse`, the address the **server** binds.
+        ///
+        /// Optional since 0.5.4: `--socks5` chooses a destination per connection
+        /// and `--remote-socket` names a Unix socket, so neither has one.
+        remote_host: Option<String>,
+        /// Remote port — with `--reverse`, the server port (`0` = server allocates).
+        ///
+        /// Reverse accepts `0` because the server then reports the port it bound;
+        /// a local forward cannot, since there is nothing to connect to.
+        #[arg(value_parser = clap::value_parser!(u16).range(0..=65535))]
+        remote_port: Option<u16>,
+        /// Serve a SOCKS5 proxy locally instead of a fixed forward (G-TUN-R02).
+        #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["reverse", "remote_socket"])]
+        socks5: bool,
+        /// Forward to a Unix domain socket on the remote host (G-TUN-R03).
+        #[arg(long, value_name = "PATH", conflicts_with_all = ["reverse", "socks5"])]
+        remote_socket: Option<String>,
+        /// Ask the server to listen and deliver connections back here (G-TUN-R01).
+        #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["socks5", "remote_socket"])]
+        reverse: bool,
         /// Mandatory tunnel timeout in milliseconds.
         #[arg(long, value_name = "MS")]
         timeout_ms: u64,
@@ -190,8 +205,26 @@ pub enum Command {
         #[arg(from_global)]
         json: bool,
         /// Local bind address (default loopback for security).
-        #[arg(long, default_value = crate::constants::DEFAULT_TUNNEL_BIND_ADDR, value_name = "ADDR")]
-        bind: String,
+        ///
+        /// G-TUN-R08: validated by clap as an IP address, so a typo like
+        /// `127.0.0..1` fails at parse time (exit 2) instead of after resolving the
+        /// host, opening the SSH session and authenticating — which on a host with
+        /// MFA or slow auth meant paying a full handshake to learn about a typo.
+        #[arg(
+            long,
+            default_value = crate::constants::DEFAULT_TUNNEL_BIND_ADDR,
+            value_name = "ADDR",
+            value_parser = clap::value_parser!(std::net::IpAddr)
+        )]
+        bind: std::net::IpAddr,
+        /// Acknowledge that a non-loopback bind exposes the forwarded service.
+        ///
+        /// G-TUN-R13: required for any routable bind. Without it, `--bind 0.0.0.0`
+        /// silently published the remote service to the local network. Under
+        /// `--reverse` it guards the **server's** bind address instead, which is
+        /// the end that is exposed in that direction.
+        #[arg(long, action = ArgAction::SetTrue)]
+        i_accept_network_exposure: bool,
     },
 
     /// Checks SSH connectivity to a VPS (or multi-host with `--all` / `--hosts`).

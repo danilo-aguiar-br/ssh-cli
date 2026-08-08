@@ -12,6 +12,29 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// Reads every `.rs` under a subsystem directory as one string.
+///
+/// Source gates pinned to a hand-picked file list go green when the code they
+/// guard simply moves to a sibling module; reading the directory asserts the
+/// contract instead of the layout.
+fn read_subsystem(dir_rel: &str) -> String {
+    let dir = root().join(dir_rel);
+    let mut out = String::new();
+    let entries = std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("read dir {dir_rel}: {e}"));
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "rs") {
+            out.push_str(&std::fs::read_to_string(&path).expect("read module"));
+            out.push('\n');
+        }
+    }
+    assert!(
+        !out.is_empty(),
+        "{dir_rel} produced no sources — the walk is broken, not the product"
+    );
+    out
+}
+
 fn cmd(tmp: &TempDir) -> Command {
     let llvm_profile_file = std::env::var_os("LLVM_PROFILE_FILE");
     let mut c = Command::new(env!("CARGO_BIN_EXE_ssh-cli"));
@@ -53,15 +76,117 @@ fn gap_version_cli_contem_042() {
 
 #[test]
 fn gap_tun_003_source_local_addr() {
-    let src = std::fs::read_to_string(root().join("src/tunnel.rs")).expect("tunnel.rs");
-    assert!(
-        src.contains("local_addr()"),
-        "tunnel must read local_addr() after bind (TUN-003)"
-    );
-    assert!(
-        src.contains("effective_port"),
-        "tunnel must expose effective_port in JSON event"
-    );
+    // G-QA-R01: this used to `read_to_string("src/tunnel.rs")` and assert the text
+    // contained `local_addr()` and `effective_port`. That passes when the strings
+    // appear in a comment, keeps passing after the behaviour is deleted, and — as
+    // the 0.5.4 module split proved — fails for the one reason that is not a
+    // regression: the code moved to a sibling file. It now drives the real accept
+    // loop with an injected client and reads the port the product published.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+
+    rt.block_on(async {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        // No `reset_flags_for_tests` here: that helper is `#[cfg(test)]` and so
+        // exists only inside the library's own test binary. It is also unnecessary —
+        // the cancel flags are process-wide, and this integration binary contains no
+        // other test that sets them, which is exactly the isolation the unit-test
+        // side has to buy with `#[serial]`.
+        let stats = Arc::new(ssh_cli::tunnel::TunnelStats::default());
+        let bound = Arc::new(AtomicBool::new(false));
+
+        let handle = tokio::spawn({
+            let stats = Arc::clone(&stats);
+            let bound = Arc::clone(&bound);
+            async move {
+                let client: Box<dyn ssh_cli::ssh::client::SshClientTrait> =
+                    Box::new(tunnel_stub::Stub);
+                // Port 0: the OS assigns, so the published value can only be right
+                // if the product actually read it back after bind.
+                ssh_cli::tunnel::run_tunnel_with_client_stats(
+                    ssh_cli::tunnel::ServeContext {
+                        vps_name: "stub-vps".to_string(),
+                        local_port: 0,
+                        timeout_ms: 60_000,
+                        json: false,
+                        bind_addr: "127.0.0.1".to_string(),
+                        bound_flag: Some(bound),
+                        stats: Some(stats),
+                    },
+                    "localhost",
+                    5432,
+                    client,
+                )
+                .await
+            }
+        });
+
+        let mut attempts = 0;
+        while !bound.load(Ordering::Acquire) && attempts < 200 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            attempts += 1;
+        }
+        assert!(
+            bound.load(Ordering::Acquire),
+            "tunnel must publish the bound flag after listening"
+        );
+        let port = stats.effective_port.load(Ordering::Acquire);
+        assert_ne!(
+            port, 0,
+            "TUN-003: the OS-assigned port must reach the event, not the requested 0"
+        );
+
+        handle.abort();
+        let _ = handle.await;
+    });
+}
+
+/// Minimal `SshClientTrait` implementation for the accept-loop test above.
+mod tunnel_stub {
+    use ssh_cli::errors::SshCliError;
+    use ssh_cli::ssh::client::{
+        ConnectionConfig, ExecutionOutput, SshClientTrait, TransferResult, TunnelChannel,
+    };
+    use std::path::Path;
+
+    pub struct Stub;
+
+    #[async_trait::async_trait]
+    impl SshClientTrait for Stub {
+        async fn connect(_cfg: ConnectionConfig) -> Result<Box<Self>, SshCliError> {
+            Ok(Box::new(Stub))
+        }
+        async fn run_command(
+            &mut self,
+            _cmd: &str,
+            _max: usize,
+            _stdin: Option<Vec<u8>>,
+        ) -> Result<ExecutionOutput, SshCliError> {
+            unreachable!("the bind path never runs a command")
+        }
+        async fn upload(&self, _l: &Path, _r: &Path) -> Result<TransferResult, SshCliError> {
+            unreachable!("the bind path never transfers")
+        }
+        async fn download(&self, _r: &Path, _l: &Path) -> Result<TransferResult, SshCliError> {
+            unreachable!("the bind path never transfers")
+        }
+        async fn open_tunnel_channel(
+            &self,
+            _h: &str,
+            _p: u16,
+            _o: &str,
+            _po: u16,
+        ) -> Result<Box<dyn TunnelChannel>, SshCliError> {
+            Err(SshCliError::channel_msg("stub"))
+        }
+        async fn disconnect(&self) -> Result<(), SshCliError> {
+            Ok(())
+        }
+    }
 }
 
 #[test]
@@ -82,13 +207,12 @@ fn gap_tun_003_schema_min_1() {
 
 #[test]
 fn gap_io_010_source_classificar() {
-    let src = std::fs::read_to_string(root().join("src/ssh/client_real_scp.rs")).unwrap()
-        + &std::fs::read_to_string(root().join("src/ssh/client_real_core.rs")).unwrap()
-        + &std::fs::read_to_string(root().join("src/ssh/scp_wire.rs")).unwrap();
+    // Reads the whole `ssh` subsystem: the SCP wire helpers were extracted out
+    // of the client monolith once already. The `no such file` operand matched
+    // any doc comment, so only the real symbol is kept.
+    let src = read_subsystem("src/ssh");
     assert!(
-        src.contains("classificar_mensagem_scp")
-            || src.contains("classify_scp_message")
-            || src.contains("no such file"),
+        src.contains("classify_scp_message"),
         "SCP client must classify remote missing messages"
     );
     assert!(
@@ -147,9 +271,9 @@ fn gap_rel_007_build_rs_precedence() {
         src.contains(".commit_hash"),
         "build.rs must read .commit_hash pack file"
     );
+    // Both operands were the same string, so the `||` added nothing.
     assert!(
-        src.contains("rerun-if-changed=.commit_hash")
-            || src.contains("rerun-if-changed=.commit_hash"),
+        src.contains("rerun-if-changed=.commit_hash"),
         "build.rs must rerun on .commit_hash"
     );
     let ch = root().join(".commit_hash");
@@ -226,7 +350,8 @@ fn gap_doc_042_tunnel_positional_skills() {
 fn gap_rel_008_changelog_042() {
     let ch = std::fs::read_to_string(root().join("CHANGELOG.md")).unwrap();
     assert!(
-        ch.contains("0.4.2") || ch.contains("[0.4.2]"),
+        // `[0.4.2]` was subsumed by the bare version; keep the heading form.
+        ch.contains("[0.4.2]"),
         "CHANGELOG must have 0.4.2 section"
     );
     assert!(
@@ -255,9 +380,11 @@ fn gap_doc_product_line_042() {
 
 #[test]
 fn gap_telemetry_false_doctor_source() {
-    let src = std::fs::read_to_string(root().join("src/vps/doctor.rs")).unwrap();
+    // Reads the whole `vps` subsystem: the doctor emitter has already been
+    // split once, and the second operand only dropped the opening quote.
+    let src = read_subsystem("src/vps");
     assert!(
-        src.contains("\"telemetry\": false") || src.contains("telemetry\": false"),
+        src.contains("\"telemetry\": false"),
         "doctor JSON must hardcode telemetry false"
     );
 }

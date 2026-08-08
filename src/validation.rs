@@ -126,7 +126,13 @@ pub fn validate_tags(tags: &[String]) -> Result<(), validator::ValidationError> 
 
 /// Deserialize TOML with path-aware errors (G-SERDE-08).
 pub fn from_toml_str<'de, T: serde::Deserialize<'de>>(s: &'de str) -> SshCliResult<T> {
-    let de = toml::Deserializer::new(s);
+    // A3: `toml` 1.x replaced the infallible `Deserializer::new` with `parse`, which
+    // surfaces lexer-level failures before any field is visited. Those have no serde
+    // path to report, so they are mapped without one rather than blamed on a field.
+    let de = toml::Deserializer::parse(s).map_err(|e| {
+        tracing::warn!(error_class = "parse", "TOML parse failed before field walk");
+        SshCliError::Config(format!("TOML: {e}"))
+    })?;
     serde_path_to_error::deserialize(de).map_err(|e| {
         tracing::warn!(
             error_class = "parse",

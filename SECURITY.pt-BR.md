@@ -17,6 +17,13 @@ Linha de produto atual: **0.5.x**.
 | 0.1.x | Sem suporte | Sem patches |
 | < 0.1 | Sem suporte | Sem patches |
 
+## Correções de segurança na 0.5.4
+- **A1 — abort disparável remotamente ao logar o banner pré-autenticação.** O banner SSH é entrada remota que chega *antes* da autenticação e é retida para log de diagnóstico. O teto de log `AUTH_BANNER_MAX_CHARS` (512) já existia (G-SSH-14); o defeito era o corte ser aplicado por **índice de byte**, que entra em pânico sempre que cai no meio de um caractere multibyte. O perfil de release usa `panic = "abort"`, então não há unwind: um par não autenticado conseguia matar o processo com um banner contendo um único caractere não-ASCII bem posicionado, derrubando um fan-out multi-host inteiro. O truncamento agora ocorre em fronteira de caractere. Note o limite residual da correção: o russh materializa o banner completo e o entrega ao callback, então o cliente ainda retém a string inteira em memória — o que A1 limita é o pânico, não a alocação. É a classe de maior severidade aqui porque não exige credencial alguma.
+- **A2 — janela de leitura pública em chaves privadas ACME e mTLS.** O material de chave em XDG `tls/acme/` e `tls/mtls/` era escrito com `std::fs::write`, que cria o arquivo legível por qualquer usuário local e só depois restringe o modo — deixando uma janela que um co-inquilino podia ler. As escritas passam pelo helper compartilhado que *cria* em `0600`, então a janela não existe. Corrigir o modo depois apenas encurta a exposição; nunca a elimina.
+- **A3 — bits de elevação enviados pelo servidor caindo no arquivo baixado.** O header `C` do SCP e os atributos do SFTP são produzidos pelo *servidor*, então o modo que carregam não é confiável. Mascarar com `0o7777` permitia que um par hostil colocasse setuid, setgid ou sticky no arquivo local. Os modos de entrada agora são mascarados com `SFTP_PERM_MASK_UNTRUSTED` (`0o0777`), então só triplas `rwx` simples atravessam a rede na entrada. A ponta remota não tem autoridade para decidir o que é privilegiado na sua máquina.
+- **Bind fora do loopback agora exige reconhecimento.** `tunnel --bind` fora do loopback exige `--i-accept-network-exposure` (G-TUN-R13). Antes disso, `--bind 0.0.0.0` publicava em silêncio o serviço remoto encaminhado para toda a rede local. Sob `--reverse` a mesma flag protege o endereço de bind do **servidor**, porque é essa a ponta exposta naquele sentido.
+- Atualize para **0.5.4** por causa das quatro. A1 e A3 são alcançáveis por um par remoto; A2 é alcançável por um co-inquilino local.
+
 ## Reportar uma vulnerabilidade
 - Reporte problemas de segurança preferencialmente via GitHub Security Advisories no repositório público `ssh-cli` (canal privado preferido).
 - Use o e-mail daniloaguiarbr@proton.me apenas como fallback quando o reporte privado no GitHub estiver indisponível.
@@ -117,7 +124,10 @@ Linha de produto atual: **0.5.x**.
 - E2E SSH real (G-E2E-05) deve manter credenciais fora da árvore: prefira `--config-dir` / hosts pré-cadastrados, ou `$HOME/.grok/config.toml` via `--from-grok-config`; env harness-only `SSH_CLI_E2E_*` é aceito só pelo script (não é runtime de produto). Offline / sem lab → **SKIP** exit 0. O script recusa config grok sob a raiz do repo.
 - Senhas de demo na documentação pública são só placeholders (ex.: `demo-password-not-real`); nunca as reutilize em hosts reais.
 - Desabilite elevação com `--disable-sudo` quando o workflow não deve escalar.
+- Mantenha `tunnel --bind` no loopback a menos que uma segunda máquina realmente precise alcançar o forward; qualquer bind roteável exige `--i-accept-network-exposure`, que é o reconhecimento dessa exposição e não uma formalidade.
+- Trate `tunnel --remote-socket /var/run/docker.sock` como delegação de privilégio: encaminhar socket do Docker ou do systemd entrega à porta local toda a autoridade que aquele socket concede no host remoto.
+- Prefira `tunnel --socks5` no loopback a um forward fixo roteável quando o agente precisar de vários destinos; um bind local reconhecido é melhor que N expostos.
 - Rode apenas comandos one-shot; nunca espere um daemon SSH de longa duração desta CLI.
 - Instale com `--locked` para evitar drift de re-resolve crypto.
-- Prefira a linha atual **0.5.3+** para integridade SFTP (G1 fechou truncamento de upload a 0 bytes), verbosidade crate-scoped (G2/G14 — sem dump de senha do russh), piso de supply-chain (russh 0.62.2), wire SCP/SFTP funcional, classificação ACME permanente (`invalidContact` → exit **64**) e máscara de export redacted `***` (`FIXED_MASK`).
+- Prefira a linha atual **0.5.3+** para integridade SFTP (G1 fechou truncamento de upload a 0 bytes), verbosidade crate-scoped (G2/G14 — sem dump de senha do russh), piso de supply-chain (russh 0.62.5), wire SCP/SFTP funcional, classificação ACME permanente (`invalidContact` → exit **64**) e máscara de export redacted `***` (`FIXED_MASK`).
 - Honestidade histórica: **0.4.1** corrigiu export redacted de secret vazio (nunca `sshcli-enc:` de vazio) e exit 0 pós-bind do tunnel.

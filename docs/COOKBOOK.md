@@ -1,9 +1,12 @@
 # Cookbook
 
+> **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
+
+
 > Copy executable recipes that solve real multi-host SSH agent problems.
 
 - Read this document in [Portuguese (pt-BR)](COOKBOOK.pt-BR.md).
-- Product line: 0.5.3.
+- Product line: 0.5.4.
 
 
 ## Latency Note
@@ -21,11 +24,11 @@
 - Telemetry: disabled
 - Secrets at rest: encrypted by default (auto `secrets.key`)
 - Install: `cargo install ssh-cli --locked`
-- Supply chain: russh 0.62.2; `cargo deny` with `yanked=deny`, `multiple-versions=warn`
+- Supply chain: russh 0.62.5; `cargo deny` with `yanked=deny`, `multiple-versions=deny`
 - SCP: regular files only (no `-r` / no directories). Directory trees and remote FS ops use **`sftp`** (`upload|download --recursive`, `ls`, `mkdir`, …). SCP download partial suffix `.ssh-cli.partial`; success JSON requires `event: "scp-transfer"`
-- SCP wire: use 0.4.0+ (prefer product line 0.5.3); never 0.3.9 (crates.io 0.3.9 advertised SCP but was inoperant)
+- SCP wire: use 0.4.0+ (prefer product line 0.5.4); never 0.3.9 (crates.io 0.3.9 advertised SCP but was inoperant)
 - SFTP: prefer **0.5.3+** (G1 upload integrity fix); verify destination with `sha256sum`; trees via `--recursive`
-- Redacted export: default body is TOML (even pipes); empty secrets stay `""`; non-empty redacted secrets → `***` (`FIXED_MASK`, never `""` for non-empty); never `sshcli-enc:` blobs on redacted path; JSON only with `vps export --json`
+- Redacted export: the body follows the resolved format, so it is JSON on any non-TTY stdout and TOML only with `--output-format text`; empty secrets stay `""`; non-empty redacted secrets → `***` (`FIXED_MASK`, never `""` for non-empty); never `sshcli-enc:` blobs on redacted path; JSON only with `vps export --json`
 - Host wire: schema v3 (English serialize; dual-read legacy Portuguese aliases)
 - Tunnel post-bind: one-shot deadline exits 0 after `tunnel_listening` (TUN-002); pre-bind timeout remains 74
 - Tunnel `--bind` default: `127.0.0.1`
@@ -44,7 +47,7 @@
   - G5/G17: multi-file / batch cancel keeps `results.len() == input.len()` (cancelled remainder filled)
   - G8: single-host `exec --json` emits exactly one JSON object
   - G9: SCP download propagates `sync_data` failure before rename
-  - G12/G19: permission bits masked with `SFTP_PERM_MASK` (`0o7777`)
+  - G12/G19: permission bits masked by direction — `SFTP_PERM_MASK` (`0o7777`) on upload, `SFTP_PERM_MASK_UNTRUSTED` (`0o0777`) on download (A3)
   - G15: accept destination-effect proof (checksum), not client byte counts alone
   - G18: SFTP download local `set_permissions` failures are surfaced
   - G7: real-SSH E2E matrix includes SFTP checksum + recursive tree (**E17/E18**)
@@ -177,6 +180,13 @@ ssh-cli exec --all 'uptime' --json
 ssh-cli exec --hosts web1,web2 'uptime' --json
 ssh-cli --max-concurrency 4 sudo-exec --all 'systemctl is-active nginx' --json
 
+# by tag, without enumerating names — exec family only (exec / sudo-exec / su-exec).
+# Tags come from `vps add --tag prod --tag edge`; any host carrying any listed tag matches.
+ssh-cli exec --tags prod,edge 'uptime' --json
+ssh-cli sudo-exec --tags prod 'systemctl restart nginx' --json
+# --all, --hosts and --tags are mutually exclusive: clap rejects any pair with exit 2.
+# scp, sftp and health-check take --all and --hosts, but NOT --tags.
+
 # copy one local file to the same remote path on every host (scp-batch)
 ssh-cli scp upload --all ./app.tgz /tmp/app.tgz --json
 ssh-cli scp upload --hosts web1,web2 ./app.tgz /tmp/app.tgz --json
@@ -245,8 +255,9 @@ ssh-cli secrets reencrypt
 ## How To Export and Import Inventory Without Secrets
 
 ```bash
-# default export body is TOML even on pipe/non-TTY (not auto-JSON)
-ssh-cli vps export -o /tmp/hosts.redacted.toml
+# the body follows the resolved format: JSON on non-TTY, TOML only with --output-format text
+ssh-cli vps export -o /tmp/hosts.redacted.json
+ssh-cli --output-format text vps export -o /tmp/hosts.redacted.toml
 # empty secrets stay "" (never fake sshcli-enc: ciphertext of empty; EXP-001)
 # non-empty redacted secrets → "***" (FIXED_MASK; never "" for non-empty; G-E2E-10)
 # agent envelope only with --json → event: "vps-export"
@@ -281,13 +292,100 @@ ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json
 # stdout: {"ok":true,"event":"tunnel_listening","vps":"prod","local_port":18080,...}
 # schema: docs/schemas/tunnel-listening.schema.json
 # after tunnel_listening, post-bind one-shot deadline exits 0 (not 74; TUN-002); pre-bind timeout remains 74
-# optional bind override (only when intentional):
-# ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --bind 0.0.0.0
+# optional bind override — a routable bind REQUIRES the acknowledgement (G-TUN-R13):
+# ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 \
+#   --bind 0.0.0.0 --i-accept-network-exposure
+# without --i-accept-network-exposure the routable bind is refused, not silently published
+# tunnel --json also emits tunnel_closed on shutdown, with reason/forwards_served/capacity_waits
 # optional auth overrides (CLI-005 parity with exec/scp):
 printf '%s' "$PASS" | ssh-cli tunnel prod 18080 127.0.0.1 8080 \
   --timeout-ms 30000 --json --password-stdin
 ssh-cli tunnel prod 18080 127.0.0.1 8080 --timeout-ms 30000 --json \
   --key ~/.ssh/id_ed25519
+```
+
+
+## How To Reach Many Destinations Through One Handshake (`--socks5`)
+
+```bash
+# G-TUN-R02: one SSH session serves every destination, chosen per connection
+ssh-cli tunnel prod 1080 --socks5 --timeout-ms 300000 --json
+# stdout: {"ok":true,"event":"tunnel_listening","mode":"socks5","local_port":1080,...}
+# REMOTE_HOST / REMOTE_PORT are omitted: SOCKS5 CONNECT carries the target
+# then point any SOCKS5-aware client at 127.0.0.1:1080
+curl --socks5-hostname 127.0.0.1:1080 http://10.0.0.5:8080/health
+curl --socks5-hostname 127.0.0.1:1080 http://10.0.0.9:9200/_cluster/health
+# prefer this over N `ssh-cli tunnel` processes: the handshake is paid once, not N times
+```
+
+
+## How To Forward to a Remote Unix Socket (`--remote-socket`)
+
+```bash
+# G-TUN-R03: direct-streamlocal@openssh.com reaches targets that never listen on TCP
+ssh-cli tunnel prod 2375 --remote-socket /var/run/docker.sock --timeout-ms 60000 --json
+# stdout: {"ok":true,"event":"tunnel_listening","mode":"streamlocal",...}
+DOCKER_HOST=tcp://127.0.0.1:2375 docker ps
+# PostgreSQL peer socket, same shape:
+ssh-cli tunnel db 15432 --remote-socket /var/run/postgresql/.s.PGSQL.5432 \
+  --timeout-ms 60000 --json
+# the path must be ABSOLUTE — a relative path fails at exit 64 before any SSH work
+# local existence is never checked: the socket lives on the server's filesystem
+# treat this as privilege delegation — the local port inherits the socket's authority
+```
+
+
+## How To Let the Server Reach Back (`--reverse`)
+
+```bash
+# G-TUN-R01: the server listens and delivers connections to your local port
+# use case: callback webhook, remote debugger pointing at a local IDE, inverted bastion
+ssh-cli tunnel prod 8080 127.0.0.1 9000 --reverse --timeout-ms 120000 --json
+# stdout: {"ok":true,"event":"tunnel_listening","mode":"reverse",...}
+# REMOTE_PORT 0 asks the server to allocate and report the port it bound:
+ssh-cli tunnel prod 8080 127.0.0.1 0 --reverse --timeout-ms 120000 --json
+# a local forward cannot accept 0 — there would be nothing to connect to
+# exposing the SERVER's bind needs the acknowledgement, since that is the exposed end here:
+ssh-cli tunnel prod 8080 0.0.0.0 9000 --reverse \
+  --i-accept-network-exposure --timeout-ms 120000 --json
+# server-side AllowTcpForwarding / GatewayPorts still govern whether the bind is permitted
+```
+
+
+## How To Shrink an Agent Payload Before It Is Written
+
+```bash
+# the eight shaping flags apply BEFORE serialization: the big envelope is never built
+ssh-cli health-check --all --json --select name,ok --filter ok=false
+# only the failures, two fields each
+ssh-cli vps list --json --select name,host --sort name --limit 10
+ssh-cli exec --all 'uptime' --json --truncate-content 200 --max-output-bytes 65536
+# how many hosts are unreachable, without transferring any host record:
+ssh-cli health-check --all --json --filter ok=false --count-only
+# stdout: {"count":2}
+# a malformed predicate is rejected at parse time, so a typo never looks like "no matches"
+ssh-cli vps list --json --filter 'nameprod'     # exit 64: no operator at all
+ssh-cli vps list --json --filter '=prod'        # exit 64: empty key
+# note what IS valid: `name~~prod` parses as key `name`, substring `~prod` — exit 0, `[]`.
+# The refusal covers missing operators, not every surprising-looking string.
+```
+
+
+## How To Rehearse a Destructive Operation (`--dry-run`)
+
+```bash
+# accepted ONLY by these six; anywhere else --dry-run is refused with exit 64
+ssh-cli vps remove old-host --dry-run --json
+ssh-cli vps import --file hosts.toml --dry-run --json
+ssh-cli sftp rm prod /srv/app/stale.log --dry-run --json
+ssh-cli sftp rmdir prod /srv/app/empty-dir --dry-run --json
+ssh-cli secrets init --dry-run --json
+ssh-cli secrets reencrypt --dry-run --json
+# refusal is the point: a flag that silently does nothing on half the surface
+# is worse than no flag, because the operator believes the rehearsal happened
+ssh-cli exec prod 'rm -rf /tmp/x' --dry-run --json   # exit 64, not a silent no-op
+# unattended runs should also refuse to wait on a human that is not there:
+ssh-cli vps list --json --no-input
 ```
 
 
@@ -307,7 +405,7 @@ printf '%s' "$KEY_PASS" | ssh-cli health-check prod --json \
 ## How To Transfer a Release Artifact (regular file only)
 
 ```bash
-# Use 0.4.0+ (prefer product line 0.5.3); never 0.3.9 — that SCP wire was broken
+# Use 0.4.0+ (prefer product line 0.5.4); never 0.3.9 — that SCP wire was broken
 # SCP: no directories / no -r (use `sftp --recursive` for trees)
 ssh-cli scp upload prod ./dist/app.tar.gz /opt/app/app.tar.gz \
   --timeout 120000 --json
@@ -358,7 +456,7 @@ ssh-cli sftp rmdir prod /tmp/empty --json
 
 - Prefer product line **0.5.3+** for all SFTP work (G1 upload integrity).
 - SETSTAT sends `atime`+`mtime` together (G3); mutating metadata is fail-closed (G4).
-- Permission bits use `SFTP_PERM_MASK` (`0o7777`; G12/G19).
+- Permission bits are masked by direction: `SFTP_PERM_MASK` (`0o7777`; G12/G19) on upload, `SFTP_PERM_MASK_UNTRUSTED` (`0o0777`) on download, so setuid/setgid/sticky sent by the server never reach the local file (A3).
 - Download local `set_permissions` failures are surfaced (G18).
 
 

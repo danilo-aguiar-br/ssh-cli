@@ -12,6 +12,27 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// Reads a facade module plus every sibling under its subsystem directory.
+///
+/// Source gates pinned to one file go green when the code they guard simply
+/// moves next door — `src/secrets.rs` was split into `src/secrets/` and
+/// `src/tunnel.rs` into `src/tunnel/` for exactly that reason. Reading the
+/// whole subsystem asserts the contract instead of the layout.
+fn read_subsystem(facade_rel: &str, dir_rel: &str) -> String {
+    let mut out = std::fs::read_to_string(root().join(facade_rel))
+        .unwrap_or_else(|e| panic!("read {facade_rel}: {e}"));
+    if let Ok(entries) = std::fs::read_dir(root().join(dir_rel)) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "rs") {
+                out.push('\n');
+                out.push_str(&std::fs::read_to_string(&path).expect("read submodule"));
+            }
+        }
+    }
+    out
+}
+
 fn cmd(tmp: &TempDir) -> Command {
     let llvm_profile_file = std::env::var_os("LLVM_PROFILE_FILE");
     let mut c = Command::new(env!("CARGO_BIN_EXE_ssh-cli"));
@@ -141,15 +162,14 @@ fn gap_io_009_scp_event_schema() {
         body.contains("\"const\": \"scp-transfer\"") || body.contains("\"const\":\"scp-transfer\""),
         "schema event const must be scp-transfer"
     );
-    let out = std::fs::read_to_string(root().join("src/output/mod.rs")).unwrap()
-        + &std::fs::read_to_string(root().join("src/output/json.rs")).unwrap()
-        + &std::fs::read_to_string(root().join("src/json_wire/mod.rs")).unwrap()
-        + &std::fs::read_to_string(root().join("src/json_wire/emit.rs")).unwrap()
-        + &std::fs::read_to_string(root().join("src/json_wire/execution.rs")).unwrap();
+    // Reads both emitter subsystems whole: the wire event has already migrated
+    // between `output/` and `json_wire/` once.
+    let out = read_subsystem("src/output/mod.rs", "src/output")
+        + &read_subsystem("src/json_wire/mod.rs", "src/json_wire");
+    // The two looser operands were subsumed by the third, so the disjunction
+    // could never fail: keep only the one that pins the wire field.
     assert!(
-        out.contains("\"event\": \"scp-transfer\"")
-            || out.contains("\"scp-transfer\"")
-            || out.contains("scp-transfer"),
+        out.contains("\"scp-transfer\""),
         "print_transfer_json must emit event scp-transfer"
     );
 }
@@ -158,9 +178,12 @@ fn gap_io_009_scp_event_schema() {
 
 #[test]
 fn gap_exp_001_serializar_empty_source() {
-    let src = std::fs::read_to_string(root().join("src/secrets.rs")).unwrap();
+    // Reads the whole subsystem: the AEAD and keyring halves live in
+    // `src/secrets/`, so a pin on `secrets.rs` alone would pass on a move.
+    let src = read_subsystem("src/secrets.rs", "src/secrets");
+    // The `is_empty()` fallback matched anything and made this vacuous.
     assert!(
-        src.contains("plaintext.is_empty()") || src.contains("is_empty()"),
+        src.contains("plaintext.is_empty()"),
         "serialize_secret must early-return on empty plaintext (EXP-001)"
     );
     assert!(
@@ -171,13 +194,14 @@ fn gap_exp_001_serializar_empty_source() {
 
 #[test]
 fn gap_tun_002_bound_flag_source() {
-    let src = std::fs::read_to_string(root().join("src/tunnel.rs")).unwrap();
+    // Reads the whole subsystem: the per-mode listeners live in `src/tunnel/`.
+    let src = read_subsystem("src/tunnel.rs", "src/tunnel");
     assert!(
-        src.contains("AtomicBool") && src.contains("bound"),
+        src.contains("AtomicBool") && src.contains("bound_flag"),
         "tunnel must use bound AtomicBool (TUN-002)"
     );
     assert!(
-        src.contains("GAP-SSH-TUN-002") || src.contains("deadline one-shot"),
+        src.contains("GAP-SSH-TUN-002"),
         "TUN-002 must be documented in tunnel source"
     );
 }
@@ -286,14 +310,14 @@ fn gap_doc_041_root_honesty_aud_post() {
 
 #[test]
 fn gap_cli_005_tunnel_source_passphrase() {
-    let src = std::fs::read_to_string(root().join("src/tunnel.rs")).unwrap();
+    // Reads the whole subsystem; both operands are required, since either one
+    // alone would pass while the other half of the contract is missing.
+    let src = read_subsystem("src/tunnel.rs", "src/tunnel");
     assert!(
-        src.contains("key_passphrase")
-            || src.contains("apply_overrides")
-            || src.contains("aplicar_overrides"),
+        src.contains("key_passphrase") && src.contains("apply_overrides"),
         "tunnel must apply key_passphrase via overrides (CLI-005)"
     );
-    let cli = std::fs::read_to_string(root().join("src/cli/mod.rs")).unwrap();
+    let cli = read_subsystem("src/cli/mod.rs", "src/cli");
     assert!(
         cli.contains("password_stdin") && cli.contains("key_passphrase_stdin"),
         "cli Tunnel must declare password_stdin and key_passphrase_stdin"
@@ -302,8 +326,9 @@ fn gap_cli_005_tunnel_source_passphrase() {
 
 #[test]
 fn gap_cli_006_health_source_key() {
-    let src = std::fs::read_to_string(root().join("src/vps/health.rs")).unwrap()
-        + &std::fs::read_to_string(root().join("src/vps/mod.rs")).unwrap();
+    // Reads the whole `vps` subsystem instead of two hand-picked files, so a
+    // helper moving into a sibling module cannot turn this green by accident.
+    let src = read_subsystem("src/vps/mod.rs", "src/vps");
     assert!(
         src.contains("key_override") && src.contains("key_passphrase_override"),
         "run_health_check must accept key overrides (CLI-006)"

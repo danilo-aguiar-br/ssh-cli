@@ -1,6 +1,6 @@
 [package]
 name = "ssh-cli"
-version = "0.5.3"
+version = "0.5.4"
 edition = "2021"
 rust-version = "1.85.0"
 default-run = "ssh-cli"
@@ -17,6 +17,7 @@ exclude = [
     ".serena/",
     ".claude/",
     ".setting.cyber/",
+    ".atomwrite/",
     ".vscode/",
     "logs/",
     "memory/",
@@ -72,7 +73,7 @@ validator = { version = "0.20", features = ["derive"] }
 serde_with = { version = "3", features = ["macros"] }
 serde_path_to_error = "0.1"
 serde_ignored = "0.1"
-toml = "0.8"
+toml = "1"
 directories = "6"
 tempfile = "3.13"
 fs2 = "0.4"
@@ -99,9 +100,17 @@ mimalloc = { version = "0.1", optional = true }
 zeroize = { version = "1.8", features = ["derive"] }
 secrecy = { version = "0.10", features = ["serde"] }
 # Default at-rest encryption (GAP-009/R-SECRETS): ChaCha20-Poly1305 + env/file/keyring/xdg secrets.key
-chacha20poly1305 = "0.10"
+#
+# A3: pinned to the 0.11 line on purpose. The 0.10 line builds on `aead` 0.5 /
+# `chacha20` 0.9 / `poly1305` 0.8, while russh and aws-lc-rs already pull the 0.6 /
+# 0.10 / 0.9 generation. Keeping 0.10 compiled *two* independent ChaCha20-Poly1305
+# implementations into a security binary — twice the audit surface for one primitive,
+# and `cargo deny` stayed quiet because duplicates were only warned about.
+chacha20poly1305 = "0.11"
 base64 = "0.22"
-getrandom = "0.2"
+# Same story: `getrandom` 0.2 is the tail of the old stack. 0.3 is what the rest of
+# the tree resolves to, so staying on 0.2 kept a third RNG shim alive for no benefit.
+getrandom = "0.3"
 keyring = "3"
 
 # Logging and errors (Rules Rust — tracing; no OTEL / no file rotation for CLI)
@@ -176,7 +185,7 @@ instant-acme = { version = "0.8", default-features = false, features = [
 signal-hook = "0.3"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation"] }
 
 [features]
 # Real SSH + TLS (SSH-over-TLS / mTLS / ACME) ENABLED BY DEFAULT.
