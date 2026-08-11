@@ -28,7 +28,7 @@ timeout 900 bash scripts/check_cross_targets.sh
 
 ### Bateria completa de gates (obrigatória antes de declarar rodada fechada)
 - Rode `scripts/check_all_gates.sh` antes de afirmar que qualquer gate está verde.
-- Ele roda os dez gates obrigatórios numa invocação e reporta todos os resultados.
+- Ele roda os onze gates obrigatórios numa invocação e reporta todos os resultados.
 - Os dez são `fmt`, `build-release`, `build-no-default`, `clippy`, `test`, `deny`, `cross-targets`, `advisory-freshness`, `en-identifiers` e `install-resolve`.
 - `scripts/check_advisory_freshness.sh` não tem outro chamador, então pular a bateria pula esse gate inteiro.
 - O motivo de existir é estrutural, não estético.

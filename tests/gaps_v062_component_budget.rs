@@ -101,14 +101,14 @@ const DECLARED_EXCEPTIONS: &[(&str, usize, &str)] = &[
     ),
     (
         "cli/dispatch.rs",
-        651,
+        620,
         "dispatch table; one match over the whole verb surface",
     ),
-    (
-        "json_wire/vps_export.rs",
-        619,
-        "export/import wire; EN and pt-BR alias handling stay together",
-    ),
+    // `json_wire/vps_export.rs` was here at 606. It is gone because the file now measures
+    // 586, which is inside `HARD_BUDGET`. A file that falls back under the budget stops
+    // being debt, and `the_exception_ledger_contains_no_stale_entries` fails until the
+    // entry is deleted — so the ledger records repayment as loudly as it records debt.
+    // Raising the cap to keep the entry alive would have been the move that gate blocks.
     // `tunnel.rs` was here at 601. It is gone because the file now measures 570: the
     // `TunnelStats` counters and their unit test moved to `src/tunnel/stats.rs`, which is
     // the split this ratchet asks for when a declared file grows. The ledger shrinking by
@@ -138,7 +138,7 @@ const TEST_MODULE_BUDGET: usize = 600;
 /// and an entry that is no longer needed fails the suite.
 const DECLARED_TEST_EXCEPTIONS: &[(&str, usize, &str)] = &[(
     "tunnel/tests.rs",
-    754,
+    729,
     "mirrors the tunnel surface it exercises; forward, reverse and socks cases \
      share one fixture harness that splitting would have to duplicate",
 )];
@@ -350,6 +350,7 @@ fn assert_ledger_is_current(
 ) {
     let mut missing = Vec::new();
     let mut no_longer_needed = Vec::new();
+    let mut slack = Vec::new();
 
     for (path, cap, reason) in ledger {
         assert!(
@@ -368,6 +369,12 @@ fn assert_ledger_is_current(
                 let lines = text.lines().count();
                 if lines <= budget {
                     no_longer_needed.push(format!("{path}: now {lines} lines"));
+                } else if cap.saturating_sub(lines) > MAX_LEDGER_SLACK {
+                    slack.push(format!(
+                        "{path}: capped at {cap} but measures {lines} \
+                         ({} lines of unused credit)",
+                        cap - lines
+                    ));
                 }
             }
         }
@@ -386,7 +393,33 @@ fn assert_ledger_is_current(
          from {label}:\n  {}",
         no_longer_needed.join("\n  ")
     );
+
+    assert!(
+        slack.is_empty(),
+        "these entries in {label} carry more than {MAX_LEDGER_SLACK} lines of unused \
+         credit — lower each cap to the measured size:\n  {}\n\
+         A frozen cap that outruns its file is the same permit this ledger exists to \
+         refuse, only granted in advance instead of in arrears.",
+        slack.join("\n  ")
+    );
 }
+
+/// How far a frozen cap may sit above the file it caps.
+///
+/// # Why a tolerance rather than equality
+///
+/// The ledger already refuses growth and refuses stale rows, but it had no opinion on
+/// a cap left behind by a shrinking file. Measured on this repository: three entries
+/// held 13, 25 and 31 lines of credit nobody had argued for — enough to absorb a whole
+/// new function without the gate ever going red. That is the failure this file's own
+/// doc comment names, arriving from the other direction.
+///
+/// Demanding `cap == lines` would fix it and make the gate unusable: deleting one line
+/// would turn the suite red, so the cheapest way to stay green becomes not tidying up.
+/// A gate that punishes cleanup trains the opposite of what it wants. The tolerance is
+/// small enough that no meaningful addition hides inside it and loose enough that
+/// ordinary edits do not have to touch this table.
+const MAX_LEDGER_SLACK: usize = 8;
 
 #[test]
 fn the_exception_ledger_contains_no_stale_entries() {

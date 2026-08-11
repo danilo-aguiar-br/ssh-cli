@@ -177,7 +177,7 @@ fn g_sftp_r05_multi_file_and_fs_timeout() {
 fn g_sftp_r12_scp_args_split() {
     assert!(
         exists("src/cli/scp_args.rs"),
-        "G-SFTP-R12: cli/scp_args.rs must exist (SRP monólito split)"
+        "G-SFTP-R12: cli/scp_args.rs must exist (SRP monolith split)"
     );
     let scp = read("src/cli/scp_args.rs");
     assert!(
@@ -248,7 +248,7 @@ fn g_sftp_12_not_inline_in_client_real() {
     let impl_body = format!("{scp}{sftp}{core}");
     assert!(
         !facade.contains("request_subsystem") && !facade.contains("SftpSession::new"),
-        "G-SFTP-12: SFTP wire must live in sftp_session, not client_real façade"
+        "G-SFTP-12: SFTP wire must live in sftp_session, not client_real facade"
     );
     assert!(
         impl_body.contains("sftp_session")

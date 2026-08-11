@@ -5,10 +5,13 @@
 //! Multi-host I/O uses domain modules with [`crate::concurrency::map_bounded`].
 #![forbid(unsafe_code)]
 
+use super::targeting::{
+    build_exec_options, resolve_exec_target, resolve_health_target, Elevation, ExecCommonArgs,
+    ExecTargetArgs, HealthTargetArgs,
+};
 use super::{
-    command_tree_json, effective_timeout_ms, generate_completions, parse_exec_target,
-    parse_hosts_list, parse_remote_steps, read_stdin_if, warn_if_password_argv, CliArgs, Command,
-    LocaleAction, OutputFormat, ScpAction, SftpAction,
+    command_tree_json, effective_timeout_ms, generate_completions, read_stdin_if,
+    warn_if_password_argv, CliArgs, Command, LocaleAction, OutputFormat, ScpAction, SftpAction,
 };
 use anyhow::Result;
 
@@ -70,6 +73,7 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             all,
             hosts,
             tags,
+            use_active,
             target,
             steps,
             json,
@@ -77,48 +81,43 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             timeout,
             description,
         } => {
-            let (selection, command) = parse_exec_target(
-                all,
-                hosts,
-                tags,
-                target,
-                crate::vps::read_active_vps(config_override.as_deref())?,
-            )
-            .map_err(|s| {
-                if s.starts_with("no active VPS") {
-                    crate::errors::SshCliError::NoActiveVps
-                } else {
-                    crate::errors::SshCliError::InvalidArgument(s)
-                }
-            })?;
-            let key = auth.key_path_string();
-            let password = read_stdin_if(auth.password_stdin, auth.password)?;
-            let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
-            let steps =
-                parse_remote_steps(steps).map_err(crate::errors::SshCliError::InvalidArgument)?;
-            let opts = crate::vps::ExecOptions {
-                password,
-                key,
-                key_passphrase,
-                timeout: effective_timeout_ms(timeout, global_timeout)
-                    .map_err(crate::errors::SshCliError::InvalidArgument)?,
+            let plan = resolve_exec_target(
+                ExecTargetArgs {
+                    all,
+                    hosts,
+                    tags,
+                    use_active,
+                    target,
+                },
+                config_override.as_deref(),
+            )?;
+            let opts = build_exec_options(ExecCommonArgs {
+                steps,
+                auth,
+                elevation_password: None,
+                elevation: Elevation::None,
+                timeout,
+                global_timeout,
                 description,
                 replace_host_key,
                 disable_sudo,
-                steps,
-                use_agent: auth.use_agent,
-                agent_socket: auth
-                    .agent_socket
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().into_owned()),
-                ..Default::default()
-            };
-            crate::vps::run_exec(selection, &command, config_override, formato, json, opts).await
+                target_source: plan.source,
+            })?;
+            crate::vps::run_exec(
+                plan.selection,
+                &plan.command,
+                config_override,
+                formato,
+                json,
+                opts,
+            )
+            .await
         }
         Command::SudoExec {
             all,
             hosts,
             tags,
+            use_active,
             target,
             steps,
             json,
@@ -128,51 +127,43 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             timeout,
             description,
         } => {
-            let (selection, command) = parse_exec_target(
-                all,
-                hosts,
-                tags,
-                target,
-                crate::vps::read_active_vps(config_override.as_deref())?,
-            )
-            .map_err(|s| {
-                if s.starts_with("no active VPS") {
-                    crate::errors::SshCliError::NoActiveVps
-                } else {
-                    crate::errors::SshCliError::InvalidArgument(s)
-                }
-            })?;
-            let key = auth.key_path_string();
-            let password = read_stdin_if(auth.password_stdin, auth.password)?;
-            let sudo_password = read_stdin_if(sudo_password_stdin, sudo_password)?;
-            let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
-            let steps =
-                parse_remote_steps(steps).map_err(crate::errors::SshCliError::InvalidArgument)?;
-            let opts = crate::vps::ExecOptions {
-                password,
-                sudo_password,
-                key,
-                key_passphrase,
-                timeout: effective_timeout_ms(timeout, global_timeout)
-                    .map_err(crate::errors::SshCliError::InvalidArgument)?,
+            let plan = resolve_exec_target(
+                ExecTargetArgs {
+                    all,
+                    hosts,
+                    tags,
+                    use_active,
+                    target,
+                },
+                config_override.as_deref(),
+            )?;
+            let opts = build_exec_options(ExecCommonArgs {
+                steps,
+                auth,
+                elevation_password: read_stdin_if(sudo_password_stdin, sudo_password)?,
+                elevation: Elevation::Sudo,
+                timeout,
+                global_timeout,
                 description,
                 replace_host_key,
                 disable_sudo,
-                steps,
-                use_agent: auth.use_agent,
-                agent_socket: auth
-                    .agent_socket
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().into_owned()),
-                ..Default::default()
-            };
-            crate::vps::run_sudo_exec(selection, &command, config_override, formato, json, opts)
-                .await
+                target_source: plan.source,
+            })?;
+            crate::vps::run_sudo_exec(
+                plan.selection,
+                &plan.command,
+                config_override,
+                formato,
+                json,
+                opts,
+            )
+            .await
         }
         Command::SuExec {
             all,
             hosts,
             tags,
+            use_active,
             target,
             steps,
             json,
@@ -182,45 +173,37 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             timeout,
             description,
         } => {
-            let (selection, command) = parse_exec_target(
-                all,
-                hosts,
-                tags,
-                target,
-                crate::vps::read_active_vps(config_override.as_deref())?,
-            )
-            .map_err(|s| {
-                if s.starts_with("no active VPS") {
-                    crate::errors::SshCliError::NoActiveVps
-                } else {
-                    crate::errors::SshCliError::InvalidArgument(s)
-                }
-            })?;
-            let key = auth.key_path_string();
-            let password = read_stdin_if(auth.password_stdin, auth.password)?;
-            let su_password = read_stdin_if(su_password_stdin, su_password)?;
-            let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
-            let steps =
-                parse_remote_steps(steps).map_err(crate::errors::SshCliError::InvalidArgument)?;
-            let opts = crate::vps::ExecOptions {
-                password,
-                su_password,
-                key,
-                key_passphrase,
-                timeout: effective_timeout_ms(timeout, global_timeout)
-                    .map_err(crate::errors::SshCliError::InvalidArgument)?,
+            let plan = resolve_exec_target(
+                ExecTargetArgs {
+                    all,
+                    hosts,
+                    tags,
+                    use_active,
+                    target,
+                },
+                config_override.as_deref(),
+            )?;
+            let opts = build_exec_options(ExecCommonArgs {
+                steps,
+                auth,
+                elevation_password: read_stdin_if(su_password_stdin, su_password)?,
+                elevation: Elevation::Su,
+                timeout,
+                global_timeout,
                 description,
                 replace_host_key,
                 disable_sudo,
-                steps,
-                use_agent: auth.use_agent,
-                agent_socket: auth
-                    .agent_socket
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().into_owned()),
-                ..Default::default()
-            };
-            crate::vps::run_su_exec(selection, &command, config_override, formato, json, opts).await
+                target_source: plan.source,
+            })?;
+            crate::vps::run_su_exec(
+                plan.selection,
+                &plan.command,
+                config_override,
+                formato,
+                json,
+                opts,
+            )
+            .await
         }
         Command::Scp { action } => {
             let (auth, timeout, json_local) = match &action {
@@ -427,6 +410,7 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             vps_name,
             all,
             hosts,
+            use_active,
             json,
             auth,
             timeout,
@@ -435,35 +419,19 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
             let key = auth.key_path_string();
             let password = read_stdin_if(auth.password_stdin, auth.password)?;
             let key_passphrase = read_stdin_if(auth.key_passphrase_stdin, auth.key_passphrase)?;
-            let selection = if all {
-                crate::vps::HostSelection::All
-            } else if let Some(h) = hosts {
-                let names = parse_hosts_list(&h);
-                if names.is_empty() {
-                    return Err(crate::errors::SshCliError::InvalidArgument(
-                        "--hosts requires at least one host name".into(),
-                    )
-                    .into());
-                }
-                let names = names
-                    .into_iter()
-                    .map(crate::domain::VpsName::try_new)
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| crate::errors::SshCliError::InvalidArgument(e.to_string()))?;
-                crate::vps::HostSelection::Named(names)
-            } else {
-                let name = match vps_name {
-                    Some(n) => n,
-                    None => {
-                        // GAP-SSH-EXIT-002: typed → exit 66.
-                        let active = crate::vps::read_active_vps(config_override.as_deref())?;
-                        active.ok_or(crate::errors::SshCliError::NoActiveVps)?
-                    }
-                };
-                let name = crate::domain::VpsName::try_new(name)
-                    .map_err(|e| crate::errors::SshCliError::InvalidArgument(e.to_string()))?;
-                crate::vps::HostSelection::Single(name)
-            };
+            // Target resolution lives beside the exec-family resolver: deciding
+            // *where* a command lands is one responsibility, and it had drifted into
+            // two copies with different rules — which is how the read surface kept an
+            // ambient shortcut the write surface had already removed.
+            let (selection, host_source) = resolve_health_target(
+                HealthTargetArgs {
+                    all,
+                    hosts,
+                    use_active,
+                    vps_name,
+                },
+                config_override.as_deref(),
+            )?;
             crate::vps::run_health_check(crate::vps::HealthCheckRequest {
                 selection,
                 config_override,
@@ -475,6 +443,7 @@ pub async fn dispatch_impl(args: CliArgs) -> Result<()> {
                 key_override: key,
                 key_passphrase_override: key_passphrase,
                 replace_host_key,
+                host_source,
             })
             .await
         }

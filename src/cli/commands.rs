@@ -11,6 +11,38 @@ use clap::{ArgAction, Subcommand, ValueHint};
 use clap_complete::Shell;
 use std::path::PathBuf;
 
+/// Usage block for `exec`, spelling the three ways to designate a target.
+///
+/// # Why this is overridden rather than left to clap
+///
+/// The positional is one vector (`num_args = 1..=2`) because clap fills positionals
+/// by order and cannot see which selector is active — two named slots would bind
+/// `exec --all uptime` to a `VPS` slot and leave the command empty. The cost of that
+/// correct choice is a generated usage line that reads `--use-active <VPS>
+/// [COMMAND]...`, advertising a shape the parser rejects. That line is printed at
+/// exactly the moment the caller already got it wrong, so it teaches the error twice.
+///
+/// Layout follows the clap contract: first line unindented, the rest indented by
+/// seven spaces, no trailing newline.
+const EXEC_USAGE_BLOCK: &str = "ssh-cli exec [OPTIONS] <VPS> <COMMAND>\n       \
+     ssh-cli exec [OPTIONS] --use-active <COMMAND>\n       \
+     ssh-cli exec [OPTIONS] --all|--hosts <LIST>|--tags <LIST> <COMMAND>";
+
+/// Usage block for `sudo-exec`. Same three forms, different verb.
+const SUDO_EXEC_USAGE_BLOCK: &str = "ssh-cli sudo-exec [OPTIONS] <VPS> <COMMAND>\n       \
+     ssh-cli sudo-exec [OPTIONS] --use-active <COMMAND>\n       \
+     ssh-cli sudo-exec [OPTIONS] --all|--hosts <LIST>|--tags <LIST> <COMMAND>";
+
+/// Usage block for `su-exec`. Same three forms, different verb.
+const SU_EXEC_USAGE_BLOCK: &str = "ssh-cli su-exec [OPTIONS] <VPS> <COMMAND>\n       \
+     ssh-cli su-exec [OPTIONS] --use-active <COMMAND>\n       \
+     ssh-cli su-exec [OPTIONS] --all|--hosts <LIST>|--tags <LIST> <COMMAND>";
+
+/// Usage block for `health-check`, which has a target but no command.
+const HEALTH_CHECK_USAGE: &str = "ssh-cli health-check [OPTIONS] <VPS_NAME>\n       \
+     ssh-cli health-check [OPTIONS] --use-active\n       \
+     ssh-cli health-check [OPTIONS] --all|--hosts <LIST>";
+
 /// Top-level subcommands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -29,9 +61,17 @@ pub enum Command {
 
     /// Runs a command on the VPS over SSH (stdout/stderr captured).
     ///
-    /// Positionals: `VPS COMMAND`, or with `--all`/`--hosts`, only `COMMAND`
-    /// (`ssh-cli exec --all uptime`, `ssh-cli exec --hosts a,b uptime`).
+    /// The target is always designated explicitly, in one of three ways: two
+    /// positionals `VPS COMMAND`; a selector with one positional
+    /// (`--all`/`--hosts <LIST>`/`--tags <LIST>` `COMMAND`); or the active marker
+    /// under the deliberate opt-in (`--use-active COMMAND`). A lone positional with
+    /// no selector is a usage error, never a command aimed at whatever `connect`
+    /// last wrote (GAP-SSH-EXEC-ARGC-001).
+    ///
     /// Extra steps on the **same** SSH session: `--step cmd2 --step cmd3` (G-O3).
+    /// Exit 127 on the first step aborts the batch, because that code there is the
+    /// signature of a host name having been read as a command.
+    #[command(override_usage = EXEC_USAGE_BLOCK)]
     Exec {
         /// Run on every registered host (bounded concurrency). When set, pass
         /// only the shell command as the single positional.
@@ -43,7 +83,21 @@ pub enum Command {
         /// Select hosts that have **any** of these tags (OR). Batch JSON (G-O2).
         #[arg(long, value_name = "LIST", conflicts_with_all = ["all", "hosts"])]
         tags: Option<String>,
-        /// `VPS COMMAND` (one host) or `COMMAND` only when `--all` / `--hosts` / `--tags`.
+        /// Run against the host recorded by `connect`, deliberately (GAP-SSH-EXEC-ARGC-001).
+        ///
+        /// Inheriting the target from on-disk state is ambient authority, so it must be
+        /// asked for. Without this flag a lone positional is a usage error, never a
+        /// command aimed at whatever host `connect` last wrote.
+        #[arg(long = "use-active", action = ArgAction::SetTrue, conflicts_with_all = ["all", "hosts", "tags"])]
+        use_active: bool,
+        /// `VPS COMMAND`, or `COMMAND` alone with `--all`/`--hosts`/`--tags`/`--use-active`.
+        ///
+        /// Kept as a vector rather than two named positional slots on purpose: `clap`
+        /// fills positionals by order and cannot know which selector is active, so
+        /// `exec --all uptime` would bind `uptime` to a `VPS` slot and leave the
+        /// command empty — silently accepting a shape worse than the one being fixed.
+        /// The arity rule therefore lives in `parse_exec_target`, which can see the
+        /// flags. See GAP-SSH-EXEC-ARGC-001.
         #[arg(required = true, num_args = 1..=2, value_names = ["VPS", "COMMAND"])]
         target: Vec<String>,
         /// Additional commands on the same SSH session after the primary (G-O3).
@@ -65,7 +119,10 @@ pub enum Command {
 
     /// Runs a command with `sudo` (safe `sh -c` packing).
     ///
-    /// Positionals: `VPS COMMAND` or, with `--all`/`--hosts`/`--tags`, only `COMMAND`.
+    /// Same target rules as `exec`: `VPS COMMAND`, or one positional with a selector
+    /// (`--all`/`--hosts`/`--tags`), or `--use-active COMMAND`. Elevation makes an
+    /// undesignated target worse, not better, so nothing here is inferred.
+    #[command(override_usage = SUDO_EXEC_USAGE_BLOCK)]
     SudoExec {
         /// Run on every registered host (bounded concurrency).
         #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["hosts", "tags"])]
@@ -76,7 +133,15 @@ pub enum Command {
         /// Select hosts by tag (OR). Batch JSON (G-O2).
         #[arg(long, value_name = "LIST", conflicts_with_all = ["all", "hosts"])]
         tags: Option<String>,
-        /// `VPS COMMAND` (one host) or `COMMAND` only when batch selection.
+        /// Run against the host recorded by `connect`, deliberately (GAP-SSH-EXEC-ARGC-001).
+        ///
+        /// Elevation makes ambient authority worse, not better: a misdirected `sudo`
+        /// step writes root-owned state on a host the caller never named.
+        #[arg(long = "use-active", action = ArgAction::SetTrue, conflicts_with_all = ["all", "hosts", "tags"])]
+        use_active: bool,
+        /// `VPS COMMAND`, or `COMMAND` alone with a selector or `--use-active`.
+        ///
+        /// See the note on `Exec::target` for why this stays a vector.
         #[arg(required = true, num_args = 1..=2, value_names = ["VPS", "COMMAND"])]
         target: Vec<String>,
         /// Extra commands on the same session (G-O3).
@@ -109,7 +174,9 @@ pub enum Command {
 
     /// Runs a command with one-shot `su -` elevation.
     ///
-    /// Positionals: `VPS COMMAND` or, with `--all`/`--hosts`, only `COMMAND`.
+    /// Same target rules as `exec`: `VPS COMMAND`, or one positional with a selector
+    /// (`--all`/`--hosts`/`--tags`), or `--use-active COMMAND`.
+    #[command(override_usage = SU_EXEC_USAGE_BLOCK)]
     SuExec {
         /// Run on every registered host (bounded concurrency).
         #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["hosts", "tags"])]
@@ -120,7 +187,15 @@ pub enum Command {
         /// Select hosts by tag (OR). Batch JSON (G-O2).
         #[arg(long, value_name = "LIST", conflicts_with_all = ["all", "hosts"])]
         tags: Option<String>,
-        /// `VPS COMMAND` (one host) or `COMMAND` only when batch selection.
+        /// Run against the host recorded by `connect`, deliberately (GAP-SSH-EXEC-ARGC-001).
+        ///
+        /// Elevation makes ambient authority worse, not better: a misdirected `su -`
+        /// step writes root-owned state on a host the caller never named.
+        #[arg(long = "use-active", action = ArgAction::SetTrue, conflicts_with_all = ["all", "hosts", "tags"])]
+        use_active: bool,
+        /// `VPS COMMAND`, or `COMMAND` alone with a selector or `--use-active`.
+        ///
+        /// See the note on `Exec::target` for why this stays a vector.
         #[arg(required = true, num_args = 1..=2, value_names = ["VPS", "COMMAND"])]
         target: Vec<String>,
         /// Extra commands on the same session (G-O3).
@@ -227,10 +302,15 @@ pub enum Command {
         i_accept_network_exposure: bool,
     },
 
-    /// Checks SSH connectivity to a VPS (or multi-host with `--all` / `--hosts`).
+    /// Checks SSH connectivity to a VPS (`--all` / `--hosts` / `--use-active`).
+    ///
+    /// The target must be designated: a name, a selector, or the explicit opt-in.
+    /// Omitting all three is a usage error rather than a probe against whatever
+    /// `connect` last wrote (GAP-SSH-EXEC-ARGC-001).
+    #[command(override_usage = HEALTH_CHECK_USAGE)]
     HealthCheck {
-        /// VPS name (uses active if omitted; ignored with `--all` / `--hosts`).
-        #[arg(conflicts_with_all = ["all", "hosts"])]
+        /// VPS name. Required unless a selector or `--use-active` is present.
+        #[arg(conflicts_with_all = ["all", "hosts", "use_active"])]
         vps_name: Option<String>,
         /// Probe every registered host in parallel (bounded concurrency).
         #[arg(long, action = ArgAction::SetTrue, conflicts_with = "hosts")]
@@ -238,6 +318,15 @@ pub enum Command {
         /// Comma-separated host subset (bounded fan-out). Batch JSON even for one name.
         #[arg(long, value_name = "LIST", conflicts_with = "all")]
         hosts: Option<String>,
+        /// Probe the host recorded by `connect`, deliberately.
+        ///
+        /// This surface used to inherit the marker with no opt-in, defended as safe
+        /// because a probe is an idempotent read. The probe is safe; the habit is
+        /// not. An operator who learns that a target is optional here carries the
+        /// expectation to `exec`, where the same shortcut sent a day of work to the
+        /// wrong machine. The cheap half of the asymmetry is the one to make strict.
+        #[arg(long = "use-active", action = ArgAction::SetTrue, conflicts_with_all = ["all", "hosts"])]
+        use_active: bool,
         /// JSON output (GAP-SSH-IO-002). Single host: classic object; multi: batch.
         #[arg(from_global)]
         json: bool,

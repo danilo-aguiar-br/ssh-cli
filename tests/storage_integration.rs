@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Testes de integração do CRUD de VPS via CLI.
+//! Integration tests for the VPS registry CRUD through the CLI.
 //!
-//! Testa as operações de load, save, buscar, adicionar e remover
+//! Exercises load, save, lookup, add and remove
 //! records de VPS usando `--config-dir` com TempDir para isolamento.
 
 use assert_cmd::Command;

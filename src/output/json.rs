@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// G-COMP: JSON VPS/exec emitters (extracted from output monólito).
+// G-COMP: JSON VPS/exec emitters (extracted from output monolith).
 #![forbid(unsafe_code)]
 //! JSON-mode formatters for VPS inventory and one-shot results.
 
@@ -91,8 +91,11 @@ pub fn export_envelope_json(
 /// ```
 ///
 /// Streams under one stdout lock with `writeln!` (G-MAC-02) — no cloned
-pub fn print_execution_output_json(output: &ExecutionOutput) -> io::Result<()> {
-    let v = ExecutionJson::from(output);
+pub fn print_execution_output_json(
+    output: &ExecutionOutput,
+    target: &json_wire::ExecTarget,
+) -> io::Result<()> {
+    let v = ExecutionJson::with_target(output, target);
     match json_wire::print_json_line(&v) {
         Ok(()) => Ok(()),
         Err(e) => {
@@ -103,9 +106,14 @@ pub fn print_execution_output_json(output: &ExecutionOutput) -> io::Result<()> {
 }
 
 /// Prints a health-check result as JSON.
-pub fn print_health_check_json(name: &str, latency_ms: u64) -> io::Result<()> {
+pub fn print_health_check_json(
+    name: &str,
+    latency_ms: u64,
+    host_source: json_wire::TargetSource,
+) -> io::Result<()> {
     let v = HealthCheckJson {
         name: name.to_string(),
+        target: json_wire::TargetEcho::from_parts(name, host_source),
         status: "ok".into(),
         latency_ms,
     };

@@ -103,15 +103,26 @@ fn two_stdin_secrets_are_refused_rather_than_silently_emptied() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-/// D14: the transfer commands collapse their paths into one variadic positional,
-/// so a flag placed *between* positionals truncates the collection and clap
-/// rejects the call with a usage error.
+/// D14: the transfer commands collapse their paths into one variadic positional, and
+/// a flag placed *between* positionals no longer truncates the collection.
 ///
-/// The harness had used `scp upload <host> --timeout N <local> <remote>` for its
-/// entire existence and never learned it was invalid, because it never ran. This
-/// pins the accepted order so the docs and the harness cannot drift back.
+/// # Why this assertion changed
+///
+/// D14 measured `scp upload <host> --timeout N <local> <remote>` as a clap parse
+/// failure (exit 2), a side effect of the positional run declaring `num_args = 2..`:
+/// `<host>` alone was one value, the flag ended the run, and the minimum was unmet.
+/// The named transfer slots (`--src` / `--dest`) need a run of *one* positional — the
+/// VPS — and of *zero* under a selector, so the minimum had to go.
+///
+/// The property D14 actually cared about survives and is asserted below: the argv is
+/// not *silently truncated*. Every token keeps the role its position gives it —
+/// `somehost` is still the host slot, `/tmp/a` and `/tmp/b` are still the path slots —
+/// and the run now proceeds to the registry, where the unknown host is reported as
+/// `EX_NOINPUT`. Nothing is dropped and nothing is reinterpreted, which is the
+/// guarantee that matters; the exit code merely moved from the parser layer to the
+/// product layer.
 #[test]
-fn transfer_commands_reject_a_flag_between_positionals() {
+fn transfer_commands_keep_slot_roles_when_a_flag_sits_between_positionals() {
     let tmp = std::env::temp_dir().join(format!("ssh-cli-d14-{}", std::process::id()));
     let interleaved = Command::new(bin())
         .args(["--config-dir", &tmp.to_string_lossy()])
@@ -127,14 +138,15 @@ fn transfer_commands_reject_a_flag_between_positionals() {
         .output()
         .expect("spawn ssh-cli");
 
-    // Exit 2, not 64. `clap::Error::exit` documents "exits with a status of 2" for
-    // parse failures; the sysexits codes in `src/errors.rs` (64 = `EX_USAGE`) only
-    // apply to *product* errors raised after parsing succeeds. Asserting 64 here was
-    // asserting the wrong layer, and the assertion never ran to say so.
+    // 66 = `EX_NOINPUT`: the argv parsed with every token in its own slot and the run
+    // died on the unknown host. Anything else — 2 for a truncated run, or a success —
+    // would mean the interleaved flag changed how the positionals were read.
     assert_eq!(
         interleaved.status.code(),
-        Some(2),
-        "a flag between positionals must fail loudly as a clap parse error, not be silently accepted"
+        Some(66),
+        "an interleaved flag must not change what the positionals mean; \
+         stderr:\n{}",
+        String::from_utf8_lossy(&interleaved.stderr)
     );
 
     // The supported form puts options ahead of the positional run. It must not
@@ -152,13 +164,12 @@ fn transfer_commands_reject_a_flag_between_positionals() {
         ])
         .output()
         .expect("spawn ssh-cli");
-    // Excluding 2 is the assertion with teeth: 2 is the code clap actually produces
-    // on a parse failure, so this is the value the supported order must never yield.
-    // The old form excluded 64, which the parser never emits, so it passed vacuously.
-    assert_ne!(
+    // Both orders must agree. If they diverge, flag placement is once again deciding
+    // how positionals are read — the defect class this file exists to keep out.
+    assert_eq!(
         leading.status.code(),
-        Some(2),
-        "options before the positional run must parse; got a clap parse error instead"
+        interleaved.status.code(),
+        "flag placement must not change the outcome of an otherwise identical argv"
     );
     let _ = std::fs::remove_dir_all(&tmp);
 }

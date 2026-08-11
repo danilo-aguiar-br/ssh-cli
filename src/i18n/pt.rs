@@ -40,6 +40,11 @@ pub(super) fn pt(msg: &Message) -> String {
         }
         Message::ErrorPartialFailure { detail } => format!("Falha parcial: {detail}"),
         Message::ErrorInvalidArgument { detail } => format!("Argumento inválido: {detail}"),
+        Message::ErrorNoActiveVps => {
+            // Mirrors the English note: `health-check --use-active` has no command.
+            "nenhum VPS ativo; execute `connect <NOME>` antes, ou nomeie o alvo na linha de comando"
+                .to_string()
+        }
         Message::ErrorUnexpected { detail } => format!("Erro inesperado: {detail}"),
         Message::VpsEdited { name } => format!("VPS '{name}' editada."),
         Message::ExportCompleted { path } => format!("exportado para {path}"),
@@ -52,18 +57,11 @@ pub(super) fn pt(msg: &Message) -> String {
         }
         Message::TunnelPressCtrlC => "Pressione Ctrl+C para encerrar.".to_string(),
         Message::HealthCheckOk { name } => format!("Health check bem-sucedido para '{name}'."),
-        Message::OperationCancelled => "Operação cancelada pelo usuário.".to_string(),
         Message::ScpUploadCompleted { bytes, ms } => {
             format!("Upload concluído: {bytes} bytes em {ms}ms")
         }
         Message::ScpDownloadCompleted { bytes, ms } => {
             format!("Download concluído: {bytes} bytes em {ms}ms")
-        }
-        Message::ScpUploadFileOnly => {
-            "upload só suporta arquivos regulares (sem diretórios / sem -r)".to_string()
-        }
-        Message::ScpDownloadLocalNotDirectory => {
-            "caminho local de download deve ser arquivo, não diretório existente".to_string()
         }
         Message::SftpUploadCompleted { bytes, ms } => {
             format!("Upload SFTP concluído: {bytes} bytes em {ms}ms")

@@ -29,9 +29,23 @@ fn main() {
 ///
 /// Precedence (REL-007):
 /// 1. `SSH_CLI_COMMIT_HASH` env (CI/publish inject)
-/// 2. `.commit_hash` file in the package manifest (embedded in crates.io tarball)
-/// 3. `git rev-parse` when a checkout exists
+/// 2. `git rev-parse` when a checkout exists
+/// 3. `.commit_hash` file in the package manifest (crates.io tarball, which has no
+///    `.git`)
 /// 4. `unknown`
+///
+/// # Why git outranks the file
+///
+/// The file used to win, on the assumption that it only exists inside a published
+/// pack. It does not: `.commit_hash` is tracked in the repository, so every local
+/// build of a checkout read a frozen value. Measured on 2026-08-10: the binary
+/// reported `f3b98b7` while `HEAD` was `09590ba`, six commits later — provenance that
+/// is confidently wrong is worse than provenance that is missing, because nobody
+/// double-checks a hash that looks plausible.
+///
+/// Asking git first fixes the class rather than the instance. The file keeps its
+/// stated purpose exactly: a crates.io tarball ships without `.git`, so the git probe
+/// finds nothing there and the file answers, as designed.
 fn commit_hash_with_dirty() -> String {
     if let Ok(env_hash) = std::env::var("SSH_CLI_COMMIT_HASH") {
         let t = env_hash.trim();
@@ -40,28 +54,38 @@ fn commit_hash_with_dirty() -> String {
         }
     }
 
+    if let Some(hash) = git_head_hash() {
+        return with_dirty_suffix(hash);
+    }
+
     if let Some(file_hash) = read_commit_hash_file() {
-        // G-E2E-06: `.commit_hash` is for crates.io packs; local dirty trees must
-        // still surface `-dirty` so provenance matches the working tree.
+        // G-E2E-06: reached when there is no checkout — the crates.io pack case. The
+        // `-dirty` suffix is still applied because it is a no-op outside a checkout
+        // and honest inside one (a source tree that vendored the file).
         return with_dirty_suffix(file_hash);
     }
 
-    // Optional build-time dependency: `git` on PATH. Not required for crates.io
-    // source builds (`.commit_hash` or env take precedence when present).
-    let Ok(output) = git_command()
+    "unknown".to_string()
+}
+
+/// Short `HEAD` hash from git, or [`None`] when this is not a usable checkout.
+///
+/// Optional build-time dependency: `git` on PATH. Absent git, absent `.git`, or a
+/// failed invocation all mean "no checkout here", which is a normal state for a
+/// source build from a published tarball rather than an error.
+fn git_head_hash() -> Option<String> {
+    let output = git_command()
         .args(["rev-parse", "--short", "HEAD"])
         .output()
-    else {
-        return "unknown".to_string();
-    };
+        .ok()?;
     if !output.status.success() {
-        return "unknown".to_string();
+        return None;
     }
     let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if hash.is_empty() {
-        return "unknown".to_string();
+        return None;
     }
-    with_dirty_suffix(hash)
+    Some(hash)
 }
 
 /// Appends `-dirty` when a git checkout has local changes (G-E2E-06).

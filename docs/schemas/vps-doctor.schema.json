@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-doctor.schema.json",
   "title": "vps doctor JSON (single root envelope, G-PAR-42)",
+  "description": "Payload of `ssh-cli doctor --json` and `ssh-cli vps doctor --json`. `ssh_probe` is always present, null when no probe ran; its shape is a local sub-schema, not health-check-batch.",
   "type": "object",
   "additionalProperties": true,
   "required": ["event", "ok", "local", "ssh_probe"],
@@ -27,6 +28,7 @@
         "hosts",
         "known_hosts",
         "active_file",
+        "active_vps",
         "telemetry"
       ],
       "properties": {
@@ -38,6 +40,10 @@
         "hosts": { "type": "integer" },
         "known_hosts": { "type": "string" },
         "active_file": { "type": "string" },
+        "active_vps": {
+          "type": ["string", "null"],
+          "description": "host recorded by `connect`; null when no marker is set"
+        },
         "secrets_at_rest": {
           "type": "string",
           "description": "encrypted or plaintext"
@@ -52,7 +58,7 @@
         "runtime": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["os", "arch", "is_wsl", "is_container", "is_ci", "is_termux"],
+          "required": ["os", "arch", "is_wsl", "is_container", "is_ci", "is_termux", "sandbox"],
           "properties": {
             "os": { "type": "string" },
             "arch": { "type": "string" },

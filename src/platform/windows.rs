@@ -116,6 +116,8 @@ fn enable_virtual_terminal_processing() {
 
 /// No-op stub so non-Windows unit tests can name the entry point.
 #[cfg(not(target_os = "windows"))]
+// Non-Windows stub: the caller in `platform::mod` is `cfg(windows)`, so on every
+// other target this body is unreachable by construction rather than by neglect.
 #[allow(dead_code)]
 pub fn configure_console() -> Result<()> {
     Ok(())

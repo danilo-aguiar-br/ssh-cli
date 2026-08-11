@@ -122,7 +122,7 @@ fn add_with_key_path_without_password() {
 
 #[test]
 #[serial]
-fn add_sem_credencial_falha() {
+fn add_without_credentials_fails() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -142,7 +142,7 @@ fn add_sem_credencial_falha() {
 
 #[test]
 #[serial]
-fn export_redacted_nao_contem_senha() {
+fn export_redacted_omits_the_password() {
     let tmp = TempDir::new().unwrap();
     add_fake_host(&tmp, "exp1");
     let out = tmp.path().join("export.toml");
@@ -192,7 +192,7 @@ fn secrets_encrypt_on_disk_when_key_set() {
 
 #[test]
 #[serial]
-fn max_command_chars_rejeita_comando_longo() {
+fn max_command_chars_rejects_a_long_command() {
     let tmp = TempDir::new().unwrap();
     add_fake_host(&tmp, "maxc");
     let longo = "x".repeat(80);
@@ -209,7 +209,7 @@ fn max_command_chars_rejeita_comando_longo() {
 
 #[test]
 #[serial]
-fn su_exec_sem_senha_su_falha_cedo() {
+fn su_exec_without_a_su_password_fails_early() {
     let tmp = TempDir::new().unwrap();
     add_fake_host(&tmp, "nosu");
     cmd(&tmp)
@@ -225,7 +225,7 @@ fn su_exec_sem_senha_su_falha_cedo() {
 
 #[test]
 #[serial]
-fn disable_sudo_global_bloqueia_sudo_exec() {
+fn disable_sudo_global_blocks_sudo_exec() {
     let tmp = TempDir::new().unwrap();
     add_fake_host(&tmp, "nosudo");
     cmd(&tmp)
@@ -254,7 +254,7 @@ fn known_hosts_tofu_unit_via_doctor_path() {
 
 #[test]
 #[serial]
-fn packing_abort_contem_term_e_kill() {
+fn packing_abort_carries_term_and_kill() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["su-exec", "--help"])

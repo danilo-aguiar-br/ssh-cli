@@ -12,7 +12,7 @@
 //! Operating-system conditional abstractions.
 //!
 //! Platform initialization ([`initialize_platform`]) is the **first I/O-related
-//! step** after signal/telemetry bootstrap in [`crate::run`]. It configures:
+//! step** after signal and tracing bootstrap in [`crate::run`]. It configures:
 //!
 //! - **Windows**: console UTF-8 (code page 65001) + virtual terminal processing
 //!   for ANSI colors under cmd.exe / PowerShell 5.1 / Windows Terminal

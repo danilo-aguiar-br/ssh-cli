@@ -104,6 +104,12 @@ mod tests {
         mock
     }
 
+    /// Fixed target for step-engine tests, which assert on the wire commands and
+    /// not on the audit fields.
+    fn test_target() -> crate::json_wire::ExecTarget {
+        crate::json_wire::ExecTarget::new("test-host", crate::json_wire::TargetSource::Argv)
+    }
+
     /// B1: `sudo-exec --step A --step B` used to run only the primary command and
     /// still exit 0. Every step must reach the wire, each with its own `sudo` pack.
     #[tokio::test]
@@ -121,6 +127,7 @@ mod tests {
             Box::new(mock),
             OutputFormat::Text,
             false,
+            &test_target(),
         )
         .await
         .unwrap_or_else(|e| unreachable!("sudo steps must succeed: {e}"));
@@ -150,6 +157,7 @@ mod tests {
             Box::new(mock),
             OutputFormat::Text,
             false,
+            &test_target(),
         )
         .await
         .unwrap_or_else(|e| unreachable!("exec steps must succeed: {e}"));
@@ -188,6 +196,7 @@ mod tests {
             Box::new(mock),
             OutputFormat::Text,
             false,
+            &test_target(),
         )
         .await
         .expect_err("first step exited 7");
@@ -198,6 +207,118 @@ mod tests {
             matches!(
                 downcast,
                 Some(SshCliError::CommandFailed { exit_code: 7, .. })
+            ),
+            "{err}"
+        );
+    }
+
+    /// GAP-SSH-EXEC-ARGC-001 rule 6: exit 127 on step zero aborts the batch.
+    ///
+    /// This is the incident's own failure mode. When a host name is promoted to a
+    /// command, step zero answers `command not found` — survivable on its own — and
+    /// the remaining steps then execute against a machine nobody designated. The
+    /// aggregate exit was 0 and the run read as a success.
+    ///
+    /// The assertion is the call count, not the exit code: the point is that the
+    /// later steps never reach the wire. Counting invocations proves that without a
+    /// real host, because the mock is the wire.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn step_zero_command_not_found_aborts_the_batch() {
+        crate::signals::reset_flags_for_tests();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut mock = MockSshClient::new();
+        let calls_c = Arc::clone(&calls);
+        mock.expect_run_command().returning(move |_, _, _| {
+            let n = calls_c.fetch_add(1, Ordering::Relaxed);
+            Ok(ExecutionOutput {
+                stdout: String::new(),
+                stderr: if n == 0 {
+                    "sh: ssh-danilo: command not found".into()
+                } else {
+                    String::new()
+                },
+                exit_code: Some(if n == 0 { 127 } else { 0 }),
+                truncated_stdout: false,
+                truncated_stderr: false,
+                duration_ms: 1,
+            })
+        });
+        mock.expect_disconnect().returning(|| Ok(()));
+        let vps = record(None, None);
+
+        let err = single::run_exec_with_client_steps(
+            &vps,
+            "ssh-danilo",
+            &steps(&["second", "third"]),
+            Box::new(mock),
+            OutputFormat::Text,
+            false,
+            &test_target(),
+        )
+        .await
+        .expect_err("127 on step zero must fail the run");
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "steps after a step-zero 127 must never reach the wire"
+        );
+        assert!(
+            matches!(
+                err.downcast_ref::<SshCliError>(),
+                Some(SshCliError::CommandFailed { exit_code: 127, .. })
+            ),
+            "{err}"
+        );
+    }
+
+    /// The abort is scoped to index zero: a later 127 keeps the run-everything rule.
+    ///
+    /// Without this, rule 6 would silently become "any missing binary stops the
+    /// batch", which is a different and much broader contract than the one argued for.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_later_command_not_found_does_not_abort() {
+        crate::signals::reset_flags_for_tests();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut mock = MockSshClient::new();
+        let calls_c = Arc::clone(&calls);
+        mock.expect_run_command().returning(move |_, _, _| {
+            let n = calls_c.fetch_add(1, Ordering::Relaxed);
+            Ok(ExecutionOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: Some(if n == 1 { 127 } else { 0 }),
+                truncated_stdout: false,
+                truncated_stderr: false,
+                duration_ms: 1,
+            })
+        });
+        mock.expect_disconnect().returning(|| Ok(()));
+        let vps = record(None, None);
+
+        let err = single::run_exec_with_client_steps(
+            &vps,
+            "first",
+            &steps(&["missing-binary", "third"]),
+            Box::new(mock),
+            OutputFormat::Text,
+            false,
+            &test_target(),
+        )
+        .await
+        .expect_err("a non-zero step still fails the run");
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            3,
+            "a 127 after step zero must not truncate the batch"
+        );
+        assert!(
+            matches!(
+                err.downcast_ref::<SshCliError>(),
+                Some(SshCliError::CommandFailed { exit_code: 127, .. })
             ),
             "{err}"
         );

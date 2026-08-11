@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/exec-batch.schema.json",
   "title": "exec/sudo-exec/su-exec --all JSON batch",
+  "description": "Fleet payload of the exec family under `--all`, `--hosts` or `--tags` (`event: \"exec-batch\"`). A per-host failure does not abort its siblings.",
   "type": "object",
   "additionalProperties": true,
   "required": ["event", "batch_run_id", "max_concurrency", "results"],

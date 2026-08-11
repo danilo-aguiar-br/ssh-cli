@@ -84,15 +84,25 @@ pub async fn run_scp(
     opts: ScpOptions,
 ) -> anyhow::Result<()> {
     if crate::signals::should_stop() {
-        return Err(anyhow::anyhow!(i18n::t(Message::OperationCancelled)));
+        return Err(anyhow::anyhow!(crate::constants::OPERATION_CANCELLED_MSG));
     }
 
     match action {
         ScpAction::Upload {
-            all, hosts, target, ..
+            all,
+            hosts,
+            src,
+            dest,
+            target,
+            ..
         } => {
-            let plan = crate::cli::parse_scp_target(all, hosts, target)
-                .map_err(SshCliError::InvalidArgument)?;
+            let plan = crate::cli::parse_scp_target(
+                all,
+                hosts,
+                crate::cli::TransferSlots::new(src, dest),
+                target,
+            )
+            .map_err(SshCliError::InvalidArgument)?;
             match plan {
                 crate::cli::ScpPathPlan::MultiFile {
                     vps,
@@ -129,9 +139,9 @@ pub async fn run_scp(
                 } => {
                     // GAP-SSH-SCP-001 / SCP-019: validate file local antes do connect.
                     if local.is_dir() {
-                        return Err(SshCliError::InvalidArgument(i18n::t(
-                            Message::ScpUploadFileOnly,
-                        ))
+                        return Err(SshCliError::InvalidArgument(
+                            crate::constants::SCP_UPLOAD_FILE_ONLY_MSG.to_string(),
+                        )
                         .into());
                     }
                     if !local.is_file() {
@@ -159,6 +169,14 @@ pub async fn run_scp(
 
                     let mut record = vps::find_by_name(config_override.as_deref(), vps_key)?
                         .ok_or_else(|| SshCliError::VpsNotFound(vps_key.to_owned()))?;
+                    // Explicit Target Designation: publish only after the lookup
+                    // succeeded, so a `VpsNotFound` envelope never claims a host that
+                    // was never resolved. Same seam and same reason as `exec`.
+                    let target = crate::json_wire::ExecTarget::new(
+                        vps_key,
+                        crate::json_wire::TargetSource::Argv,
+                    );
+                    crate::json_wire::set_resolved_target(&target);
 
                     apply_scp_options(&mut record, &opts);
 
@@ -171,15 +189,25 @@ pub async fn run_scp(
 
                     let client: Box<dyn SshClientTrait> =
                         <SshClient as SshClientTrait>::connect(cfg).await?;
-                    run_scp_upload_with_client(vps_key, &local, &remote, client, opts.json).await?;
+                    run_scp_upload_with_client(&target, &local, &remote, client, opts.json).await?;
                 }
             }
         }
         ScpAction::Download {
-            all, hosts, target, ..
+            all,
+            hosts,
+            src,
+            dest,
+            target,
+            ..
         } => {
-            let plan = crate::cli::parse_scp_target(all, hosts, target)
-                .map_err(SshCliError::InvalidArgument)?;
+            let plan = crate::cli::parse_scp_target(
+                all,
+                hosts,
+                crate::cli::TransferSlots::new(src, dest),
+                target,
+            )
+            .map_err(SshCliError::InvalidArgument)?;
             match plan {
                 crate::cli::ScpPathPlan::MultiFile {
                     vps,
@@ -225,9 +253,9 @@ pub async fn run_scp(
                         .await;
                     }
                     if local.is_dir() {
-                        return Err(SshCliError::InvalidArgument(i18n::t(
-                            Message::ScpDownloadLocalNotDirectory,
-                        ))
+                        return Err(SshCliError::InvalidArgument(
+                            crate::constants::SCP_DOWNLOAD_LOCAL_NOT_DIRECTORY_MSG.to_string(),
+                        )
                         .into());
                     }
                     let vps::HostSelection::Single(vps_name) = selection else {
@@ -241,6 +269,14 @@ pub async fn run_scp(
 
                     let mut record = vps::find_by_name(config_override.as_deref(), vps_key)?
                         .ok_or_else(|| SshCliError::VpsNotFound(vps_key.to_owned()))?;
+                    // Explicit Target Designation: publish only after the lookup
+                    // succeeded, so a `VpsNotFound` envelope never claims a host that
+                    // was never resolved. Same seam and same reason as `exec`.
+                    let target = crate::json_wire::ExecTarget::new(
+                        vps_key,
+                        crate::json_wire::TargetSource::Argv,
+                    );
+                    crate::json_wire::set_resolved_target(&target);
 
                     apply_scp_options(&mut record, &opts);
 
@@ -253,7 +289,7 @@ pub async fn run_scp(
 
                     let client: Box<dyn SshClientTrait> =
                         <SshClient as SshClientTrait>::connect(cfg).await?;
-                    run_scp_download_with_client(vps_key, &remote, &local, client, opts.json)
+                    run_scp_download_with_client(&target, &remote, &local, client, opts.json)
                         .await?;
                 }
             }
@@ -293,7 +329,7 @@ pub(crate) fn apply_scp_options(record: &mut crate::vps::model::VpsRecord, opts:
 
 /// Testable SCP upload that accepts the client as a parameter.
 pub async fn run_scp_upload_with_client(
-    vps_name: &str,
+    target: &crate::json_wire::ExecTarget,
     local: &std::path::Path,
     remote: &std::path::Path,
     client: Box<dyn SshClientTrait>,
@@ -305,7 +341,7 @@ pub async fn run_scp_upload_with_client(
     if json {
         output::print_transfer_json(
             "upload",
-            vps_name,
+            target,
             &local.display().to_string(),
             &remote.display().to_string(),
             &result,
@@ -321,7 +357,7 @@ pub async fn run_scp_upload_with_client(
 
 /// Testable SCP download that accepts the client as a parameter.
 pub async fn run_scp_download_with_client(
-    vps_name: &str,
+    target: &crate::json_wire::ExecTarget,
     remote: &std::path::Path,
     local: &std::path::Path,
     client: Box<dyn SshClientTrait>,
@@ -333,7 +369,7 @@ pub async fn run_scp_download_with_client(
     if json {
         output::print_transfer_json(
             "download",
-            vps_name,
+            target,
             &local.display().to_string(),
             &remote.display().to_string(),
             &result,

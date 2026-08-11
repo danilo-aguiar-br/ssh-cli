@@ -47,6 +47,13 @@ pub struct HealthCheckRequest {
     pub key_passphrase_override: Option<SecretString>,
     /// Replace a diverging host key in TOFU `known_hosts`.
     pub replace_host_key: bool,
+    /// How the checked host was designated.
+    ///
+    /// Since the `--use-active` opt-in landed, a nameless `health-check` is a usage
+    /// error rather than a silent fallback. Provenance is still reported: it is what
+    /// separates "I checked the host you named" from "I checked whatever `connect`
+    /// last wrote", and only the field distinguishes those after the run.
+    pub host_source: crate::json_wire::TargetSource,
 }
 
 /// Health-check SSH (single host or multi-host bounded fan-out).
@@ -65,15 +72,14 @@ pub async fn run_health_check(req: HealthCheckRequest) -> Result<()> {
         key_override,
         key_passphrase_override,
         replace_host_key,
+        host_source,
     } = req;
     // M2: local --json or global format → JSON error envelope on failure.
     if json_local || format == OutputFormat::Json {
         crate::output::set_json_errors(true);
     }
     if crate::signals::should_stop() {
-        return Err(anyhow::anyhow!(crate::i18n::t(
-            crate::i18n::Message::OperationCancelled
-        )));
+        return Err(anyhow::anyhow!(crate::constants::OPERATION_CANCELLED_MSG));
     }
     if selection.is_batch() {
         return run_health_check_all(HealthCheckRequest {
@@ -86,6 +92,7 @@ pub async fn run_health_check(req: HealthCheckRequest) -> Result<()> {
             key_override,
             key_passphrase_override,
             replace_host_key,
+            host_source,
         })
         .await;
     }
@@ -124,7 +131,7 @@ pub async fn run_health_check(req: HealthCheckRequest) -> Result<()> {
     client.disconnect().await?;
 
     if use_json(json_local, format) {
-        output::print_health_check_json(&resolved_key, latency_ms)?;
+        output::print_health_check_json(&resolved_key, latency_ms, host_source)?;
     } else {
         output::print_health_check(&resolved_key, latency_ms);
     }
@@ -247,6 +254,9 @@ async fn run_health_check_all(req: HealthCheckRequest) -> Result<()> {
         key_override,
         key_passphrase_override,
         replace_host_key,
+        // Deliberately unused: the batch envelope already names every host per
+        // entry, and a fan-out can only have come from a selector.
+        host_source: _,
     } = req;
     let (host_results, limit) = collect_health_check_batch_with_opts(
         &selection,

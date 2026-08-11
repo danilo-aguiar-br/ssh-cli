@@ -53,6 +53,10 @@ fn envelope_carries_both_flags_on_the_wire() {
     let v = ScpTransferJson {
         ok: true,
         event: "scp-transfer".into(),
+        target: ssh_cli::json_wire::TargetEcho::from_parts(
+            "host",
+            ssh_cli::json_wire::TargetSource::Argv,
+        ),
         direction: "download".into(),
         vps: "host".into(),
         local: "/tmp/a".into(),

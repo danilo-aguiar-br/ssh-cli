@@ -16,13 +16,14 @@ mod path_parse;
 mod schema_cmd;
 mod scp_args;
 mod sftp_args;
+mod targeting;
 mod vps_action;
 
 pub use commands::{
     Command, LocaleAction, SecretsAction, TlsAcmeAccountAction, TlsAcmeAction, TlsAction,
     TlsMtlsAction,
 };
-pub(crate) use path_parse::{parse_exec_target, parse_hosts_list, parse_scp_target, ScpPathPlan};
+pub(crate) use path_parse::{parse_hosts_list, parse_scp_target, ScpPathPlan, TransferSlots};
 pub use schema_cmd::run_schema;
 pub use scp_args::ScpAction;
 pub use sftp_args::SftpAction;
@@ -332,16 +333,16 @@ pub fn parse_remote_steps(steps: Vec<String>) -> Result<Vec<crate::domain::Remot
         .collect()
 }
 
-/// Installs stderr tracing before clap parse (delegates to [`crate::telemetry`]).
+/// Installs stderr tracing before clap parse (delegates to [`crate::tracing_setup`]).
 #[inline]
 pub fn bootstrap_logs() {
-    crate::telemetry::bootstrap_logs();
+    crate::tracing_setup::bootstrap_logs();
 }
 
-/// Reloads the tracing filter from CLI flags (delegates to [`crate::telemetry`]).
+/// Reloads the tracing filter from CLI flags (delegates to [`crate::tracing_setup`]).
 #[inline]
 pub fn initialize_logs(args: &CliArgs) {
-    crate::telemetry::initialize_logs(args.verbose);
+    crate::tracing_setup::initialize_logs(args.verbose);
 }
 
 /// Writes shell completions to stdout.
@@ -705,7 +706,6 @@ pub fn resolve_format_from_cli(
 }
 
 mod dispatch;
-
 pub use dispatch::{dispatch, dispatch_impl};
 
 #[cfg(test)]

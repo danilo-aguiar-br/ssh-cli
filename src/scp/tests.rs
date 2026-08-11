@@ -16,6 +16,14 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use tempfile::TempDir;
 
+/// A designated target for the client-level transfer tests.
+///
+/// The transfer helpers take the resolved target rather than a bare name so the
+/// envelope can state how the host was chosen; these tests exercise the argv form.
+fn test_target() -> crate::json_wire::ExecTarget {
+    crate::json_wire::ExecTarget::new("v1", crate::json_wire::TargetSource::Argv)
+}
+
 struct FakeScpClient {
     upload_ok: bool,
     download_ok: bool,
@@ -278,7 +286,7 @@ async fn scp_upload_with_client_returns_ok() {
     });
     let local = Path::new("/tmp/local.txt");
     let remote = Path::new("/tmp/remote.txt");
-    let result = run_scp_upload_with_client("v1", local, remote, client, false).await;
+    let result = run_scp_upload_with_client(&test_target(), local, remote, client, false).await;
     assert!(result.is_ok());
 }
 
@@ -291,7 +299,7 @@ async fn scp_download_with_client_returns_ok() {
         bytes_download: 256,
     });
     let result = run_scp_download_with_client(
-        "v1",
+        &test_target(),
         Path::new("/tmp/remote.txt"),
         Path::new("/tmp/local.txt"),
         client,
@@ -310,7 +318,7 @@ async fn scp_upload_with_client_returns_error() {
         bytes_download: 0,
     });
     let result = run_scp_upload_with_client(
-        "v1",
+        &test_target(),
         Path::new("/tmp/local.txt"),
         Path::new("/tmp/remote.txt"),
         client,
@@ -329,7 +337,7 @@ async fn scp_download_with_client_returns_error() {
         bytes_download: 0,
     });
     let result = run_scp_download_with_client(
-        "v1",
+        &test_target(),
         Path::new("/tmp/remote.txt"),
         Path::new("/tmp/local.txt"),
         client,
@@ -349,6 +357,8 @@ async fn scp_upload_tries_connect_when_vps_exists() {
     let action = ScpAction::Upload {
         all: false,
         hosts: None,
+        src: Vec::new(),
+        dest: None,
         target: vec![
             "vps-upload".to_string(),
             local.display().to_string(),
@@ -378,6 +388,8 @@ async fn scp_download_tries_connect_when_vps_exists() {
     let action = ScpAction::Download {
         all: false,
         hosts: None,
+        src: Vec::new(),
+        dest: None,
         target: vec![
             "vps-download".to_string(),
             "/tmp/x".to_string(),
@@ -407,6 +419,8 @@ async fn scp_upload_rejects_directory() {
     let action = ScpAction::Upload {
         all: false,
         hosts: None,
+        src: Vec::new(),
+        dest: None,
         target: vec![
             "vps-dir".to_string(),
             tmp.path().display().to_string(),

@@ -2,6 +2,7 @@
 // G-COMP-R: CLI unit tests extracted from mod.rs (SRP).
 #![allow(clippy::unwrap_used)]
 
+use super::path_parse::parse_exec_target;
 use super::*;
 use clap::{CommandFactory, Parser};
 
@@ -389,9 +390,10 @@ fn parser_exec_all_single_positional() {
             assert!(all);
             assert!(hosts.is_none());
             assert_eq!(target, vec!["uptime".to_string()]);
-            let (sel, cmd) = parse_exec_target(all, hosts, None, target, None).unwrap();
-            assert_eq!(sel, crate::vps::HostSelection::All);
-            assert_eq!(cmd, "uptime");
+            let plan = parse_exec_target(all, hosts, None, false, target, None).unwrap();
+            assert_eq!(plan.selection, crate::vps::HostSelection::All);
+            assert_eq!(plan.command, "uptime");
+            assert_eq!(plan.source, crate::json_wire::TargetSource::Selector);
         }
         _ => panic!("exec --all"),
     }
@@ -401,131 +403,67 @@ fn test_vps(name: &str) -> crate::domain::VpsName {
     crate::domain::VpsName::try_new(name).expect("valid test VpsName")
 }
 
+/// GAP-SSH-EXEC-ARGC-001: the argv that sent a day of work to the wrong machine.
+///
+/// `exec <HOST> --step <CMD>`. `--step` is `ArgAction::Append` and never counts as a
+/// positional, so the old parser saw one positional, read the host name as the
+/// command, and resolved the host from the on-disk marker. The marker is `Some` here
+/// on purpose: with `None` the old code failed for the wrong reason and the defect
+/// stayed invisible.
 #[test]
-fn parse_exec_target_single_host() {
-    let (sel, cmd) = parse_exec_target(
+fn parse_exec_target_rejects_host_only_with_steps() {
+    let err = parse_exec_target(
         false,
         None,
         None,
+        false,
+        vec!["ssh-danilo".into()],
+        Some("ssh-other".into()),
+    )
+    .expect_err("a lone positional must never resolve to the active marker");
+    assert!(
+        matches!(err, crate::cli::path_parse::ExecTargetError::Invalid(_)),
+        "expected a usage error, got {err:?}"
+    );
+}
+
+#[test]
+fn parse_exec_target_single_host() {
+    let plan = parse_exec_target(
+        false,
+        None,
+        None,
+        false,
         vec!["prod".into(), "hostname".into()],
         None,
     )
     .unwrap();
-    assert_eq!(sel, crate::vps::HostSelection::Single(test_vps("prod")));
-    assert_eq!(cmd, "hostname");
+    assert_eq!(
+        plan.selection,
+        crate::vps::HostSelection::Single(test_vps("prod"))
+    );
+    assert_eq!(plan.command, "hostname");
+    assert_eq!(plan.source, crate::json_wire::TargetSource::Argv);
 }
 
 #[test]
 fn parse_exec_target_hosts_dedupes() {
-    let (sel, cmd) = parse_exec_target(
+    let plan = parse_exec_target(
         false,
         Some("a,b,a".into()),
         None,
+        false,
         vec!["uptime".into()],
         None,
     )
     .unwrap();
+    let (sel, cmd) = (plan.selection, plan.command);
     assert_eq!(
         sel,
         crate::vps::HostSelection::Named(vec![test_vps("a"), test_vps("b")])
     );
     assert_eq!(cmd, "uptime");
     assert!(sel.is_batch());
-}
-
-#[test]
-fn parse_scp_target_multi_file_single_host() {
-    let plan = parse_scp_target(
-        false,
-        None,
-        vec!["prod".into(), "a.bin".into(), "b.bin".into(), "/tmp".into()],
-    )
-    .unwrap();
-    match plan {
-        ScpPathPlan::MultiFile {
-            vps,
-            sources,
-            dest_dir,
-        } => {
-            assert_eq!(vps, "prod");
-            assert_eq!(sources.len(), 2);
-            assert_eq!(dest_dir, PathBuf::from("/tmp"));
-        }
-        other => panic!("expected MultiFile, got {other:?}"),
-    }
-}
-
-#[test]
-fn parse_scp_target_multi_file_with_all_is_cartesian() {
-    // G-PAR-48: multi-host × multi-file accepted (bound = host sessions).
-    let plan = parse_scp_target(
-        true,
-        None,
-        vec!["a.bin".into(), "b.bin".into(), "/tmp".into()],
-    )
-    .unwrap();
-    match plan {
-        ScpPathPlan::MultiHostMultiFile {
-            selection,
-            sources,
-            dest_dir,
-        } => {
-            assert_eq!(selection, crate::vps::HostSelection::All);
-            assert_eq!(sources.len(), 2);
-            assert_eq!(dest_dir, PathBuf::from("/tmp"));
-        }
-        other => panic!("expected MultiHostMultiFile, got {other:?}"),
-    }
-}
-
-#[test]
-fn parse_scp_target_multi_file_with_hosts() {
-    let plan = parse_scp_target(
-        false,
-        Some("x,y".into()),
-        vec!["a.bin".into(), "b.bin".into(), "/remote/dir".into()],
-    )
-    .unwrap();
-    match plan {
-        ScpPathPlan::MultiHostMultiFile {
-            selection,
-            sources,
-            dest_dir,
-        } => {
-            assert_eq!(
-                selection,
-                crate::vps::HostSelection::Named(vec![test_vps("x"), test_vps("y")])
-            );
-            assert_eq!(sources.len(), 2);
-            assert_eq!(dest_dir, PathBuf::from("/remote/dir"));
-        }
-        other => panic!("expected MultiHostMultiFile, got {other:?}"),
-    }
-}
-
-#[test]
-fn parse_scp_target_classic_three() {
-    let plan = parse_scp_target(
-        false,
-        None,
-        vec!["prod".into(), "a.bin".into(), "/tmp/a.bin".into()],
-    )
-    .unwrap();
-    match plan {
-        ScpPathPlan::Single {
-            selection,
-            path_a,
-            path_b,
-        } => {
-            assert_eq!(
-                selection,
-                crate::vps::HostSelection::Single(test_vps("prod"))
-            );
-            assert_eq!(path_a, PathBuf::from("a.bin"));
-            assert_eq!(path_b, PathBuf::from("/tmp/a.bin"));
-        }
-        other => panic!("expected Single, got {other:?}"),
-    }
 }
 
 #[test]

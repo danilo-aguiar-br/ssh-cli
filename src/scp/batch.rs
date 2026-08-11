@@ -8,7 +8,6 @@
 
 use super::{apply_scp_options, HostScpResult, ScpOptions};
 use crate::errors::SshCliError;
-use crate::i18n::{self, Message};
 use crate::output;
 use crate::ssh::client::{SshClient, SshClientTrait};
 use crate::vps;
@@ -76,7 +75,10 @@ pub(crate) async fn validate_local_upload_sources(sources: &[PathBuf]) -> anyhow
             }
         })?;
         if meta.is_dir() {
-            return Err(SshCliError::InvalidArgument(i18n::t(Message::ScpUploadFileOnly)).into());
+            return Err(SshCliError::InvalidArgument(
+                crate::constants::SCP_UPLOAD_FILE_ONLY_MSG.to_string(),
+            )
+            .into());
         }
         if !meta.is_file() {
             return Err(SshCliError::FileNotFound(local.display().to_string()).into());
@@ -192,7 +194,7 @@ pub(crate) fn cancelled_host_scp(name: String, local: Option<String>) -> HostScp
         bytes: None,
         duration_ms: None,
         local,
-        error: Some(i18n::t(Message::OperationCancelled)),
+        error: Some(crate::constants::OPERATION_CANCELLED_MSG.to_string()),
     }
 }
 
@@ -234,7 +236,6 @@ async fn upload_one(
     }
 }
 
-#[allow(dead_code)]
 /// G-PAR-37 + G-PAR-47: single-host multi-file download — **one** SSH session.
 pub(crate) async fn run_scp_multi_file_download(
     vps_name: &str,
@@ -368,7 +369,14 @@ pub(crate) fn finish_scp_results(
 ) -> anyhow::Result<()> {
     let failures = host_results.iter().filter(|h| !h.ok).count();
     let total = host_results.len();
-    output::print_scp_batch(direction, &host_results, limit, json)?;
+    output::print_scp_batch(
+        direction,
+        &host_results,
+        limit,
+        json,
+        // Single host, many files: the caller typed the name.
+        crate::json_wire::TargetSource::Argv,
+    )?;
     crate::errors::finish_batch(
         failures,
         total,
@@ -450,7 +458,13 @@ pub(crate) fn finish_scp_nested_batch(
     let host_results: Vec<HostScpResult> = per_host.into_iter().flatten().collect();
     let failures = host_results.iter().filter(|h| !h.ok).count();
     let total = host_results.len();
-    output::print_scp_batch(direction, &host_results, limit, json)?;
+    output::print_scp_batch(
+        direction,
+        &host_results,
+        limit,
+        json,
+        crate::json_wire::TargetSource::Selector,
+    )?;
     crate::errors::finish_batch(
         failures,
         total,
@@ -485,7 +499,13 @@ pub(crate) fn finish_scp_batch(
     );
     let failures = host_results.iter().filter(|h| !h.ok).count();
     let total = host_results.len();
-    output::print_scp_batch(direction, &host_results, limit, json)?;
+    output::print_scp_batch(
+        direction,
+        &host_results,
+        limit,
+        json,
+        crate::json_wire::TargetSource::Selector,
+    )?;
     crate::errors::finish_batch(
         failures,
         total,

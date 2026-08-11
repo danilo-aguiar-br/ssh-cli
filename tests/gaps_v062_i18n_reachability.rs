@@ -291,3 +291,94 @@ fn error_emitter_localizes_text_but_not_the_json_envelope() {
          error_code and must never receive locale-dependent prose"
     );
 }
+
+/// Translated text must never be *built into* a value that reaches the wire.
+///
+/// # Why the emitter test above was not enough
+///
+/// `error_emitter_localizes_text_but_not_the_json_envelope` guards the point where
+/// the envelope is written. That is the right place to check that the emitter does
+/// not translate — and the wrong place to notice that the string handed to it was
+/// translated somewhere else. Measured on this repository: nineteen call sites in
+/// SCP and SFTP wrapped `i18n::t(…)` inside `SshCliError::InvalidArgument(…)` or
+/// dropped it straight into the `error` field of a batch entry. The emitter did
+/// exactly what it promised and still emitted Portuguese, because the locale had
+/// already been baked in two frames earlier.
+///
+/// Two of those sites wrote to **stdout**, not stderr: a cancelled `scp --all` put
+/// `Operação cancelada pelo usuário.` in the batch payload that an agent parses.
+///
+/// So this gate watches the constructors instead of the emitter. An invariant that
+/// can be violated before the checkpoint has to be checked at the source.
+///
+/// # What is still allowed
+///
+/// `i18n::t` remains correct for prose a human reads: `print_success`, the tunnel
+/// listening notices, locale status. Those never enter a JSON document. The rule is
+/// not "no translation" but "no translation inside a wire value".
+#[test]
+fn localized_text_never_reaches_a_wire_value() {
+    let root = workspace_root().join("src");
+    let mut files = Vec::new();
+    walk_rs(&root, &root, &mut files);
+    assert!(!files.is_empty(), "src/ scan found no files");
+
+    // Both patterns are matched on a whitespace-collapsed copy so a rustfmt line
+    // break between the constructor and its argument cannot hide the violation —
+    // that is precisely the shape the original leak had.
+    let mut offenders = Vec::new();
+    for (rel, text) in &files {
+        if rel == "i18n.rs" || rel.starts_with("i18n/") {
+            continue;
+        }
+        for (idx, raw) in text.lines().enumerate() {
+            let line = raw.trim();
+            // Comments describe the rule; they do not break it.
+            if line.starts_with("//") {
+                continue;
+            }
+            let joined: String = text
+                .lines()
+                .skip(idx)
+                .take(4)
+                .flat_map(str::split_whitespace)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let calls_t = joined.contains("i18n::t(");
+            if !calls_t {
+                continue;
+            }
+            let in_error_ctor = joined.contains("SshCliError::") && line.contains("SshCliError::");
+            let in_wire_field = line.starts_with("error:") || line.starts_with("error :");
+            if in_error_ctor || in_wire_field {
+                offenders.push(format!("{rel}:{}: {line}", idx + 1));
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "these sites build a wire value out of translated text:\n  {}\n\
+         The JSON envelope is English by contract — see the `message` description \
+         in docs/schemas/error-envelope.schema.json. Move the phrase to \
+         `crate::constants` as a plain `&str`; the human-facing label around it is \
+         still translated by `i18n::localized_error_text`.",
+        offenders.join("\n  ")
+    );
+}
+
+// `ACCENT_ALLOWLIST` and `source_code_is_written_in_english` lived here. They moved to
+// `tests/gaps_v068_source_language.rs`, which asserts the same property through a
+// narrower exemption: a citation instead of a whole file.
+//
+// The allowlist had grown to thirteen files, every entry honestly earned — the accents
+// really were the payload in each one. The cost was structural rather than sloppy: once
+// `tests/docs_conformance.rs` is exempt, all twelve hundred of its lines are exempt, so
+// Portuguese prose written there later passes a gate that is nominally watching it. The
+// replacement strips string, char and backtick spans per line and checks what is left,
+// which keeps those twelve files under the rule while still letting them quote the data
+// they exist to test.
+//
+// This file keeps what its name promises: whether localized text can reach a wire value.
+// Which language the source itself is written in is a separate property and now has a
+// separate file.

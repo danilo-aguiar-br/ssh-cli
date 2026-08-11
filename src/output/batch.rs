@@ -151,16 +151,24 @@ pub fn print_exec_batch(
 ///
 /// # Errors
 /// Serialization or stdout I/O.
+/// `source` is a parameter rather than a constant because this envelope serves two
+/// different designations: the fleet paths (`--all` / `--hosts`) are `selector`, while
+/// single-host multi-file (G-PAR-37 / G-PAR-47) reuses the same shape for a host the
+/// caller typed. Hardcoding `selector` here would make the second case lie about how
+/// its target was chosen — the precise class of silence this field exists to end.
 pub fn print_scp_batch(
     direction: &str,
     results: &[crate::scp::HostScpResult],
     max_concurrency: usize,
     json: bool,
+    source: json_wire::TargetSource,
 ) -> io::Result<()> {
     if json {
         let batch_run_id = BatchRunId::new().to_string_canonical();
         let v = ScpBatchJson {
             event: "scp-batch".into(),
+            target_source: source,
+            host_source: source,
             batch_run_id,
             direction: direction.into(),
             max_concurrency: u32::try_from(max_concurrency).unwrap_or(u32::MAX),
@@ -213,9 +221,14 @@ pub fn print_scp_batch(
 ///
 /// # Errors
 /// Serialization or stdout I/O (including BrokenPipe).
+///
+/// Takes the resolved [`json_wire::ExecTarget`] rather than a bare name so the
+/// provenance travels with the host instead of as an eighth parameter: this function
+/// already sits at the `clippy::too_many_arguments` ceiling that
+/// `gaps_v062_component_budget` refuses to spend another allow on.
 pub fn print_transfer_json(
     direction: &str,
-    vps: &str,
+    target: &json_wire::ExecTarget,
     local: &str,
     remote: &str,
     result: &crate::ssh::client::TransferResult,
@@ -224,8 +237,9 @@ pub fn print_transfer_json(
     let v = ScpTransferJson {
         ok: true,
         event: "scp-transfer".into(),
+        target: json_wire::TargetEcho::new(target),
         direction: direction.to_string(),
-        vps: vps.to_string(),
+        vps: target.host.clone(),
         local: local.to_string(),
         remote: remote.to_string(),
         bytes: result.bytes_transferred,
@@ -249,7 +263,7 @@ pub fn print_transfer_json(
 #[cfg(feature = "ssh-real")]
 pub fn print_sftp_transfer_json(
     direction: &str,
-    vps: &str,
+    target: &json_wire::ExecTarget,
     local: &str,
     remote: &str,
     bytes: u64,
@@ -259,8 +273,9 @@ pub fn print_sftp_transfer_json(
     let v = SftpTransferJson {
         ok: true,
         event: "sftp-transfer".into(),
+        target: json_wire::TargetEcho::new(target),
         direction: direction.to_string(),
-        vps: vps.to_string(),
+        vps: target.host.clone(),
         local: local.to_string(),
         remote: remote.to_string(),
         bytes,
@@ -384,6 +399,9 @@ pub fn print_sftp_batch(
         let batch_run_id = BatchRunId::new().to_string_canonical();
         let v = SftpBatchJson {
             event: "sftp-batch".into(),
+            // See `print_scp_batch`: a batch is by construction selector-produced.
+            target_source: json_wire::TargetSource::Selector,
+            host_source: json_wire::TargetSource::Selector,
             batch_run_id,
             direction: direction.to_string(),
             max_concurrency: u32::try_from(max_concurrency).unwrap_or(u32::MAX),

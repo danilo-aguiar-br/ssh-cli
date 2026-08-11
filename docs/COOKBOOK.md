@@ -1,12 +1,14 @@
 # Cookbook
 
+> **0.5.5** — target-designation security release. Fixes GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decided the target host by positional *count*, so `exec <HOST> --step <CMD>` executed the host name as a remote binary on whatever host `connect` last selected. BREAKING: a lone positional is now a usage error; reach the active marker with the new `--use-active <COMMAND>`. The single-host envelope gained `target_resolved` and `target_source` — bind new consumers to those; `host_resolved`/`host_source` are the 0.5.5 read aliases — plus `active_fallback`, and `doctor` now reports `local.active_vps`.
+>
 > **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
 
 
 > Copy executable recipes that solve real multi-host SSH agent problems.
 
 - Read this document in [Portuguese (pt-BR)](COOKBOOK.pt-BR.md).
-- Product line: 0.5.4.
+- Product line: 0.5.5.
 
 
 ## Latency Note
@@ -119,6 +121,45 @@ ssh-cli vps add --name edge --host edge.example.com --user ubuntu --key ~/.ssh/i
 
 ```bash
 ssh-cli exec prod "hostname && uptime" --json
+```
+
+
+## How To Designate the Target Host (and prove where it ran)
+
+The host is designated in argv. A lone positional is a usage error — it used to be a
+shortcut onto whatever host `connect` last selected, which is how a day of work once
+landed on the wrong server (GAP-SSH-EXEC-ARGC-001).
+
+```bash
+# one host, explicit — the only form for a mutation
+ssh-cli exec prod "systemctl restart nginx" --json
+
+# fleet
+ssh-cli exec --all "uptime" --json
+ssh-cli exec --hosts a,b "uptime" --json
+ssh-cli exec --tags prod "uptime" --json
+
+# the active marker, deliberately
+ssh-cli exec --use-active "uptime" --json
+
+# rejected with exit 64 — the host name would have become a remote command
+ssh-cli exec prod --step "systemctl restart nginx"
+```
+
+Read the target back before trusting a mutation. No badge round-trip needed:
+
+```bash
+out=$(ssh-cli exec prod "systemctl restart nginx" --json); ec=$?
+# bind to the canonical fields; host_resolved/host_source are 0.5.5 read aliases
+echo "$out" | jaq -r '"\(.target_resolved) via \(.target_source)"'
+# refuse to proceed when the host was inherited rather than named
+echo "$out" | jaq -e '.target_source == "argv"' >/dev/null || echo "ambient target — aborting"
+```
+
+Ask which host an ambient command would hit:
+
+```bash
+ssh-cli doctor --json | jaq -r '.local.active_vps // "none"'
 ```
 
 

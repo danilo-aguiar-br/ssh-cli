@@ -60,6 +60,10 @@ pub(crate) async fn connect_client(
 ) -> anyhow::Result<SshClient> {
     let mut record = vps::find_by_name(config_override, vps_key)?
         .ok_or_else(|| SshCliError::VpsNotFound(vps_key.to_owned()))?;
+    // Explicit Target Designation: one choke point for every SFTP subcommand. The
+    // lookup has just succeeded and the socket is not open yet, so a refused or timed
+    // out connection still reports which host it was aimed at.
+    let _ = publish_target(vps_key);
     apply_sftp_options(&mut record, opts);
     let path = vps::resolve_config_path(config_override)?;
     let cfg = vps::build_connection_config(&record, Some(&path), opts.replace_host_key);

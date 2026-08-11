@@ -2,9 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/su-exec.schema.json",
   "title": "su-exec JSON",
+  "description": "Success payload of `ssh-cli su-exec <VPS> <COMMAND> --json` on a single host. Failures use error-envelope.schema.json instead. Carries no `event` discriminator.",
   "type": "object",
   "additionalProperties": true,
   "required": [
+    "target_resolved",
+    "target_source",
+    "active_fallback",
     "stdout",
     "stderr",
     "truncated_stdout",
@@ -12,6 +16,28 @@
     "duration_ms"
   ],
   "properties": {
+    "target_resolved": {
+      "type": "string",
+      "description": "canonical name of the host the command ran on (Explicit Target Designation); bind new consumers here, host_resolved is the 0.5.5 read alias"
+    },
+    "target_source": {
+      "type": "string",
+      "enum": ["argv", "active_marker", "selector"],
+      "description": "canonical name for how target_resolved was designated"
+    },
+    "host_resolved": {
+      "type": "string",
+      "description": "Compatibility alias of target_resolved (0.5.5 spelling), written from the same value and never an independent source of truth. Always present on this event, because a command only runs after a target is designated; the error envelope omits it entirely when the failure preceded target resolution."
+    },
+    "host_source": {
+      "type": "string",
+      "enum": ["argv", "active_marker", "selector"],
+      "description": "Compatibility alias of target_source (0.5.5 spelling). Bind new consumers to target_source instead."
+    },
+    "active_fallback": {
+      "type": "boolean",
+      "description": "True when target_resolved came from the active marker (--use-active) rather than argv. Redundant with target_source on purpose: a shell pipeline can branch on a boolean without knowing how the enum is spelled."
+    },
     "stdout": {
       "type": "string"
     },

@@ -1,5 +1,7 @@
 # Guia de migração
 
+> **0.5.5** — release de segurança de designação de alvo. Corrige GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decidiam o host alvo pela *contagem* de posicionais, então `exec <HOST> --step <CMD>` executava o nome do host como binário remoto no host que `connect` selecionara por último. BREAKING: um único posicional agora é erro de uso; alcance o marcador ativo com a nova `--use-active <COMANDO>`. O envelope single-host ganhou `target_resolved` e `target_source` — vincule consumidores novos a esses; `host_resolved`/`host_source` são os aliases de leitura da 0.5.5 — mais `active_fallback`, e o `doctor` passa a reportar `local.active_vps`.
+>
 > **0.5.4** — release de segurança e agent-native. Corrige DoS remoto pré-auth no banner SSH (A1), impede que bits setuid enviados pelo servidor caiam no arquivo baixado (A3), fecha a janela de leitura pública em chaves privadas ACME/mTLS (A2) e adiciona flags de redução de payload (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) aplicadas antes da serialização. BREAKING: falha parcial multi-host agora sai com exit **1** (era 65); `--bind` fora do loopback exige `--i-accept-network-exposure`. Novo evento `tunnel_closed`.
 
 
@@ -9,6 +11,14 @@
 
 
 ## O que muda
+
+### Desde 0.5.5
+- **BREAKING — um posicional solitário não designa mais o host (GAP-SSH-EXEC-ARGC-001, CWE-441).** `exec`, `sudo-exec` e `su-exec` liam o alvo pela *contagem* de posicionais, então `ssh-cli exec prod --step uptime` interpretava `prod` como o comando e o rodava no host que o `connect` marcara por último. Mesmo argv, outra máquina, nenhum diagnóstico. Um posicional agora é erro de uso (exit **64**).
+- **BREAKING — `health-check` também exige alvo.** Um `health-check` sem nome sai **64** em vez de sondar o marcador ativo em silêncio.
+- **Alcance o marcador com `--use-active`.** `ssh-cli health-check --use-active` e `ssh-cli exec --use-active <COMANDO>` são as únicas formas de herdar o que o `connect` escreveu. Sem marcador em disco elas saem **66**. A divisão é estável em toda a CLI: **64** significa nenhum alvo designado, **66** significa alvo designado inexistente.
+- **Três formas legais, e nenhuma outra:** um nome (`exec prod uptime`), um seletor de frota (`--all`, `--hosts`, `--tags`), ou o opt-in explícito `--use-active`. Wrappers que dependiam da forma implícita precisam escolher uma.
+- **`scp` e `sftp` seguem a mesma regra.** Transferências nomeiam o host no argv; slots `--src`/`--dest` e posicionais não podem ser misturados, para que uma palavra sobrando nunca vire nome de host em silêncio.
+- **Todo envelope agora carrega a própria proveniência.** `target_resolved`, `target_source` (`argv` | `active_marker` | `selector`) e `active_fallback` viajam no sucesso, e no envelope de erro assim que o host é resolvido — **ausentes**, nunca vazios, quando a falha antecede a resolução. `host_resolved` e `host_source` são aliases de leitura dos dois primeiros, escritos a partir do mesmo valor; vincule consumidor novo à grafia canônica `target_*`. O `doctor` reporta `local.active_vps`.
 
 ### Desde 0.5.4
 - **BREAKING — falha parcial multi-host agora sai com exit `1` (era `65`).** Todo wrapper que ramificava em `65` para significar "alguns hosts falharam" precisa ser atualizado. `65` é `EX_DATAERR`, que afirma que a *entrada* estava malformada; um lote em que três de dez hosts ficaram inalcançáveis tinha entrada perfeitamente válida, então o código antigo mentia sobre a causa (G-ERR-R02). Verifique os resultados por host no envelope do lote, não apenas o exit do processo.
@@ -230,7 +240,7 @@ ssh-cli su-exec prod "id"
 - Se voltar para 0.3.9, não espere wire SCP funcional (atualize de novo para 0.4.0+ para transferências).
 - Se voltar abaixo de 0.5.3, não confie na integridade de upload SFTP sem checksum externo (G1).
 
-## Formato wire 0.5.3 (schema v3) — atual
+## Formato wire: schema v3 — introduzido na 0.5.3, vigente na 0.5.5
 
 - O `schema_version` atual para novas escritas é 3 (não 2).
 - Novas escritas usam chaves TOML em inglês: `name`, `port`, `username`, `password`, `added_at`, …
@@ -257,9 +267,15 @@ ssh-cli su-exec prod "id"
 - Exit 65 cobre `TomlDe` / dados ruins de import; exit 77 é auth/host-key/permissão; arquivo SCP ausente é exit 66 com `file not found: <path>`.
 - Verbosidade graduada `-v`/`-vv`/`-vvv` (info/debug/trace), sempre com escopo na crate (G2/G14).
 - Integridade de upload SFTP corrigida (G1); SETSTAT atime+mtime (G3); set_metadata fail-closed (G4); máscara de perms (G12); cardinalidade de cancel em batch (G5/G17).
-- Suites: `tests/gaps_v042_integration.rs` + `tests/gaps_v051_integration.rs` + `tests/gaps_v056_ssh.rs` + `tests/gaps_v057_sftp.rs` + `tests/gaps_v058_e2e_residual.rs`; e2e oficial **E01–E18**.
+- Designação explícita de alvo (0.5.5): o envelope single-host de `exec`/`sudo-exec`/`su-exec` ganhou `target_resolved` e `target_source` — vincule consumidores novos a esses; `host_resolved`/`host_source` são aliases de leitura escritos do mesmo valor, nunca fonte de verdade independente.
+- `active_fallback` é o atalho booleano para `target_source == "active_marker"`, então um pipeline de shell ramifica sem saber como o enum é grafado.
+- O trio de proveniência fica **ausente, nunca vazio**, no envelope de erro quando a falha antecede a resolução do alvo: a ausência diz que nenhum host foi escolhido, enquanto `""` afirmaria que um foi escolhido e não tem nome.
+- Um posicional solitário na família exec passa a ser erro de uso (exit **64**); alcance o marcador que o `connect` gravou com a `--use-active <COMANDO>` explícita, que sai **66** quando não há marcador.
+- Os seletores de frota `--all`, `--hosts` e `--tags` reportam `target_source: "selector"`; transferências nunca leem o marcador, então reportam apenas `argv` ou `selector`.
+- O `doctor` reporta `local.active_vps`, então o marcador é auditável sem ler o arquivo pelas costas da CLI.
+- Suites: `tests/gaps_v042_integration.rs` + `tests/gaps_v051_integration.rs` + `tests/gaps_v056_ssh.rs` + `tests/gaps_v057_sftp.rs` + `tests/gaps_v058_e2e_residual.rs`; designação de alvo em `tests/gaps_v065_exec_target_designation.rs` e `tests/gaps_v066_transfer_target_designation.rs`; alcance de empacotamento em `tests/gaps_v067_packaging_reach.rs`; e2e oficial **E01–E18**.
 
-Linha de produto: 0.5.4.
+Linha de produto: 0.5.5.
 
 ## Veja também
 - [HOW_TO_USE.pt-BR.md](HOW_TO_USE.pt-BR.md) — superfície de comandos do usuário

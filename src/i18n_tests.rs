@@ -127,10 +127,7 @@ fn all_unit_variants_en_nonempty() {
     let unit_variants = [
         Message::VpsRegistryEmpty,
         Message::TunnelPressCtrlC,
-        Message::OperationCancelled,
         Message::ImportCompleted,
-        Message::ScpUploadFileOnly,
-        Message::ScpDownloadLocalNotDirectory,
         Message::LocalePreferenceCleared,
         Message::LocaleStatusTitle,
     ];
@@ -145,10 +142,7 @@ fn all_unit_variants_pt_nonempty() {
     let unit_variants = [
         Message::VpsRegistryEmpty,
         Message::TunnelPressCtrlC,
-        Message::OperationCancelled,
         Message::ImportCompleted,
-        Message::ScpUploadFileOnly,
-        Message::ScpDownloadLocalNotDirectory,
         Message::LocalePreferenceCleared,
         Message::LocaleStatusTitle,
     ];
@@ -191,7 +185,10 @@ fn pt_translations_differ_from_en_for_units() {
     let pairs = [
         (Message::VpsRegistryEmpty, Message::VpsRegistryEmpty),
         (Message::TunnelPressCtrlC, Message::TunnelPressCtrlC),
-        (Message::OperationCancelled, Message::OperationCancelled),
+        (
+            Message::LocalePreferenceCleared,
+            Message::LocalePreferenceCleared,
+        ),
     ];
     for (a, b) in &pairs {
         let en = a.text(Language::English);

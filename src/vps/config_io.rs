@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// G-UNSAFE-10: config path/load/save/permissions extracted from monólito vps/mod (SRP).
+// G-UNSAFE-10: config path/load/save/permissions extracted from monolith vps/mod (SRP).
 #![forbid(unsafe_code)]
 //! Atomic TOML config I/O under XDG (load/save/flock/0o600).
 

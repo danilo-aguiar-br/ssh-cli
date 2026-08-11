@@ -60,6 +60,12 @@ pub(super) fn collect_doctor_local(config_override: Option<&Path>) -> Result<ser
         "hosts": file.hosts.len(),
         "known_hosts": kh.display().to_string(),
         "active_file": active.display().to_string(),
+        // GAP-SSH-DOCTOR-ACTIVE: `active_file` is the *path* of the marker, never its
+        // contents, so no command in the CLI could report which host `connect` last
+        // selected. An agent had to read the file itself — outside the tool contract —
+        // to answer the one question that decides where an ambient-target command
+        // would land. `null` means no marker is set.
+        "active_vps": crate::vps::read_active_vps(config_override)?,
         "secrets_at_rest": if seg.encryption_active { "encrypted" } else { "plaintext" },
         "secrets_key_source": seg.source.as_str(),
         "secrets_key_file": seg.key_file_path.display().to_string(),

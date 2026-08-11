@@ -28,7 +28,9 @@ mod emit;
 mod setup;
 
 pub use dispatch::run_sftp;
-pub(crate) use emit::{emit_fs_op, emit_list, emit_stat, emit_transfer};
+pub(crate) use emit::{
+    designated_target, emit_fs_op, emit_list, emit_stat, emit_transfer, publish_target,
+};
 pub(crate) use setup::apply_sftp_options;
 pub use setup::SftpOptions;
 pub(crate) use setup::{connect_client, remote_str};

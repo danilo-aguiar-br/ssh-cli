@@ -27,7 +27,7 @@
 //! | `output`        | Sole module authorized for stdout/stderr data emission        |
 //! | `paths`         | Path validation and normalization (anti-traversal, NFC)       |
 //! | `signals`       | One-shot SIGINT/SIGTERM flags + cooperative `should_stop`     |
-//! | `telemetry`     | Process-local `tracing` install (stderr; no OTEL / no files)  |
+//! | `tracing_setup` | Process-local `tracing` install (stderr; no OTEL / no files)  |
 //! | `validation`    | Parse→serde→validator pipeline for config/import (no OTEL)    |
 //! | `domain`        | Newtypes: VpsName, Rfc3339Utc, BatchRunId, HttpsUrl, Money…  |
 //! | `terminal`      | TTY detection and color choice via `termcolor`                |
@@ -125,11 +125,11 @@ pub mod secrets;
 pub mod sftp;
 pub mod signals;
 pub mod ssh;
-/// Process-local tracing subscriber (binary path only; libraries only emit).
-pub mod telemetry;
 pub mod terminal;
 /// rustls TLS stack (SSH-over-TLS, mTLS, ACME) — feature `tls` (default).
 pub mod tls;
+/// Process-local tracing subscriber (binary path only; libraries only emit).
+pub mod tracing_setup;
 pub mod tunnel;
 /// Shared parse→validate pipeline for external config/import (G-SERDE-07).
 pub mod validation;
@@ -264,7 +264,7 @@ use anyhow::Result;
 ///   systemd-run MemoryMax child scopes, OTEL available_permits metrics, hierarchical
 ///   `CancellationToken` trees (one-shot uses atomic signal flags).
 ///
-/// # Latency policy (Rules Rust — redução de latência)
+/// # Latency policy (Rules Rust — latency reduction)
 ///
 /// - **Identity:** one-shot I/O-bound agent CLI. End-to-end latency is dominated by
 ///   **SSH/TCP RTT**, not CPU nanoseconds. HFT budgets (P9999 ns, isolcpus, mlockall,
@@ -280,12 +280,12 @@ use anyhow::Result;
 /// - **Allocator:** system default on glibc; optional `mimalloc` via `musl-allocator`
 ///   (measure before making default).
 ///
-/// # Logging / tracing policy (Rules Rust — logs com tracing e rotação)
+/// # Logging / tracing policy (Rules Rust — tracing logs and rotation)
 ///
 /// - **Facade:** `tracing` only. Product code never uses `println!`/`dbg!` for
 ///   diagnostics; agent data is emitted only via [`output`].
-/// - **Install once:** [`telemetry::bootstrap_logs`] before clap parse, then
-///   [`telemetry::initialize_logs`] reloads `EnvFilter` (`reload::Layer`).
+/// - **Install once:** [`tracing_setup::bootstrap_logs`] before clap parse, then
+///   [`tracing_setup::initialize_logs`] reloads `EnvFilter` (`reload::Layer`).
 /// - **Sink:** stderr text with targets + thread names; default filter `error`.
 /// - **Bridge:** `tracing-log` so `russh`/`keyring` `log` records appear under
 ///   the same filter.
@@ -325,7 +325,7 @@ pub async fn run() -> Result<()> {
     // registers before Tokio multi_thread (G-UNSAFE-13); this call is idempotent.
     signals::register_handler()?;
     // Phase 1b: tracing BEFORE parse (rules: second); verbosity reloaded after argv.
-    telemetry::bootstrap_logs();
+    tracing_setup::bootstrap_logs();
 
     platform::initialize_platform()?;
 
@@ -343,14 +343,14 @@ pub async fn run() -> Result<()> {
 /// via [`output`]; injectable writers live on `write_*_to` / `write_json_line`.
 ///
 /// Does **not** re-register signals or re-bootstrap tracing — call
-/// [`signals::register_handler`] + [`telemetry::bootstrap_logs`] first when
+/// [`signals::register_handler`] + [`tracing_setup::bootstrap_logs`] first when
 /// embedding outside [`run`].
 ///
 /// # Errors
 /// Propagates domain / I/O errors from command dispatch.
 pub async fn run_with_args(args: cli::CliArgs) -> Result<()> {
     // Phase 4: configure from args (logs → terminal/TTY → locale before any UI)
-    telemetry::initialize_logs(args.verbose);
+    tracing_setup::initialize_logs(args.verbose);
     terminal::initialize(args.no_color)?;
     i18n::initialize_language(args.lang.as_deref(), args.config_dir.as_deref())?;
     // Shaping is installed before any command runs so every payload leaving the

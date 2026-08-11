@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// G-COMP: VPS inventory JSON DTOs (extracted from json_wire monólito).
+// G-COMP: VPS inventory JSON DTOs (extracted from json_wire monolith).
 #![forbid(unsafe_code)]
 //! Masked VPS / export / import wire types for agent inventory exchange.
 
@@ -411,10 +411,7 @@ pub struct ImportDefaults {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::json_wire::{
-        strip_utf8_bom, ErrorEnvelope, ExecutionJson, SuccessEnvelope, UTF8_BOM,
-    };
-    use crate::ssh::ExecutionOutput;
+    use crate::json_wire::{strip_utf8_bom, SuccessEnvelope, UTF8_BOM};
     use crate::vps::model::{
         CURRENT_SCHEMA_VERSION, DEFAULT_MAX_COMMAND_CHARS, DEFAULT_MAX_OUTPUT_CHARS,
         DEFAULT_TIMEOUT_MS,
@@ -447,23 +444,6 @@ mod tests {
     }
 
     #[test]
-    fn compact_json_is_single_line() {
-        let env = ErrorEnvelope {
-            exit_code: 65,
-            error_code: "invalid_argument".into(),
-            message: "bad".into(),
-            remote_exit_code: None,
-            error_class: crate::errors::ErrorClass::Permanent,
-            retryable: false,
-            suggestion: None,
-        };
-        let s = serde_json::to_string(&env).unwrap();
-        assert!(!s.contains('\n'), "agent wire must be compact: {s}");
-        assert!(s.starts_with('{'));
-        assert!(s.contains("\"exit_code\":65"));
-    }
-
-    #[test]
     fn masked_vps_roundtrip_value_eq() {
         let r = sample_record();
         let m = MaskedVpsJson::from(&r);
@@ -478,21 +458,8 @@ mod tests {
         assert_eq!(back.password.as_deref(), Some("***"));
     }
 
-    #[test]
-    fn execution_json_from_output() {
-        let o = ExecutionOutput {
-            stdout: "out".into(),
-            stderr: "err".into(),
-            exit_code: Some(0),
-            truncated_stdout: false,
-            truncated_stderr: true,
-            duration_ms: 42,
-        };
-        let j = ExecutionJson::from(&o);
-        let s = serde_json::to_string(&j).unwrap();
-        assert!(s.contains("\"duration_ms\":42"));
-        assert!(s.contains("\"truncated_stderr\":true"));
-    }
+    // `execution_json_from_output` moved to `json_wire/execution.rs`, beside the type
+    // it exercises. It lived here only because this module once owned the whole wire.
 
     #[test]
     fn import_envelope_accepts_user_alias_and_unknown_fields() {

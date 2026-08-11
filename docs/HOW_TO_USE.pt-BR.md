@@ -1,5 +1,7 @@
 # Como usar ssh-cli
 
+> **0.5.5** — release de segurança de designação de alvo. Corrige GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decidiam o host alvo pela *contagem* de posicionais, então `exec <HOST> --step <CMD>` executava o nome do host como binário remoto no host que `connect` selecionara por último. BREAKING: um único posicional agora é erro de uso; alcance o marcador ativo com a nova `--use-active <COMANDO>`. O envelope single-host ganhou `target_resolved` e `target_source` — vincule consumidores novos a esses; `host_resolved`/`host_source` são os aliases de leitura da 0.5.5 — mais `active_fallback`, e o `doctor` passa a reportar `local.active_vps`.
+>
 > **0.5.4** — release de segurança e agent-native. Corrige DoS remoto pré-auth no banner SSH (A1), impede que bits setuid enviados pelo servidor caiam no arquivo baixado (A3), fecha a janela de leitura pública em chaves privadas ACME/mTLS (A2) e adiciona flags de redução de payload (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) aplicadas antes da serialização. BREAKING: falha parcial multi-host agora sai com exit **1** (era 65); `--bind` fora do loopback exige `--i-accept-network-exposure`. Novo evento `tunnel_closed`.
 
 
@@ -33,7 +35,7 @@ ssh-cli exec demo "uname -a" --json
 
 - Confirme exit code 0 e inspecione campos JSON `stdout`, `stderr`, `exit_code`, `duration_ms`.
 - Em sucesso com `--json`, parseie **exatamente um** objeto JSON no stdout (G8) — não dual-events multi-linha.
-- Um comando remoto vazio falha com a mensagem técnica `empty command` (sempre em inglês) e exit de uso de domínio 64.
+- Um comando remoto vazio falha com a mensagem técnica `empty command` (sempre em inglês) e exit 64 de uso de domínio.
 - Rode `ssh-cli secrets status --json` e `ssh-cli doctor --json` (ou `vps doctor --json`) quando path ou cifragem estiverem incertos.
 - Descubra contratos: `ssh-cli schema` / `ssh-cli commands`.
 - Cadastre hosts com agent-auth via `vps add --use-agent` (opcional `--agent-socket`).
@@ -55,7 +57,7 @@ ssh-cli exec demo "uname -a" --json
 | `vps export` | Exportar inventário (corpo no formato resolvido, **JSON** em non-TTY; redacted por omissão) |
 | `vps import` | Importar TOML ou envelope JSON `vps-export` |
 | `connect` | Marcar o host ativo |
-| `exec` | Rodar comando remoto (VPS ativa se o nome for omitido) |
+| `exec` | Rodar comando remoto (`<VPS> <COMANDO>`; marcador ativo apenas com `--use-active`) |
 | `sudo-exec` | Rodar via `sudo` remoto + packing seguro `sh -c` |
 | `su-exec` | Rodar via `su` remoto quando a senha su estiver armazenada |
 | `scp upload` | Upload de **arquivo(s) regular(es)** (sem diretórios / sem `-r`) |
@@ -69,7 +71,7 @@ ssh-cli exec demo "uname -a" --json
 | `sftp stat` | Stat de path remoto |
 | `sftp rename` | Renomear/mover path remoto |
 | `tunnel` | Port-forward com `--timeout-ms` obrigatório; quatro modos (local, `--reverse`, `--socks5`, `--remote-socket`) |
-| `health-check` | Sondar conectividade / latência |
+| `health-check` | Sondar conectividade / latência (`<VPS>`, um seletor, ou `--use-active`) |
 | `secrets status` | Modo de cifragem sem imprimir a chave |
 | `secrets init` | Criar primary-key (nunca imprime) |
 | `secrets reencrypt` | Re-cifrar inventário sob a primary-key atual |
@@ -108,7 +110,7 @@ ssh-cli exec demo "uname -a" --json
 - Download com falha não deixa o destino final corrompido: grava `{path}.ssh-cli.partial`, aplica mode/times no partial e faz rename atômico. Download SCP propaga falha de `sync_data` antes do rename (G9).
 - Upload faz stream em blocos de 32 KiB (não carrega o arquivo inteiro na RAM).
 - mtime/mode são preservados nos dois sentidos automaticamente (remoto `scp -tp` / `-fp`; sem flag extra do usuário), em regime **best-effort**: o evento `scp-transfer` reporta `mtime_preserved` e `durable`, então você nunca precisa adivinhar (G-SCP-R01/R02).
-- Gerencie a primary-key com `ssh-cli secrets status|init|reencrypt` (nunca imprime a chave). O keyring ainda pode aceitar o alias legado `secrets-master-key` na leitura.
+- Gerencie a primary-key com `ssh-cli secrets status`, `ssh-cli secrets init`, `ssh-cli secrets reencrypt` (nunca imprime a chave). O keyring ainda pode aceitar o alias legado `secrets-master-key` na leitura.
 - `secrets init --json` / `secrets reencrypt --json` emitem eventos de sucesso (`secrets-init`, `secrets-reencrypt`; schemas `docs/schemas/secrets-init.schema.json`, `docs/schemas/secrets-reencrypt.schema.json`); a 1ª gravação de segredo pode definir o campo `secrets_key_auto_created: true` no mesmo documento JSON `vps-added` (nunca um segundo evento no stdout). Veja [docs/schemas/README.md](schemas/README.md).
 - Eventos JSON de sucesso CRUD quando JSON está efetivo: `vps-added`, `vps-edited`, `vps-removed`, `vps-connected`, `vps-import` (com campo opcional `secrets_key_auto_created` quando uma chave é auto-criada — ainda um documento). Catálogo: [docs/schemas/README.md](schemas/README.md).
 
@@ -338,7 +340,7 @@ ssh-cli tunnel prod 8080 0.0.0.0 9000 --reverse --i-accept-network-exposure --ti
 | 130 | SIGINT |
 | 143 | SIGTERM |
 
-Linha de produto: 0.5.4.
+Linha de produto: 0.5.5.
 
 
 ## Integração com agentes de IA

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// G-COMP: compact JSON emit primitives + envelopes (extracted from json_wire monólito).
+// G-COMP: compact JSON emit primitives + envelopes (extracted from json_wire monolith).
 #![forbid(unsafe_code)]
 //! Compact JSON + LF writers and agent error/success envelopes.
 
@@ -122,6 +122,32 @@ pub struct ErrorEnvelope {
     /// Optional short remediation hint for agents.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub suggestion: Option<String>,
+    /// Host this process had resolved when the failure occurred (canonical name).
+    ///
+    /// GAP-SSH-EXEC-ENVELOPE-002 asks for the audit fields on the error path because
+    /// the failing step is where the target matters most: a step-zero failure on the
+    /// wrong machine and one on the right machine were byte-identical envelopes.
+    ///
+    /// Absent — not empty — when the failure predates target resolution, which is
+    /// most usage errors. `None` says "no host was chosen"; `""` would assert that a
+    /// host was chosen and is nameless. Only one of those is true.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub target_resolved: Option<String>,
+    /// How [`Self::target_resolved`] was obtained (canonical name).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub target_source: Option<crate::json_wire::TargetSource>,
+    /// Compatibility alias of [`Self::target_resolved`] (0.5.5 spelling).
+    ///
+    /// Written from the same value, never independently — see
+    /// [`crate::json_wire::TargetEcho`] for why both spellings ship.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub host_resolved: Option<String>,
+    /// Compatibility alias of [`Self::target_source`] (0.5.5 spelling).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub host_source: Option<crate::json_wire::TargetSource>,
+    /// Whether that host came from the active marker instead of argv.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub active_fallback: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -169,5 +195,62 @@ impl SuccessEnvelope {
             }
         }
         Self::new(event, map)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The agent wire is one line per event, failures included.
+    ///
+    /// Lives here rather than in `vps_export.rs`, where it used to sit: the subject is
+    /// [`ErrorEnvelope`], and a test two modules away from its subject is a test nobody
+    /// updates when the subject changes.
+    #[test]
+    fn compact_json_is_single_line() {
+        let env = ErrorEnvelope {
+            exit_code: 65,
+            error_code: "invalid_argument".into(),
+            message: "bad".into(),
+            remote_exit_code: None,
+            error_class: crate::errors::ErrorClass::Permanent,
+            retryable: false,
+            suggestion: None,
+            target_resolved: None,
+            target_source: None,
+            host_resolved: None,
+            host_source: None,
+            active_fallback: None,
+        };
+        let s = serde_json::to_string(&env).expect("envelope serializes");
+        assert!(!s.contains('\n'), "agent wire must be compact: {s}");
+        assert!(s.starts_with('{'));
+        assert!(s.contains("\"exit_code\":65"));
+    }
+
+    /// A failure that resolved no target must not claim one.
+    ///
+    /// Absent is the honest answer; an empty string would assert that a host was
+    /// chosen and has no name, and only one of those is true.
+    #[test]
+    fn an_unresolved_target_is_absent_rather_than_empty() {
+        let env = ErrorEnvelope {
+            exit_code: 66,
+            error_code: "vps_not_found".into(),
+            message: "no such host".into(),
+            remote_exit_code: None,
+            error_class: crate::errors::ErrorClass::Permanent,
+            retryable: false,
+            suggestion: None,
+            target_resolved: None,
+            target_source: None,
+            host_resolved: None,
+            host_source: None,
+            active_fallback: None,
+        };
+        let s = serde_json::to_string(&env).expect("envelope serializes");
+        assert!(!s.contains("target_resolved"), "{s}");
+        assert!(!s.contains("host_resolved"), "{s}");
     }
 }

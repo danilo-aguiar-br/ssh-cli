@@ -38,7 +38,7 @@
       "should_trigger": true
     },
     {
-      "query": "transferencia scp falhou com --json parsear envelope de erro no stderr exit_code message retryable error_class suggestion",
+      "query": "transferência scp falhou com --json parsear envelope de erro no stderr exit_code message retryable error_class suggestion",
       "should_trigger": true
     },
     {
@@ -238,11 +238,11 @@
       "should_trigger": true
     },
     {
-      "query": "escrever um componente react que busca clima de uma api publica",
+      "query": "escrever um componente react que busca clima de uma api pública",
       "should_trigger": false
     },
     {
-      "query": "refatorar este crate rust para usar postgres assincrono com sqlx",
+      "query": "refatorar este crate rust para usar postgres assíncrono com sqlx",
       "should_trigger": false
     },
     {
@@ -275,6 +275,66 @@
     },
     {
       "query": "debugar por que o hot reload do next.js local quebrou",
+      "should_trigger": false
+    },
+    {
+      "query": "rodar uptime no host que marquei como ativo sem digitar o nome dele de novo",
+      "should_trigger": true
+    },
+    {
+      "query": "por que exec prod sai com 64 se prod é uma vps registrada no meu inventário",
+      "should_trigger": true
+    },
+    {
+      "query": "recebi exit 66 no_active_vps do sudo-exec --use-active, o que preciso rodar antes",
+      "should_trigger": true
+    },
+    {
+      "query": "qual campo json diz se o host veio do argv ou do marcador ativo",
+      "should_trigger": true
+    },
+    {
+      "query": "enviar três arquivos locais para a frota inteira, a forma posicional diz que o argv é ambíguo",
+      "should_trigger": true
+    },
+    {
+      "query": "endurecer o sshd_config do servidor desabilitando senha e login de root",
+      "should_trigger": false
+    },
+    {
+      "query": "gerar um par de chaves ed25519 com ssh-keygen e adicionar a passphrase no meu agente",
+      "should_trigger": false
+    },
+    {
+      "query": "escrever um playbook ansible que instala nginx em todo o meu inventário",
+      "should_trigger": false
+    },
+    {
+      "query": "configurar uma stanza ProxyJump de bastion no meu ~/.ssh/config do openssh",
+      "should_trigger": false
+    },
+    {
+      "query": "meu rsync sobre ssh está lento, ajustar as flags de cifra e compressão",
+      "should_trigger": false
+    },
+    {
+      "query": "construir um módulo terraform que provisiona instâncias ec2 com security group",
+      "should_trigger": false
+    },
+    {
+      "query": "explicar como funciona a troca de chaves do protocolo ssh e o handshake diffie-hellman",
+      "should_trigger": false
+    },
+    {
+      "query": "arquivo docker compose para uma stack local de postgres e redis",
+      "should_trigger": false
+    },
+    {
+      "query": "configurar jails do fail2ban para bloquear tentativas repetidas de brute force ssh",
+      "should_trigger": false
+    },
+    {
+      "query": "escrever uma unit systemd que reinicia meu serviço de api em caso de falha",
       "should_trigger": false
     }
   ]

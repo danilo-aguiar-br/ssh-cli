@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Regressão 1:1 dos gaps AUD-E2E fechados na v0.4.2
+//! One-to-one regression for the AUD-E2E gaps closed in 0.4.2.
 //! (TUN-003, IO-010, UX-001, REL-007, ENV-001, DOC-042, SCP-024, REL-008).
 
 use assert_cmd::Command;
@@ -63,7 +63,7 @@ fn gap_version_042() {
 
 #[test]
 #[serial]
-fn gap_version_cli_contem_042() {
+fn gap_version_cli_reports_042() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .arg("--version")

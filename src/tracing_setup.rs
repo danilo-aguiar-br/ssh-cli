@@ -3,6 +3,22 @@
 #![forbid(unsafe_code)]
 //! Process-local **tracing** setup for the ssh-cli binary path.
 //!
+//! # Why this module was renamed from `telemetry`
+//!
+//! The old name described a category of thing this product forbids. It never did any
+//! of it — the "out of scope" list below has been accurate since the first commit —
+//! but a reader auditing the tree for a telemetry ban found a module called
+//! `telemetry` and had to read it to learn it was innocent. A name that costs every
+//! reader a verification is a name that is wrong, however defensible its history.
+//!
+//! The wire field `"telemetry": false` in `vps doctor` is a different thing and keeps
+//! its name. There the word is the *claim being denied*, and denying it in the
+//! operator's own vocabulary is the point.
+//!
+//! This rename is **breaking** for anyone importing `ssh_cli::telemetry` as a
+//! library. There is no deprecated alias: an alias would keep the name this rename
+//! exists to remove, and leave the audit exactly where it started.
+//!
 //! # Product identity (Rules Rust — logs / tracing / rotation)
 //!
 //! ssh-cli is a **one-shot agent CLI**, not a long-lived server:
@@ -31,8 +47,8 @@
 //!
 //! # Lifecycle
 //!
-//! 1. [`crate::telemetry::bootstrap_logs`] — before clap parse (phase 1b).
-//! 2. [`crate::telemetry::initialize_logs`] — after parse, reloads `EnvFilter` from `-v` only (G-E2E-09).
+//! 1. [`crate::tracing_setup::bootstrap_logs`] — before clap parse (phase 1b).
+//! 2. [`crate::tracing_setup::initialize_logs`] — after parse, reloads `EnvFilter` from `-v` only (G-E2E-09).
 //! 3. Process exit — `main` flushes stderr; no file worker to join.
 
 use std::sync::OnceLock;
@@ -41,7 +57,7 @@ use tracing_error::ErrorLayer;
 use tracing_subscriber::reload;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
 
-/// Reload handle: bootstrap installs once; [`crate::telemetry::initialize_logs`] reloads the filter.
+/// Reload handle: bootstrap installs once; [`crate::tracing_setup::initialize_logs`] reloads the filter.
 ///
 /// `OnceLock` (not `lazy_static`): value is created only when the binary path
 /// installs the global subscriber.
@@ -74,7 +90,7 @@ pub fn build_env_filter(verbose: u8) -> EnvFilter {
 
 /// Installs stderr tracing **before** clap parse (one-shot lifecycle phase 1b).
 ///
-/// Default filter is `error` so agents stay quiet; [`crate::telemetry::initialize_logs`] reloads
+/// Default filter is `error` so agents stay quiet; [`crate::tracing_setup::initialize_logs`] reloads
 /// from `-v` after parse (ambient `RUST_LOG` ignored).
 ///
 /// Safe to call more than once: subsequent calls are no-ops once the reload

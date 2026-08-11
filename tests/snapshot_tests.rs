@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Snapshot tests para outputs estáveis do ssh-cli.
+//! Snapshot tests for stable ssh-cli output.
 //!
-//! Usa `insta` para capturar e verificar outputs do binário.
-//! Na primeira execução os snapshots são criados como `.snap.new`.
+//! Uses `insta` to capture and verify the binary output.
+//! On the first run the snapshots are created as `.snap.new`.
 //! Para aceitar: execute `cargo insta review` ou `cargo insta test --accept`.
 
 use assert_cmd::Command;
@@ -20,7 +20,7 @@ fn cmd(tmp: &TempDir) -> Command {
     }
     c.env("HOME", tmp.path());
     c.env("XDG_CONFIG_HOME", tmp.path());
-    // Snapshots de prosa humana: force text em pipe (senão auto-JSON).
+    // Human prose snapshots: force text mode in a pipe, otherwise output auto-selects JSON.
     c.env("SSH_CLI_FORCE_TEXT", "1");
     c.arg("--config-dir").arg(tmp.path());
     c.arg("--json");
@@ -51,7 +51,7 @@ fn snapshot_vps_path_format() {
     let tmp = TempDir::new().unwrap();
     let output = cmd(&tmp).args(["vps", "path"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    // Substitui o path temporário variável por um placeholder estável.
+    // Replace the varying temp path with a stable placeholder.
     let redacted = stdout.replace(tmp.path().to_str().unwrap_or(""), "[CONFIG_DIR]");
     insta::assert_snapshot!("vps_path_format", redacted);
 }
@@ -94,7 +94,7 @@ fn snapshot_error_vps_not_found() {
         .args(["vps", "show", "nao-existe"])
         .output()
         .unwrap();
-    // O err vai para stdout neste CLI (não para stderr).
+    // The error goes to stdout in this CLI, not to stderr.
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let output = if stdout.is_empty() { stderr } else { stdout };

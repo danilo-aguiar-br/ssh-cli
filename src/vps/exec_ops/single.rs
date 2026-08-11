@@ -32,6 +32,9 @@ pub async fn run_exec(
         .await;
     }
     let vps_name = expect_single(selection)?;
+    // GAP-SSH-EXEC-ENVELOPE-002: capture the identity before the name is consumed by
+    // the registry lookup, so every emitted event can name its own target.
+    let target = crate::json_wire::ExecTarget::new(vps_name.clone(), opts.target_source);
     let path = resolve_config_path(config_override.as_deref())?;
     let mut file = load(&path)?;
     // Move the record out of the local map (file is discarded after connect setup).
@@ -39,6 +42,10 @@ pub async fn run_exec(
         .hosts
         .remove(&vps_name)
         .ok_or(SshCliError::VpsNotFound(vps_name))?;
+    // GAP-SSH-EXEC-ENVELOPE-002: publish the target only once the lookup succeeded,
+    // so every failure from here on names its host. Publishing before the `?` above
+    // would make a `VpsNotFound` envelope claim a host it never resolved.
+    crate::json_wire::set_resolved_target(&target);
 
     apply_overrides(&mut vps, opts.take_auth_overrides());
     let cmd = append_description(command, opts.description.as_deref());
@@ -48,7 +55,7 @@ pub async fn run_exec(
     }
     let cfg = build_connection_config(&vps, Some(&path), opts.replace_host_key);
     let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
-    run_exec_with_client_steps(&vps, &cmd, &opts.steps, client, format, json).await
+    run_exec_with_client_steps(&vps, &cmd, &opts.steps, client, format, json, &target).await
 }
 
 /// Testable version of run_exec.
@@ -59,7 +66,9 @@ pub async fn run_exec_with_client(
     format: OutputFormat,
     json: bool,
 ) -> Result<()> {
-    run_exec_with_client_steps(vps, command, &[], client, format, json).await
+    let target =
+        crate::json_wire::ExecTarget::new(vps.name.as_str(), crate::json_wire::TargetSource::Argv);
+    run_exec_with_client_steps(vps, command, &[], client, format, json, &target).await
 }
 
 /// One remote step ready for the wire.
@@ -110,12 +119,19 @@ pub(crate) fn step_labels(command: &str, steps: &[crate::domain::RemoteCommand])
 /// `--step` entirely and still exit 0, which reported a partial run as a full one.
 /// Every step is executed here, the first non-zero exit is remembered, and the
 /// remaining steps still run so their output is not lost.
+///
+/// One exception, and it is a security one: exit **127 on step zero** aborts the
+/// batch immediately (GAP-SSH-EXEC-ARGC-001 rule 6). That code on the first step is
+/// the fingerprint of a host name having been promoted to a command, so continuing
+/// would run the remaining steps against a machine the caller never designated.
+/// Every other non-zero exit, at any index, keeps the run-everything contract.
 pub(crate) async fn run_prepared_steps(
     vps: &VpsRecord,
     steps: Vec<PreparedStep>,
     mut client: Box<dyn SshClientTrait>,
     format: OutputFormat,
     json: bool,
+    target: &crate::json_wire::ExecTarget,
 ) -> Result<()> {
     if crate::signals::should_stop() {
         return Err(cancelled_err());
@@ -142,13 +158,33 @@ pub(crate) async fn run_prepared_steps(
                     if code != 0 && failed.is_none() {
                         failed = Some((code, output.stderr.clone()));
                     }
+                    // GAP-SSH-EXEC-ARGC-001 rule 6: 127 on step *zero* is the
+                    // signature of the misdirection itself. When a host name is
+                    // promoted to a command, the shell answers `command not found`
+                    // and every later `--step` then runs on a machine nobody named,
+                    // which is exactly how one incident aggregated to exit 0.
+                    //
+                    // Scoped to index zero on purpose. A later step returning 127 is
+                    // an ordinary missing binary and keeps the existing contract:
+                    // remaining steps run so their output is not lost. Index zero is
+                    // different because nothing has been established yet — there is
+                    // no evidence the session is aimed where the caller believes.
+                    if i == 0 && code == 127 {
+                        let _ = client.disconnect().await;
+                        return Err(SshCliError::CommandFailed {
+                            exit_code: code,
+                            stderr: output.stderr,
+                        }
+                        .into());
+                    }
                 }
                 // G8: multi-step emits one document per step (JSON and text alike);
                 // single-step must emit exactly one object, printed after the loop.
                 if multi && as_json {
-                    let mut v =
-                        serde_json::to_value(crate::json_wire::ExecutionJson::from(&output))
-                            .unwrap_or_else(|_| serde_json::json!({}));
+                    let mut v = serde_json::to_value(crate::json_wire::ExecutionJson::with_target(
+                        &output, target,
+                    ))
+                    .unwrap_or_else(|_| serde_json::json!({}));
                     if let Some(obj) = v.as_object_mut() {
                         obj.insert("step".into(), serde_json::json!(i));
                         obj.insert("command".into(), serde_json::json!(step.label));
@@ -175,7 +211,7 @@ pub(crate) async fn run_prepared_steps(
     // needs (parity with the previous single-command elevated path).
     if let Some(output) = last_output {
         if as_json {
-            crate::output::print_execution_output_json(&output)?;
+            crate::output::print_execution_output_json(&output, target)?;
         } else {
             crate::output::print_execution_output(&output);
         }
@@ -198,10 +234,11 @@ pub async fn run_exec_with_client_steps(
     client: Box<dyn SshClientTrait>,
     format: OutputFormat,
     json: bool,
+    target: &crate::json_wire::ExecTarget,
 ) -> Result<()> {
     let prepared = step_labels(command, steps)
         .iter()
         .map(|c| PreparedStep::plain(c))
         .collect();
-    run_prepared_steps(vps, prepared, client, format, json).await
+    run_prepared_steps(vps, prepared, client, format, json, target).await
 }

@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/health-check-batch.schema.json",
   "title": "health-check --all JSON batch",
+  "description": "Fleet payload of `ssh-cli health-check --all` / `--hosts` (`event: \"health-check-batch\"`). Requires `batch_run_id`, which the doctor's embedded probe does not carry.",
   "type": "object",
   "additionalProperties": true,
   "required": ["event", "batch_run_id", "max_concurrency", "results"],

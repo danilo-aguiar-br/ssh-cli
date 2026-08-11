@@ -1,5 +1,7 @@
 # Guia de testes
 
+> **0.5.5** — release de segurança de designação de alvo. Corrige GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decidiam o host alvo pela *contagem* de posicionais, então `exec <HOST> --step <CMD>` executava o nome do host como binário remoto no host que `connect` selecionara por último. BREAKING: um único posicional agora é erro de uso; alcance o marcador ativo com a nova `--use-active <COMANDO>`. O envelope single-host ganhou `target_resolved` e `target_source` — vincule consumidores novos a esses; `host_resolved`/`host_source` são os aliases de leitura da 0.5.5 — mais `active_fallback`, e o `doctor` passa a reportar `local.active_vps`.
+>
 > **0.5.4** — release de segurança e agent-native. Corrige DoS remoto pré-auth no banner SSH (A1), impede que bits setuid enviados pelo servidor caiam no arquivo baixado (A3), fecha a janela de leitura pública em chaves privadas ACME/mTLS (A2) e adiciona flags de redução de payload (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) aplicadas antes da serialização. BREAKING: falha parcial multi-host agora sai com exit **1** (era 65); `--bind` fora do loopback exige `--i-accept-network-exposure`. Novo evento `tunnel_closed`.
 
 
@@ -45,9 +47,25 @@
 - Superfície SCP em `tests/scp_integration.rs`
 - Superfície tunnel em `tests/tunnel_integration.rs`
 - Superfície dos modos de tunnel em `tests/gaps_v060_tunnel_modes.rs` — os modos `--reverse`, `--socks5` e `--remote-socket` da 0.5.4, a exclusão mútua entre eles, o rótulo `mode` no wire (`local` / `reverse` / `socks5` / `streamlocal`), o guard `--i-accept-network-exposure` nas duas pontas e o evento `tunnel_closed`
+- Superfície de saída agent-native em `tests/gaps_v059_agent_native.rs` — `--select`, `--filter`, `--limit`, `--count-only` e o relatório de truncagem
+- Taxonomia de erro em `tests/gaps_v061_error_taxonomy.rs` — `error_class`, `retryable` e `suggestion` em todo envelope
+- Durabilidade de SCP em `tests/gaps_v061_scp_durability.rs` — `mtime_preserved` e `durable` são reportados, nunca presumidos
+- Orçamento de componente em `tests/gaps_v062_component_budget.rs` — a catraca falha tanto ao crescer além de um teto congelado quanto em entrada obsoleta cujo arquivo já encolheu, então o ledger registra quitação com o mesmo volume da dívida
+- Contrato cross-platform em `tests/gaps_v062_cross_platform.rs`
+- Alcançabilidade de i18n em `tests/gaps_v062_i18n_reachability.rs` — toda chave de mensagem é alcançável nos dois idiomas
+- Falsificação de gate para `scripts/check_en_identifiers.sh`, conduzida por `scripts/check_all_gates.sh` — cada check precisa ser comprovadamente capaz de falhar, e dois deles nasceram mortos; a prova vigente vive em `tests/gaps_v068_source_language.rs`
+- Harness E2E, features de locale e stdin de segredo em `tests/gaps_v063_e2e_harness.rs`, `tests/gaps_v063_locale_features.rs`, `tests/gaps_v063_secret_stdin.rs`
+- Designação explícita de alvo em `tests/gaps_v065_exec_target_designation.rs` — o argv do GAP-SSH-EXEC-ARGC-001 segue rejeitado, e o trio de proveniência alcança envelopes de sucesso e de erro igualmente
+- Designação de alvo em transferências em `tests/gaps_v066_transfer_target_designation.rs` — a mesma regra em `scp` e `sftp`
+- Alcance do empacotamento em `tests/gaps_v067_packaging_reach.rs` — todo arquivo-fonte sobrevive ao `cargo package`; um padrão de `.gitignore` que engole diretório de código-fonte é invisível a todo build local
+- Idioma do código-fonte em `tests/gaps_v068_source_language.rs` — código e comentário em inglês, isentando citações em vez de arquivos inteiros
+- Renderização de tabela Markdown em `tests/gaps_v069_markdown_tables.rs` — linha cujos pipes não escapados discordam da linha delimitadora é Markdown válido que renderiza com colunas fantasma
+- Alcance de referência da documentação em `tests/gaps_v070_doc_reference_reach.rs` — todo caminho do repositório que um documento nomeia existe no disco, e toda suíte do disco está catalogada aqui; a suíte fantasma que isso fechou era invisível à varredura direta
+- Conformidade de documentação em `tests/docs_conformance.rs` — inventário de comandos, indexação de schemas, paridade bilíngue de release e orçamento de palavras das skills
+- Qualidade de teste em `tests/test_quality.rs`
 - Property tests em `tests/proptest_tests.rs`
 - i18n integration em `tests/i18n_integration.rs`
-- Runner da bateria de gates `scripts/check_all_gates.sh` — roda os dez gates obrigatórios numa invocação
+- Runner da bateria de gates `scripts/check_all_gates.sh` — roda os onze gates obrigatórios numa invocação; as suites acima rodam sob `cargo test`, que a bateria invoca como seu gate `test`
 - Gate de frescor de advisories `scripts/check_advisory_freshness.sh` — alcançável somente pelo runner da bateria
 - Contrato de cobertura da bateria `tests/gaps_v064_gate_runner.rs`
 - Script de install resolve `scripts/verify_install_resolve.sh`

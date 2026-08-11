@@ -16,7 +16,7 @@ Commands:
   scp           SCP file transfer (upload/download)
   sftp          SFTP subsystem transfer and remote filesystem ops (G-SFTP)
   tunnel        SSH tunnel with mandatory deadline (bounded one-shot)
-  health-check  Checks SSH connectivity to a VPS (or multi-host with `--all` / `--hosts`)
+  health-check  Checks SSH connectivity to a VPS (`--all` / `--hosts` / `--use-active`)
   secrets       Manages the primary key and at-rest secret encryption (one-shot)
   completions   Generates shell completions
   commands      Emits the full command tree as JSON (agent discovery / rules `mycli commands`)

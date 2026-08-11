@@ -179,9 +179,9 @@ pub async fn upload_file(
     let mut bytes = 0_u64;
     loop {
         if crate::signals::should_stop() {
-            return Err(SshCliError::InvalidArgument(crate::i18n::t(
-                crate::i18n::Message::OperationCancelled,
-            )));
+            return Err(SshCliError::InvalidArgument(
+                crate::constants::OPERATION_CANCELLED_MSG.to_string(),
+            ));
         }
         let n = local_file.read(&mut buf).await.map_err(SshCliError::Io)?;
         if n == 0 {
@@ -376,9 +376,9 @@ async fn download_file_to_partial(
     let mut bytes = 0_u64;
     loop {
         if crate::signals::should_stop() {
-            return Err(SshCliError::InvalidArgument(crate::i18n::t(
-                crate::i18n::Message::OperationCancelled,
-            )));
+            return Err(SshCliError::InvalidArgument(
+                crate::constants::OPERATION_CANCELLED_MSG.to_string(),
+            ));
         }
         let n = remote_file
             .read(&mut buf)
@@ -512,9 +512,9 @@ async fn upload_tree_rec(
         .map_err(SshCliError::Io)?;
     while let Some(entry) = rd.next_entry().await.map_err(SshCliError::Io)? {
         if crate::signals::should_stop() {
-            return Err(SshCliError::InvalidArgument(crate::i18n::t(
-                crate::i18n::Message::OperationCancelled,
-            )));
+            return Err(SshCliError::InvalidArgument(
+                crate::constants::OPERATION_CANCELLED_MSG.to_string(),
+            ));
         }
         let ft = entry.file_type().await.map_err(SshCliError::Io)?;
         if ft.is_symlink() {
@@ -605,9 +605,9 @@ async fn download_tree_rec(
         count = count.saturating_add(1);
         check_list_cap(count, "directory listing")?;
         if crate::signals::should_stop() {
-            return Err(SshCliError::InvalidArgument(crate::i18n::t(
-                crate::i18n::Message::OperationCancelled,
-            )));
+            return Err(SshCliError::InvalidArgument(
+                crate::constants::OPERATION_CANCELLED_MSG.to_string(),
+            ));
         }
         let name = entry.file_name();
         // G-SFTP-R01: malicious server basenames must not escape local_root.

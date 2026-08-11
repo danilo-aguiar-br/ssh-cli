@@ -215,6 +215,9 @@ pub async fn run_vps_command(
                     key_override: None,
                     key_passphrase_override: None,
                     replace_host_key: false,
+                    // `vps add --check` probes the host the caller just registered,
+                    // so the name came from this invocation's argv.
+                    host_source: crate::json_wire::TargetSource::Argv,
                 })
                 .await?;
             }

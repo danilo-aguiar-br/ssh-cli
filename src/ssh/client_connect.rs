@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// G-SSH-01/04/16: connect + auth chain (SRP extract from monólito client_real).
+// G-SSH-01/04/16: connect + auth chain (SRP extract from monolith client_real).
 #![forbid(unsafe_code)]
 //! Authenticated SSH dial: TCP/TLS → host-key TOFU → publickey/agent/password.
 
@@ -20,6 +20,8 @@ pub(crate) struct AuthenticatedSession {
     pub session: russh::client::Handle<ClientHandler>,
     pub cfg: ConnectionConfig,
     /// Kept so Drop/debug paths can inspect (usually empty after success).
+    // Read through `take_host_key_error` rather than directly; the field keeps the
+    // shared handle alive for the lifetime of the session.
     #[allow(dead_code)]
     pub host_key_outcome: HostKeyOutcome,
     /// Inbound `forwarded-tcpip` channels for `tunnel --reverse` (G-TUN-R01).

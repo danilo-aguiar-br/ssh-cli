@@ -1,5 +1,7 @@
 # Testing Guide
 
+> **0.5.5** — target-designation security release. Fixes GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decided the target host by positional *count*, so `exec <HOST> --step <CMD>` executed the host name as a remote binary on whatever host `connect` last selected. BREAKING: a lone positional is now a usage error; reach the active marker with the new `--use-active <COMMAND>`. The single-host envelope gained `target_resolved` and `target_source` — bind new consumers to those; `host_resolved`/`host_source` are the 0.5.5 read aliases — plus `active_fallback`, and `doctor` now reports `local.active_vps`.
+>
 > **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
 
 
@@ -45,9 +47,25 @@
 - SCP surface under `tests/scp_integration.rs`
 - Tunnel surface under `tests/tunnel_integration.rs`
 - Tunnel mode surface under `tests/gaps_v060_tunnel_modes.rs` — the 0.5.4 modes `--reverse`, `--socks5` and `--remote-socket`, their mutual exclusion, the `mode` wire label (`local` / `reverse` / `socks5` / `streamlocal`), the `--i-accept-network-exposure` guard on both ends, and the `tunnel_closed` event
+- Agent-native output surface under `tests/gaps_v059_agent_native.rs` — `--select`, `--filter`, `--limit`, `--count-only` and the truncation report
+- Error taxonomy under `tests/gaps_v061_error_taxonomy.rs` — `error_class`, `retryable` and `suggestion` on every envelope
+- SCP durability under `tests/gaps_v061_scp_durability.rs` — `mtime_preserved` and `durable` are reported, never assumed
+- Component budget under `tests/gaps_v062_component_budget.rs` — the ratchet fails both on growth past a frozen cap and on a stale entry whose file already shrank, so the ledger records repayment as loudly as debt
+- Cross-platform contract under `tests/gaps_v062_cross_platform.rs`
+- i18n reachability under `tests/gaps_v062_i18n_reachability.rs` — every message key is reachable in both languages
+- Gate falsification for `scripts/check_en_identifiers.sh`, driven by `scripts/check_all_gates.sh` — each check must be provably able to fail, and two of them were dead from introduction; the standing proof now lives in `tests/gaps_v068_source_language.rs`
+- E2E harness, locale features and secret stdin under `tests/gaps_v063_e2e_harness.rs`, `tests/gaps_v063_locale_features.rs`, `tests/gaps_v063_secret_stdin.rs`
+- Explicit target designation under `tests/gaps_v065_exec_target_designation.rs` — the argv of GAP-SSH-EXEC-ARGC-001 stays rejected, and the provenance trio reaches success and error envelopes alike
+- Transfer target designation under `tests/gaps_v066_transfer_target_designation.rs` — the same rule on `scp` and `sftp`
+- Packaging reach under `tests/gaps_v067_packaging_reach.rs` — every source file survives `cargo package`; a `.gitignore` pattern that swallows a source directory is invisible to every local build
+- Source language under `tests/gaps_v068_source_language.rs` — code and comments are English, exempting citations rather than whole files
+- Markdown table rendering under `tests/gaps_v069_markdown_tables.rs` — a row whose unescaped pipes disagree with its delimiter row is valid Markdown that renders with phantom columns
+- Documentation reference reach under `tests/gaps_v070_doc_reference_reach.rs` — every repository path a document names exists on disk, and every suite on disk is catalogued here; the phantom suite this closed was invisible to the forward sweep
+- Documentation conformance under `tests/docs_conformance.rs` — command inventory, schema indexing, bilingual release parity and skill word budgets
+- Test quality under `tests/test_quality.rs`
 - Property tests under `tests/proptest_tests.rs`
 - i18n integration under `tests/i18n_integration.rs`
-- Gate battery runner `scripts/check_all_gates.sh` — runs all ten mandatory gates in one invocation
+- Gate battery runner `scripts/check_all_gates.sh` — runs all eleven mandatory gates in one invocation; the suites above run under `cargo test`, which the battery invokes as its `test` gate
 - Advisory freshness gate `scripts/check_advisory_freshness.sh` — only reachable through the battery runner
 - Gate battery coverage contract `tests/gaps_v064_gate_runner.rs`
 - Install resolve script `scripts/verify_install_resolve.sh`

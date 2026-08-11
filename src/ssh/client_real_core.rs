@@ -1,7 +1,7 @@
 // Implementation body for `client_real` (included).
 
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// G-ERR-12: real russh client implementation (split from monólito client.rs).
+// G-ERR-12: real russh client implementation (split from monolith client.rs).
     use super::{
         take_utf8_capped, TunnelChannel, SshClientTrait, ConnectionConfig, ExecutionOutput,
         TransferResult,

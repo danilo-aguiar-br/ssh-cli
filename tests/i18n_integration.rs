@@ -10,30 +10,30 @@ use ssh_cli::locale::{
 
 #[test]
 #[serial]
-fn inicializar_idioma_nao_panic_com_locale_valido() {
+fn initialize_language_accepts_a_valid_locale() {
     std::env::remove_var("SSH_CLI_LANG");
     let result = initialize_language(Some("pt-BR"), None);
     assert!(
         result.is_ok(),
-        "inicializar_idioma não deve falhar com locale válido"
+        "initialize_language must accept a valid locale"
     );
 }
 
 #[test]
 #[serial]
-fn inicializar_idioma_nao_panic_com_locale_invalido() {
+fn initialize_language_falls_through_on_an_invalid_locale() {
     // Programmatic API still accepts invalid and falls through (clap rejects at CLI).
     std::env::remove_var("SSH_CLI_LANG");
     let result = initialize_language(Some("xx-XX"), None);
     assert!(
         result.is_ok(),
-        "inicializar_idioma não deve falhar com locale inválido"
+        "initialize_language must fall through, not fail, on an invalid locale"
     );
 }
 
 #[test]
 #[serial]
-fn inicializar_idioma_nao_panic_sem_forcar() {
+fn initialize_language_succeeds_without_an_override() {
     std::env::remove_var("SSH_CLI_LANG");
     let result = initialize_language(None, None);
     assert!(result.is_ok(), "initialize_language must not fail");
@@ -41,25 +41,25 @@ fn inicializar_idioma_nao_panic_sem_forcar() {
 
 #[test]
 #[serial]
-fn inicializar_idioma_com_env_var_valida_nao_panic() {
+fn initialize_language_accepts_a_valid_env_locale() {
     std::env::set_var("SSH_CLI_LANG", "en-US");
     let result = initialize_language(None, None);
     std::env::remove_var("SSH_CLI_LANG");
     assert!(
         result.is_ok(),
-        "inicializar_idioma não deve falhar com env var válida"
+        "initialize_language must accept a valid env locale"
     );
 }
 
 #[test]
 #[serial]
-fn inicializar_idioma_com_env_var_invalida_nao_panic() {
+fn initialize_language_falls_through_on_an_invalid_env_locale() {
     std::env::set_var("SSH_CLI_LANG", "xx-XX");
     let result = initialize_language(None, None);
     std::env::remove_var("SSH_CLI_LANG");
     assert!(
         result.is_ok(),
-        "inicializar_idioma não deve falhar com env var inválida"
+        "initialize_language must fall through on an invalid env locale"
     );
 }
 
@@ -70,20 +70,20 @@ fn current_language_returns_valid_locale() {
     let language = current_language();
     assert!(
         language == Language::English || language == Language::Portuguese,
-        "idioma_atual deve ser um locale suportado"
+        "current_language must return a supported locale"
     );
 }
 
 #[test]
 #[serial]
-fn inicializar_com_pt_br_define_portugues() {
+fn initialize_language_selects_portuguese() {
     let result = initialize_language(Some("pt-BR"), None);
     assert!(result.is_ok());
 }
 
 #[test]
 #[serial]
-fn inicializar_com_en_us_define_english() {
+fn initialize_language_selects_english() {
     let result = initialize_language(Some("en-US"), None);
     assert!(result.is_ok());
 }
@@ -108,34 +108,31 @@ fn message_vps_registry_empty_pt_differs_en() {
 }
 
 #[test]
-fn variantes_unitarias_nao_vazias_em_ambos_idiomas() {
+fn unit_variants_render_in_both_languages() {
     let unit_variants = [
         Message::VpsRegistryEmpty,
         Message::TunnelPressCtrlC,
-        Message::OperationCancelled,
         Message::LocalePreferenceCleared,
         Message::LocaleStatusTitle,
         Message::ImportCompleted,
-        Message::ScpUploadFileOnly,
-        Message::ScpDownloadLocalNotDirectory,
     ];
-    for variante in &unit_variants {
+    for variant in &unit_variants {
         assert!(
-            !variante.text(Language::English).is_empty(),
+            !variant.text(Language::English).is_empty(),
             "empty EN for {:?}",
-            variante
+            variant
         );
         assert!(
-            !variante.text(Language::Portuguese).is_empty(),
+            !variant.text(Language::Portuguese).is_empty(),
             "empty PT for {:?}",
-            variante
+            variant
         );
     }
 }
 
 #[test]
-fn variantes_com_campos_incluem_dados_dinamicos() {
-    let casos: Vec<(Message, &str)> = vec![
+fn variants_with_fields_interpolate_their_data() {
+    let cases: Vec<(Message, &str)> = vec![
         (
             Message::VpsAdded {
                 name: "meu-servidor".to_string(),
@@ -188,17 +185,17 @@ fn variantes_com_campos_incluem_dados_dinamicos() {
             "pt-BR",
         ),
     ];
-    for (msg, esperado) in &casos {
+    for (msg, expected) in &cases {
         assert!(
-            msg.text(Language::English).contains(esperado),
-            "EN não contém '{}' para {:?}",
-            esperado,
+            msg.text(Language::English).contains(expected),
+            "EN is missing '{}' for {:?}",
+            expected,
             msg
         );
         assert!(
-            msg.text(Language::Portuguese).contains(esperado),
-            "PT não contém '{}' para {:?}",
-            esperado,
+            msg.text(Language::Portuguese).contains(expected),
+            "PT is missing '{}' for {:?}",
+            expected,
             msg
         );
     }
@@ -219,10 +216,10 @@ fn tunnel_local_listening_includes_port_host_and_vps() {
     let en = msg.text(Language::English);
     let pt = msg.text(Language::Portuguese);
     for text in &[en, pt] {
-        assert!(text.contains("8080"), "deve conter porta_local");
-        assert!(text.contains("10.0.0.1"), "deve conter host_remoto");
-        assert!(text.contains("22"), "deve conter porta_remota");
-        assert!(text.contains("relay-01"), "deve conter vps_nome");
+        assert!(text.contains("8080"), "must carry the local port");
+        assert!(text.contains("10.0.0.1"), "must carry the remote host");
+        assert!(text.contains("22"), "must carry the remote port");
+        assert!(text.contains("relay-01"), "must carry the VPS name");
     }
 }
 

@@ -5,9 +5,35 @@
 
 use super::*;
 
+/// The target an SFTP subcommand designated in argv.
+///
+/// SFTP has no active-marker path: every subcommand takes the host as a positional,
+/// so the provenance is always [`crate::json_wire::TargetSource::Argv`].
+pub(crate) fn designated_target(name: &str) -> crate::json_wire::ExecTarget {
+    crate::json_wire::ExecTarget::new(name, crate::json_wire::TargetSource::Argv)
+}
+
+/// Records the host this SFTP invocation resolved, so failures can name it.
+///
+/// Called only once the registry lookup has succeeded, so a `VpsNotFound` failure
+/// never claims a host that was never resolved — the same rule `exec` follows in
+/// `vps::exec_ops::single`. Publishing here rather than after `connect` is what makes
+/// a refused connection carry its target into the error envelope.
+pub(crate) fn publish_target(name: &str) -> crate::json_wire::ExecTarget {
+    let target = designated_target(name);
+    crate::json_wire::set_resolved_target(&target);
+    target
+}
+
+/// Emits one `sftp-transfer` event.
+///
+/// Takes the resolved [`crate::json_wire::ExecTarget`] rather than a bare name: the
+/// envelope must state *how* the host was designated, and folding the provenance into
+/// the existing host argument keeps this function under the
+/// `clippy::too_many_arguments` ceiling it already sits on.
 pub(crate) fn emit_transfer(
     direction: &str,
-    vps: &str,
+    target: &crate::json_wire::ExecTarget,
     local: &str,
     remote: &str,
     result: TransferResult,
@@ -17,7 +43,7 @@ pub(crate) fn emit_transfer(
     if json {
         output::print_sftp_transfer_json(
             direction,
-            vps,
+            target,
             local,
             remote,
             result.bytes_transferred,

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Regressão e2e dos 23 gaps resolvidos na 0.3.7.
+//! End-to-end regression for the 23 gaps closed in 0.3.7.
 //!
 //! Usa apenas senhas/caminhos FALSOS. Nunca credenciais reais SSH.
 
@@ -131,7 +131,7 @@ fn gap_val_002_rejects_port_zero() {
 
 #[test]
 #[serial]
-fn gap_val_003_rejeita_key_inexistente() {
+fn gap_val_003_rejects_a_missing_key() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -168,7 +168,7 @@ fn gap_io_001_output_format_json_empty_list() {
 #[serial]
 fn gap_io_002_health_check_aceita_json_local() {
     let tmp = TempDir::new().unwrap();
-    // Sem VPS: falha de domínio, mas clap deve aceitar --json (não "unexpected argument").
+    // With no VPS this is a domain failure, but clap must still accept --json (never "unexpected argument").
     let assert = cmd(&tmp)
         .args(["health-check", "--json"])
         .assert()
@@ -176,7 +176,7 @@ fn gap_io_002_health_check_aceita_json_local() {
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     assert!(
         !stderr.contains("unexpected argument"),
-        "health-check --json deve ser flag válida: {stderr}"
+        "health-check --json must be a valid flag: {stderr}"
     );
 }
 
@@ -239,7 +239,7 @@ fn gap_cli_001_su_exec_aceita_password_stdin() {
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     assert!(
         !stderr.contains("unexpected argument"),
-        "su-exec --password-stdin deve ser válido: {stderr}"
+        "su-exec --password-stdin must be valid: {stderr}"
     );
 }
 
@@ -320,7 +320,7 @@ fn gap_imp_001_allow_incomplete() {
 
 #[test]
 #[serial]
-fn gap_scp_001_upload_arquivo_local_antes_connect() {
+fn gap_scp_001_upload_checks_local_file_before_connect() {
     let tmp = TempDir::new().unwrap();
     add_host(&tmp, "scp1");
     cmd(&tmp)

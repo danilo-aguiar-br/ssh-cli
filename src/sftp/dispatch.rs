@@ -12,21 +12,28 @@ pub async fn run_sftp(
     opts: SftpOptions,
 ) -> anyhow::Result<()> {
     if crate::signals::should_stop() {
-        return Err(anyhow::anyhow!(i18n::t(Message::OperationCancelled)));
+        return Err(anyhow::anyhow!(crate::constants::OPERATION_CANCELLED_MSG));
     }
 
     match action {
         SftpAction::Upload {
             all,
             hosts,
+            src,
+            dest,
             target,
             recursive,
             ..
         } => {
             let mut opts = opts;
             opts.recursive = recursive;
-            let plan = crate::cli::parse_scp_target(all, hosts, target)
-                .map_err(SshCliError::InvalidArgument)?;
+            let plan = crate::cli::parse_scp_target(
+                all,
+                hosts,
+                crate::cli::TransferSlots::new(src, dest),
+                target,
+            )
+            .map_err(SshCliError::InvalidArgument)?;
             match plan {
                 crate::cli::ScpPathPlan::Single {
                     selection,
@@ -52,6 +59,7 @@ pub async fn run_sftp(
                     let client =
                         connect_client(vps_name.as_str(), config_override.as_deref(), &opts)
                             .await?;
+                    let echo = designated_target(vps_name.as_str());
                     let remote = remote_str(&remote);
                     let result = if opts.recursive {
                         client.sftp_upload_tree(&local, &remote).await
@@ -61,7 +69,7 @@ pub async fn run_sftp(
                     let _ = client.disconnect().await;
                     emit_transfer(
                         "upload",
-                        vps_name.as_str(),
+                        &echo,
                         &local.display().to_string(),
                         &remote,
                         result?,
@@ -82,6 +90,7 @@ pub async fn run_sftp(
                     }
                     let client =
                         connect_client(vps.as_str(), config_override.as_deref(), &opts).await?;
+                    let echo = designated_target(vps.as_str());
                     let dest = remote_str(&dest_dir);
                     let local_label = sources
                         .first()
@@ -131,7 +140,7 @@ pub async fn run_sftp(
                     let bytes = result?;
                     emit_transfer(
                         "upload",
-                        vps.as_str(),
+                        &echo,
                         &local_label,
                         &dest,
                         TransferResult {
@@ -163,14 +172,21 @@ pub async fn run_sftp(
         SftpAction::Download {
             all,
             hosts,
+            src,
+            dest,
             target,
             recursive,
             ..
         } => {
             let mut opts = opts;
             opts.recursive = recursive;
-            let plan = crate::cli::parse_scp_target(all, hosts, target)
-                .map_err(SshCliError::InvalidArgument)?;
+            let plan = crate::cli::parse_scp_target(
+                all,
+                hosts,
+                crate::cli::TransferSlots::new(src, dest),
+                target,
+            )
+            .map_err(SshCliError::InvalidArgument)?;
             match plan {
                 crate::cli::ScpPathPlan::Single {
                     selection,
@@ -196,6 +212,7 @@ pub async fn run_sftp(
                     let client =
                         connect_client(vps_name.as_str(), config_override.as_deref(), &opts)
                             .await?;
+                    let echo = designated_target(vps_name.as_str());
                     let remote = remote_str(&remote);
                     let result = if opts.recursive {
                         client.sftp_download_tree(&remote, &local).await
@@ -205,7 +222,7 @@ pub async fn run_sftp(
                     let _ = client.disconnect().await;
                     emit_transfer(
                         "download",
-                        vps_name.as_str(),
+                        &echo,
                         &local.display().to_string(),
                         &remote,
                         result?,
@@ -226,6 +243,7 @@ pub async fn run_sftp(
                     }
                     let client =
                         connect_client(vps.as_str(), config_override.as_deref(), &opts).await?;
+                    let echo = designated_target(vps.as_str());
                     let local_label = local_dir.display().to_string();
                     let remote_label = remotes
                         .first()
@@ -282,7 +300,7 @@ pub async fn run_sftp(
                     let bytes = result?;
                     emit_transfer(
                         "download",
-                        vps.as_str(),
+                        &echo,
                         &local_label,
                         &remote_label,
                         TransferResult {

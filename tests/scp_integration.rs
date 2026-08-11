@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Testes de integração do módulo SCP.
+//! Integration tests for the SCP module.
 //!
-//! Testa o subcomando `scp` via CLI, validando help e parâmetros obrigatórios.
+//! Exercises the `scp` subcommand through the CLI: help text and required arguments.
 
 use assert_cmd::Command;
 use predicates::prelude::*;

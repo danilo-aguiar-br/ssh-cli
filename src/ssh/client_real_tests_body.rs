@@ -193,7 +193,7 @@
         }
 
         #[test]
-        fn remote_scp_command_escapa_path_e_usa_p() {
+        fn remote_scp_command_escapes_the_path_and_uses_dash_p() {
             let cmd = remote_scp_command("-t", std::path::Path::new("/tmp/a b.txt"));
             assert_eq!(cmd, "scp -tp '/tmp/a b.txt'");
             let cmd_f = remote_scp_command("-f", std::path::Path::new("/var/log/a.log"));

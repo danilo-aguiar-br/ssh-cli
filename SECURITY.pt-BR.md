@@ -10,12 +10,18 @@ Linha de produto atual: **0.5.x**.
 
 | Versão | Status | Patches de segurança |
 | --- | --- | --- |
-| 0.5.x | Suportada | Sim, **linha atual** |
+| 0.5.x | Suportada | Sim, **linha atual** — porém 0.5.0–0.5.4 carregam o GAP-SSH-EXEC-ARGC-001; atualize para **0.5.5+** |
 | 0.4.x | Suportada | Críticas/altas quando viável; prefira **0.5.x** |
-| 0.3.x | Limitada | Só críticas quando viável; no crates.io **0.3.9** o SCP era inoperante — atualize para **0.5.3+** |
+| 0.3.x | Limitada | Só críticas quando viável; no crates.io **0.3.9** o SCP era inoperante — atualize para **0.5.3+** para transferências |
 | 0.2.x | Limitada | Só críticas quando viável |
 | 0.1.x | Sem suporte | Sem patches |
 | < 0.1 | Sem suporte | Sem patches |
+
+## Correções de segurança na 0.5.5
+- **GAP-SSH-EXEC-ARGC-001 — o host alvo era escolhido pela *contagem* de posicionais, não pelo conteúdo (CWE-441).** `exec`, `sudo-exec` e `su-exec` aceitavam um ou dois posicionais: dois significavam `<VPS> <COMANDO>`, um significava "comando contra o host que o `connect` marcou por último". `--step` é flag de append, não posicional, então `exec <HOST> --step <CMD>` colapsava no ramo de um posicional. O nome do host passava a ser executado como *binário* remoto (exit remoto **127**) e todo `--step` seguinte rodava no host marcado — um host que o operador nunca digitou. Como os passos seguintes tinham sucesso, o processo saía **0**, então o operador lia sucesso enquanto units systemd, pacotes e regras de firewall caíam em outro lugar. Isso é defeito de segurança e não de ergonomia: numa CLI de acesso remoto a dimensão crítica não é *o que* executa, é *onde*. Não exigia atacante — argv ambíguo de operador legítimo bastava, e é por isso que supera um bug que precisa de peer hostil.
+- **Corrigido tornando a ambiguidade inexprimível, não adivinhando a intenção.** Um posicional solitário agora é erro de uso (exit **64**) em toda superfície remota, `health-check` inclusive. Designe o alvo explicitamente com `<VPS> <COMANDO>`, com um seletor (`--all`, `--hosts a,b`, `--tags prod`), ou com o marcador de propósito via a nova `--use-active`; optar por ele sem marcador presente é exit **66**. A falha agora ocorre no parse, antes de qualquer socket abrir, então o raio de dano do engano é uma mensagem de uso em vez de auditoria em dois hosts.
+- **GAP-SSH-EXEC-ENVELOPE-002 — o envelope de host único não nomeava host, então o desvio acima era indetectável pelo stdout.** O caminho de frota já emitia um `name` por host enquanto o caminho single-host — justamente o que aceitava o fallback silencioso — não emitia nenhum, então a assimetria corria ao contrário do risco. Todo envelope agora carrega `target_resolved`, `target_source` (`argv` | `active_marker` | `selector`) e `active_fallback`, também no envelope de **erro** assim que o alvo resolve, onde ficam ausentes em vez de vazios. `host_resolved` e `host_source` acompanham como aliases de leitura da 0.5.5; vincule consumidores novos aos nomes canônicos. O `doctor` reporta `local.active_vps`, então o marcador passa a ser legível por máquina — antes da 0.5.5 nenhum comando o expunha e a única leitura era abrir o arquivo XDG.
+- Atualize para a **0.5.5** por causa dos dois. Nenhum precisa de atacante remoto, e o primeiro reescrevia silenciosamente a máquina errada.
 
 ## Correções de segurança na 0.5.4
 - **A1 — abort disparável remotamente ao logar o banner pré-autenticação.** O banner SSH é entrada remota que chega *antes* da autenticação e é retida para log de diagnóstico. O teto de log `AUTH_BANNER_MAX_CHARS` (512) já existia (G-SSH-14); o defeito era o corte ser aplicado por **índice de byte**, que entra em pânico sempre que cai no meio de um caractere multibyte. O perfil de release usa `panic = "abort"`, então não há unwind: um par não autenticado conseguia matar o processo com um banner contendo um único caractere não-ASCII bem posicionado, derrubando um fan-out multi-host inteiro. O truncamento agora ocorre em fronteira de caractere. Note o limite residual da correção: o russh materializa o banner completo e o entrega ao callback, então o cliente ainda retém a string inteira em memória — o que A1 limita é o pânico, não a alocação. É a classe de maior severidade aqui porque não exige credencial alguma.
@@ -68,19 +74,20 @@ Linha de produto atual: **0.5.x**.
 
 ## Modelo de ameaça (produto — G-SEC-10)
 - **Fronteira de confiança:** argv da CLI, env, arquivos XDG (`config.toml`, `secrets.key`, `known_hosts`) e o servidor SSH remoto são entradas **não confiáveis**. Apenas a identidade local do processo e o keyring do SO (quando habilitado) são material de confiança mais alta.
-- **Ativos:** senhas SSH / passphrases / secrets sudo-su (memória + at-rest), fingerprints de host key (TOFU), chave primária AEAD (`secrets.key` / keyring) e a capacidade de executar shell remoto / SCP / port forwards locais.
-- **Adversários considerados:** (1) argv/env hostil de CLI/agente; (2) servidores SSH maliciosos ou MITM (mudança de host key); (3) usuários locais co-residentes lendo arquivos world-readable ou listagens de processo; (4) crates transitivas comprometidas (supply chain).
+- **Ativos:** senhas SSH / passphrases / secrets sudo-su (memória + at-rest), fingerprints de host key (TOFU), chave primária AEAD (`secrets.key` / keyring) a capacidade de executar shell remoto / SCP / port forwards locais e — como o GAP-SSH-EXEC-ARGC-001 provou — a **identidade do host alcançado**, já que o mesmo argv rodando na máquina errada é uma brecha mesmo com todas as credenciais intactas.
+- **Adversários considerados:** (1) argv/env hostil de CLI/agente; (2) servidores SSH maliciosos ou MITM (mudança de host key); (3) usuários locais co-residentes lendo arquivos world-readable ou listagens de processo; (4) crates transitivas comprometidas (supply chain); (5) **argv ambíguo de operador ou agente legítimo** — sem atacante nenhum. O GAP-SSH-EXEC-ARGC-001 era dessa classe: uma linha de comando bem formada que o produto resolvia para um host que ninguém nomeou. Trate "qual máquina isto alcança" como pergunta controlada por atacante mesmo quando não existe atacante.
 - **Fora de escopo:** isolamento multi-tenant SaaS, XSS/CSRF de browser, container escape, mitigações Spectre de kernel além do isolamento normal de processo, e superfície de daemon de longa duração (esta CLI é **one-shot**).
 - **Controles:** validação tipada nas fronteiras CLI/import/path; `SecretString` + zeroize; ChaCha20-Poly1305 at-rest; TOFU com comparação constant-time de fingerprint; packing de shell com escape de aspas simples e secrets no stdin do canal; sem shell-out local para SSH; `deny.toml` + `cargo deny check` **local** (gates de produto não exigem GitHub Actions); `overflow-checks` em release; `unsafe` documentado só em bordas de console/sinal do SO.
 - **Gatilho de revisão:** reler este modelo em qualquer mudança que adicione protocolos de rede, processos long-lived, novos stores de secret ou `unsafe` fora de wrappers FFI de SO.
 
 ## Política de transporte e crypto (G-TLS)
 - **Caminho padrão:** transporte **SSH-2** via `russh` em TCP puro, crypto **aws-lc-rs** (`ssh-real`). Host auth **TOFU** (`known_hosts` sob XDG).
-- **SSH-over-TLS opcional:** com `tls = true` no VPS (ou `--tls` em `vps add`/`edit`), o cliente faz handshake **rustls** (SNI + mTLS opcional) e só então o protocolo SSH. Piso: **rustls ≥ 0.23.18**.
+- **SSH-over-TLS opcional:** com `tls = true` no VPS (ou `--tls` em `vps add`/`edit`), o cliente faz handshake **rustls** (SNI + mTLS opcional) e só então o protocolo SSH. Piso: **rustls ≥ 0.23.18** (nunca a janela de CVE do Acceptor, 0.23.13–0.23.17).
 - **Provider:** o binário chama `CryptoProvider::install_default` com **`aws_lc_rs` apenas** (uma vez, antes do runtime Tokio). Libraries usam `ClientConfig::builder` / default do processo. Dual provider **`ring` banido** no `deny.toml`.
 - **Proibido:** `native-tls`, OpenSSL, `libssh2-sys`, uso de produto de `ring`. PEM via `rustls-pki-types` (sem `rustls-pemfile`).
-- **mTLS / ACME:** material sob XDG `tls/mtls/` e `tls/acme/` (`ssh-cli tls …`); ACME DNS-01 em dois passos (agent-friendly).
-- Compressão de canal SSH **desabilitada** (só `none`).
+- **mTLS:** PEMs de certificado e chave de cliente sob XDG `tls/mtls/<nome>/` (`ssh-cli tls mtls import`, `ssh-cli tls mtls list`, `ssh-cli tls mtls show`, `ssh-cli tls mtls remove`) ou caminhos absolutos no registro do VPS.
+- **ACME:** Let's Encrypt via `instant-acme` (DNS-01, dois passos para agente: `tls acme issue --print-challenge` → publicar TXT → `tls acme complete`). Conta e certificados sob XDG `tls/acme/` (0o600).
+- Compressão de canal SSH **desabilitada** (o cliente prefere apenas `none`) para reduzir side-channels de compressão quando segredos cruzam o canal.
 - Gates locais (`cargo deny check`, `cargo tree`, testes residuais) — sem GitHub Actions obrigatório (G-TLS-11).
 
 
@@ -88,7 +95,7 @@ Linha de produto atual: **0.5.x**.
 
 | Componente | S | T | R | I | D | E | Controles principais |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| argv / env / stdin de secrets da CLI | spoof de args de agente | tamper de flags | — | vazamento via argv | DoS stdin grande | elev via sudo-exec | clap tipado + stdin → `SecretString` + teto de tamanho |
+| argv / env / stdin de secrets da CLI | spoof de args de agente | tamper de flags | negar qual host executou | vazamento via argv | DoS stdin grande | elev via sudo-exec | clap tipado + stdin → `SecretString` + teto de tamanho + designação explícita de alvo com `target_resolved` / `target_source` em todo envelope (0.5.5) |
 | XDG `config.toml` / `secrets.key` | forjar host | reescrever secrets | — | leitura co-tenant | truncar/corromper | — | 0o600 + flock + AEAD at-rest |
 | TOFU `known_hosts` | MITM de host | trocar fingerprint | — | oráculo de fingerprint | starve de lock | — | flock + comparação constant-time + `--replace-host-key` explícito |
 | Sessão SSH (russh) | servidor falso | MITM / troca de key | — | sniff de canal | hang / flood | shell remoto | TOFU + timeouts + sem shell-out local |
@@ -96,7 +103,7 @@ Linha de produto atual: **0.5.x**.
 | Fan-out multi-host | — | reordenar jobs | — | vazamento cross-host em logs | exaustão de recurso | — | orçamento `Semaphore` + cancel + JSON redacted |
 | Supply chain (deps) | typosquat | crate maliciosa | — | backdoor | DoS de build | — | `deny.toml` + `cargo deny` local + `--locked` + bans TLS no lockfile |
 
-**Riscos residuais aceitos (explícitos):** (1) password em argv ainda é parseável (com warning; preferir stdin); (2) host remoto após auth é totalmente confiado para o comando one-shot pedido pelo operador; (3) co-tenant com mesmo UID pode ler memória do processo — isolamento do SO, não desta CLI; (4) ameaças de classe Spectre/side-channel de CPU fora de escopo para ferramenta userland one-shot.
+**Riscos residuais aceitos (explícitos):** (1) password em argv ainda é parseável (com warning; preferir stdin); (2) o host remoto após auth é totalmente confiado para o comando one-shot pedido pelo operador — premissa que só vale depois que o alvo é designado explicitamente, e é por isso que a 0.5.5 tornou a designação obrigatória; (3) co-tenant com mesmo UID pode ler memória do processo — isolamento do SO, não desta CLI; (4) ameaças de classe Spectre/side-channel de CPU fora de escopo para ferramenta userland one-shot.
 
 ## Logging e vazamento de segredos (G2 / G14)
 - **Nunca** confie em `RUST_LOG` ambiente para debug de produto — o produto **ignora** essa variável (não é store de config).

@@ -34,10 +34,33 @@
     "suggestion": {
       "type": "string",
       "description": "Optional short remediation hint for agents"
+    },
+    "target_resolved": {
+      "type": "string",
+      "description": "Canonical name for the host this process had resolved when the failure occurred (Explicit Target Designation). Bind new consumers to this field; `host_resolved` is the 0.5.5 spelling, emitted from the same value as a read alias. Present on the single-host exec family and on every scp/sftp transfer, including sftp filesystem verbs. Absent — not empty — when the failure happened before a target was chosen."
+    },
+    "target_source": {
+      "type": "string",
+      "enum": ["argv", "active_marker", "selector"],
+      "description": "Canonical name for how target_resolved was obtained. `argv` means the caller typed it in this invocation; `active_marker` means it was inherited from the file `connect` wrote, under the explicit --use-active opt-in; `selector` means it came from --all/--hosts/--tags. Transfers never reach the marker, so they report `argv` or `selector` only."
+    },
+    "host_resolved": {
+      "type": "string",
+      "description": "Compatibility alias of target_resolved (0.5.5 spelling), written from the same value and never an independent source of truth. Host this process had resolved when the failure occurred (GAP-SSH-EXEC-ENVELOPE-002). Absent — not empty — when the failure happened before a target was chosen, which is the case for most usage errors and for vps_not_found. An empty string would assert that a host was chosen and has no name; absence says no host was chosen at all. Present on the single-host exec family; the fleet path names every host in its batch entries instead."
+    },
+    "host_source": {
+      "type": "string",
+      "enum": ["argv", "active_marker", "selector"],
+      "description": "Compatibility alias of target_source (0.5.5 spelling). How host_resolved was obtained. `argv` means the caller typed it in this invocation; `active_marker` means it was inherited from the file `connect` wrote, under the explicit --use-active opt-in; `selector` means it came from --all/--hosts/--tags. Comparing this between two runs is what turns a misdirected execution from an investigation into a string comparison."
+    },
+    "active_fallback": {
+      "type": "boolean",
+      "description": "True when target_resolved came from the active marker rather than argv, under the explicit --use-active opt-in. Redundant with target_source on purpose: a shell pipeline can branch on a boolean without knowing how the enum is spelled. The 0.5.5 aliases host_resolved and host_source carry the same values."
     }
   },
   "required": [
     "exit_code",
+    "error_code",
     "message",
     "error_class",
     "retryable"

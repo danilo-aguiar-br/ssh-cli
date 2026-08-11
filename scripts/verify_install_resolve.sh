@@ -7,6 +7,25 @@ TMP="$(mktemp -d)"
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
 
+# Build artefacts go to real disk, not into the scratch dir.
+#
+# `mktemp -d` honours TMPDIR, which on a typical Linux desktop is a `tmpfs` under a
+# per-user quota. This gate is the only one that compiles the whole dependency tree
+# from scratch, so it is the one that hits that ceiling — measured here as
+# `Disk quota exceeded (os error 122)` on `aws-lc-sys`, after the `test` gate had
+# already filled the same `tmpfs`. That is a red light caused by the host rather than
+# by the code, and a gate that cries wolf teaches the reader to skip it.
+#
+# Redirecting only the target dir is deliberate: what this gate proves is that the
+# dependency graph *re-resolves* without the repository lockfile, and that proof lives
+# entirely in the generated `Cargo.lock` inside "$TMP". Where the resulting objects
+# land is irrelevant to it, and a stable path lets the compile reuse work between runs.
+# It sits under `target/` — already ignored by git — in a subdirectory of its own,
+# because Cargo namespaces fingerprints by target-dir path: a nested directory is a
+# separate cache, so this gate cannot invalidate the project's own build artefacts.
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR_INSTALL_GATE:-$ROOT/target/install-resolve-gate}"
+mkdir -p "$CARGO_TARGET_DIR"
+
 # Fail if root still freezes crypto RC COMPAT pins (blocks clean resolve).
 if grep -E '^(elliptic-curve|primefield|primeorder|ecdsa|pkcs5)\s*=\s*"=0\.[0-9]+\.0-rc' "$ROOT/Cargo.toml"; then
   echo "FAIL: COMPAT RC pins still present in Cargo.toml (DEP-002)" >&2

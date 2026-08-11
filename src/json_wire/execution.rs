@@ -1,14 +1,28 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// G-COMP: exec/health/scp/sftp/tunnel JSON DTOs (extracted from json_wire monólito).
+// G-COMP: exec/health/scp/sftp/tunnel JSON DTOs (extracted from json_wire monolith).
 #![forbid(unsafe_code)]
 //! Typed JSON DTOs for one-shot SSH operation results.
 
 use crate::ssh::ExecutionOutput;
 use serde::{Deserialize, Serialize};
 
+// `TargetSource`, `ExecTarget` and the process-wide resolved-target slot live in
+// `json_wire/exec_target.rs`. They are re-exported from `json_wire` so call sites
+// are unaffected by the split.
+use super::exec_target::{ExecTarget, TargetEcho, TargetSource};
+
 /// `exec` / `sudo-exec` / `su-exec` JSON stdout.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecutionJson {
+    /// Canonical target fields plus their `host_*` read aliases.
+    #[serde(flatten)]
+    pub target: TargetEcho,
+    /// Whether the host was inherited from the active marker instead of argv.
+    ///
+    /// Redundant with [`TargetEcho::target_source`] on purpose: a boolean gate is what
+    /// a shell pipeline can branch on without knowing the enum spelling.
+    #[serde(default)]
+    pub active_fallback: bool,
     /// Captured remote stdout.
     pub stdout: String,
     /// Captured remote stderr.
@@ -23,9 +37,18 @@ pub struct ExecutionJson {
     pub duration_ms: u64,
 }
 
-impl From<&ExecutionOutput> for ExecutionJson {
-    fn from(o: &ExecutionOutput) -> Self {
+impl ExecutionJson {
+    /// Builds the envelope with the target identity attached.
+    ///
+    /// The only constructor, deliberately. A `From<&ExecutionOutput>` conversion used
+    /// to exist and filled the audit fields with empty values, because an
+    /// `ExecutionOutput` knows what happened and not where. Removing it makes an
+    /// envelope that disclaims its own target unrepresentable.
+    #[must_use]
+    pub fn with_target(o: &ExecutionOutput, target: &ExecTarget) -> Self {
         Self {
+            target: TargetEcho::new(target),
+            active_fallback: target.source.is_ambient(),
             stdout: o.stdout.clone(),
             stderr: o.stderr.clone(),
             exit_code: o.exit_code,
@@ -36,11 +59,30 @@ impl From<&ExecutionOutput> for ExecutionJson {
     }
 }
 
+// `From<&ExecutionOutput> for ExecutionJson` used to live here and filled
+// `host_resolved` with an empty string, because an `ExecutionOutput` knows what
+// happened and not where. Measured before removal: its only caller was a unit test,
+// so no production path ever emitted a host-less envelope — but the conversion was a
+// loaded gun pointing at GAP-SSH-EXEC-ENVELOPE-002. The first future `.into()` would
+// have produced an envelope that silently disclaims its own target, which is the
+// exact condition that gap exists to remove. [`ExecutionJson::with_target`] is now
+// the only constructor, so "envelope without a target" is unrepresentable rather
+// than merely discouraged.
+
 /// `health-check --json` stdout (single host).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HealthCheckJson {
     /// VPS name checked.
     pub name: String,
+    /// Resolved target under the canonical `target_*` names and the `host_*` aliases.
+    ///
+    /// The marker is reachable only through an explicit `--use-active`; a nameless
+    /// `health-check` is a usage error. Provenance is still reported, because the
+    /// opt-in is a claim about intent and the field is what makes it checkable: it
+    /// separates a host the caller typed from one `connect` last wrote, and a reader
+    /// auditing a probe after the fact cannot recover that from the name alone.
+    #[serde(flatten)]
+    pub target: TargetEcho,
     /// Always `"ok"` on success path.
     pub status: String,
     /// Round-trip latency in milliseconds.
@@ -135,6 +177,21 @@ pub struct ScpHostJson {
 pub struct ScpBatchJson {
     /// Discriminator.
     pub event: String,
+    /// How the host set was designated.
+    ///
+    /// [`TargetSource::Selector`] for the fleet paths, and [`TargetSource::Argv`] for
+    /// single-host multi-file (G-PAR-37 / G-PAR-47), which reuses this envelope for a
+    /// host the caller typed. Hardcoding `selector` would make that second case lie
+    /// about its own designation.
+    ///
+    /// There is deliberately no `target_resolved` here. A fleet run resolves to a
+    /// *set*, and every member is already named in `results[].name`; collapsing that
+    /// set into one scalar would be an assertion the run cannot make.
+    #[serde(default)]
+    pub target_source: TargetSource,
+    /// Compatibility alias of [`Self::target_source`] (0.5.5 spelling).
+    #[serde(default)]
+    pub host_source: TargetSource,
     /// Time-ordered UUID v7 correlating this multi-host run (G-DOM-05).
     pub batch_run_id: String,
     /// `"upload"` or `"download"`.
@@ -152,6 +209,16 @@ pub struct ScpTransferJson {
     pub ok: bool,
     /// Discriminator: `"scp-transfer"`.
     pub event: String,
+    /// Resolved target under the canonical `target_*` names and the `host_*` aliases.
+    ///
+    /// Explicit Target Designation: a transfer is a side effect, so the envelope has
+    /// to name the machine it landed on and say how that machine was chosen. Without
+    /// it a fleet transfer and a single-host transfer to the same name were the same
+    /// bytes, and a misdirected upload could not be detected from stdout alone. `vps`
+    /// carries the same string, but only [`TargetEcho::target_source`] states whether
+    /// the caller typed it or a selector produced it.
+    #[serde(flatten)]
+    pub target: TargetEcho,
     /// `"upload"` or `"download"`.
     pub direction: String,
     /// VPS name.
@@ -198,6 +265,12 @@ pub struct SftpTransferJson {
     pub ok: bool,
     /// Discriminator: `"sftp-transfer"`.
     pub event: String,
+    /// Resolved target under the canonical `target_*` names and the `host_*` aliases.
+    ///
+    /// Same reason as [`ScpTransferJson::target`]: a write to a remote filesystem must
+    /// declare which filesystem it reached.
+    #[serde(flatten)]
+    pub target: TargetEcho,
     /// `"upload"` or `"download"`.
     pub direction: String,
     /// VPS name.
@@ -284,6 +357,12 @@ pub struct SftpFsOpJson {
 pub struct SftpBatchJson {
     /// Discriminator: `"sftp-batch"`.
     pub event: String,
+    /// Provenance of the host set (see [`ScpBatchJson::target_source`]).
+    #[serde(default)]
+    pub target_source: TargetSource,
+    /// Compatibility alias of [`Self::target_source`] (0.5.5 spelling).
+    #[serde(default)]
+    pub host_source: TargetSource,
     /// UUID v7 batch id.
     pub batch_run_id: String,
     /// `"upload"` or `"download"`.
@@ -390,3 +469,7 @@ pub struct TunnelClosedJson {
     #[serde(default = "default_tunnel_mode")]
     pub mode: String,
 }
+
+#[cfg(test)]
+#[path = "execution_tests.rs"]
+mod tests;

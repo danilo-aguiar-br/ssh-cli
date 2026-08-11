@@ -1,5 +1,7 @@
 # Migration Guide
 
+> **0.5.5** — target-designation security release. Fixes GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decided the target host by positional *count*, so `exec <HOST> --step <CMD>` executed the host name as a remote binary on whatever host `connect` last selected. BREAKING: a lone positional is now a usage error; reach the active marker with the new `--use-active <COMMAND>`. The single-host envelope gained `target_resolved` and `target_source` — bind new consumers to those; `host_resolved`/`host_source` are the 0.5.5 read aliases — plus `active_fallback`, and `doctor` now reports `local.active_vps`.
+>
 > **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
 
 
@@ -9,6 +11,14 @@
 
 
 ## What Changes
+
+### Since 0.5.5
+- **BREAKING — a lone positional no longer designates a host (GAP-SSH-EXEC-ARGC-001, CWE-441).** `exec`, `sudo-exec` and `su-exec` used to read the target from the *count* of positionals, so `ssh-cli exec prod --step uptime` parsed `prod` as the command and ran it on whichever host `connect` had last marked. Same argv, different machine, no diagnostic. One positional is now a usage error (exit **64**).
+- **BREAKING — `health-check` requires a target too.** A nameless `health-check` exits **64** instead of silently probing the active marker.
+- **Reach the marker with `--use-active`.** `ssh-cli health-check --use-active` and `ssh-cli exec --use-active <COMMAND>` are the only ways to inherit what `connect` wrote. With no marker on disk they exit **66**. The split is stable across the whole CLI: **64** means no target was designated, **66** means the designated target does not exist.
+- **Three legal forms, and nothing else:** a name (`exec prod uptime`), a fleet selector (`--all`, `--hosts`, `--tags`), or the explicit `--use-active` opt-in. Wrappers that relied on the implicit form must pick one.
+- **`scp` and `sftp` follow the same rule.** Transfers name their host in argv; `--src`/`--dest` slots and positionals may not be mixed so that a leftover word silently becomes a hostname.
+- **Every envelope now carries its provenance.** `target_resolved`, `target_source` (`argv` | `active_marker` | `selector`) and `active_fallback` ship on success, and on the error envelope once the host was resolved — **absent**, never empty, when the failure predates resolution. `host_resolved` and `host_source` are read aliases of the first two, written from the same value; bind new consumers to the canonical `target_*` spelling. `doctor` reports `local.active_vps`.
 
 ### Since 0.5.4
 - **BREAKING — partial multi-host failure now exits `1` (was `65`).** Any wrapper that branched on `65` to mean "some hosts failed" must be updated. `65` is `EX_DATAERR`, which claims the *input* was malformed; a batch where three of ten hosts were unreachable had perfectly valid input, so the old code lied about the cause (G-ERR-R02). Check the batch envelope's per-host results, not just the process exit.
@@ -230,7 +240,7 @@ ssh-cli su-exec prod "id"
 - If rolling back to 0.3.9, do not expect working SCP wire (upgrade again to 0.4.0+ for transfers).
 - If rolling back below 0.5.3, do not trust SFTP upload integrity without external checksum (G1).
 
-## 0.5.3 wire format (schema v3) — current
+## Wire format: schema v3 — introduced in 0.5.3, current through 0.5.5
 
 - Current `schema_version` for new writes is 3 (not 2).
 - New writes use English TOML keys: `name`, `port`, `username`, `password`, `added_at`, …
@@ -257,9 +267,15 @@ ssh-cli su-exec prod "id"
 - Exit 65 covers `TomlDe` / bad import data; exit 77 is auth/host-key/permission; missing SCP file is exit 66 with `file not found: <path>`.
 - Graduated verbosity `-v`/`-vv`/`-vvv` (info/debug/trace), always crate-scoped (G2/G14).
 - SFTP upload integrity fixed (G1); SETSTAT atime+mtime (G3); fail-closed set_metadata (G4); perm mask (G12); batch cancel cardinality (G5/G17).
-- Suites: `tests/gaps_v042_integration.rs` + `tests/gaps_v051_integration.rs` + `tests/gaps_v056_ssh.rs` + `tests/gaps_v057_sftp.rs` + `tests/gaps_v058_e2e_residual.rs`; official e2e **E01–E18**.
+- Explicit Target Designation (0.5.5): the single-host `exec`/`sudo-exec`/`su-exec` envelope gained `target_resolved` and `target_source` — bind new consumers to those; `host_resolved`/`host_source` are read aliases written from the same value, never an independent source of truth.
+- `active_fallback` is the boolean shortcut for `target_source == "active_marker"`, so a shell pipeline can branch without knowing how the enum is spelled.
+- The provenance trio is **absent, never empty**, on the error envelope when the failure predates target resolution: absence says no host was chosen, while `""` would assert one was chosen and is nameless.
+- A lone positional on the exec family is now a usage error (exit **64**); reach the marker `connect` wrote with the explicit `--use-active <COMMAND>`, which exits **66** when no marker exists.
+- Fleet selectors `--all`, `--hosts` and `--tags` report `target_source: "selector"`; transfers never read the marker, so they report `argv` or `selector` only.
+- `doctor` reports `local.active_vps`, so the marker is auditable without reading the file behind the CLI's back.
+- Suites: `tests/gaps_v042_integration.rs` + `tests/gaps_v051_integration.rs` + `tests/gaps_v056_ssh.rs` + `tests/gaps_v057_sftp.rs` + `tests/gaps_v058_e2e_residual.rs`; target designation under `tests/gaps_v065_exec_target_designation.rs` and `tests/gaps_v066_transfer_target_designation.rs`; packaging reach under `tests/gaps_v067_packaging_reach.rs`; official e2e **E01–E18**.
 
-Product line: 0.5.4.
+Product line: 0.5.5.
 
 ## See Also
 - [HOW_TO_USE.md](HOW_TO_USE.md) — end-user command surface

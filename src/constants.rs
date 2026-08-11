@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // G-SECDEV-05: pure module — no `unsafe` permitted (crate root allows only OS FFI / test env).
 #![forbid(unsafe_code)]
-//! Named domain constants (Rules Rust — proibição de hardcode).
+//! Named domain constants (Rules Rust — no hardcoding).
 //!
 //! Compile-time values with semantic names live here. Runtime host credentials,
 //! per-VPS timeouts, and primary-key material are **never** hardcoded: they are
@@ -331,6 +331,30 @@ pub const IO_OVERSUBSCRIBE: usize = 4;
 /// Conservative CPU×IO cap when free RAM cannot be read (non-Linux).
 pub const NON_LINUX_CPU_CAP: usize = 8;
 
+// ── Wire error details (English by contract) ────────────────────────────────
+//
+// These are the *bodies* of failures that reach a JSON envelope, and the
+// envelope schema pins them to English: see the `message` description in
+// `docs/schemas/error-envelope.schema.json`, which states it stays English
+// regardless of `--lang`. Agents branch on `error_code`; prose that changes
+// with the operator's locale turns a stable discriminator into a moving one.
+//
+// They live here rather than inline because five modules raise the same three
+// failures, and a phrase copied five times drifts in four of them. The human
+// text mode still localizes the *label* around these bodies — that path runs
+// through `i18n::localized_error_text` and is untouched.
+
+/// Rejection when `scp upload` is pointed at anything but a regular file.
+pub const SCP_UPLOAD_FILE_ONLY_MSG: &str =
+    "upload only supports regular files (no directories / no -r)";
+
+/// Rejection when `scp download` is handed an existing directory as its target.
+pub const SCP_DOWNLOAD_LOCAL_NOT_DIRECTORY_MSG: &str =
+    "download local path must be a file path, not an existing directory";
+
+/// Abort raised when a signal arrives mid-transfer and the loop stops early.
+pub const OPERATION_CANCELLED_MSG: &str = "operation cancelled by user";
+
 // Compile-time invariants (const/static rules).
 const _: () = assert!(!APP_NAME.is_empty());
 const _: () = assert!(!CONFIG_FILE_NAME.is_empty());
@@ -375,3 +399,6 @@ const _: () = assert!(PRIMARY_KEY_HEX_LEN == PRIMARY_KEY_LEN_BYTES * 2);
 const _: () = assert!(AEAD_NONCE_LEN_BYTES == 12);
 const _: () = assert!(AEAD_TAG_LEN_BYTES == 16);
 const _: () = assert!(SECRET_FILE_MODE_UNIX == 0o600);
+const _: () = assert!(!SCP_UPLOAD_FILE_ONLY_MSG.is_empty());
+const _: () = assert!(!SCP_DOWNLOAD_LOCAL_NOT_DIRECTORY_MSG.is_empty());
+const _: () = assert!(!OPERATION_CANCELLED_MSG.is_empty());

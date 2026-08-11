@@ -1,9 +1,11 @@
 # ssh-cli
 
+> **0.5.5** — target-designation security release. Fixes GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decided the target host by positional *count*, so `exec <HOST> --step <CMD>` executed the host name as a remote binary on whatever host `connect` last selected. BREAKING: a lone positional is now a usage error; reach the active marker with the new `--use-active <COMMAND>`. The single-host envelope gained `target_resolved` and `target_source` — bind new consumers to those; `host_resolved`/`host_source` are the 0.5.5 read aliases — plus `active_fallback`, and `doctor` now reports `local.active_vps`.
+>
 > **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
 
 
-- Historical note: **0.4.2** closed TUN-003 / IO-010; **0.5.0** was the EN/API rename + secrets force-init reencrypt; current product line is **0.5.4** (tunnel `--reverse` / `--socks5` / `--remote-socket`, eight payload-shaping flags, `tunnel_closed`, partial multi-host exit **1**, security fixes A1–A3). **0.5.3** brought export/import agent roundtrip, wire schema v3 dual-read, secrets CLI flags and tunnel `--bind`, and also closed **G1–G19**: SFTP integrity (no zero-byte truncate), crate-scoped graduated verbosity `-v`/`-vv`/`-vvv` (no russh password dump), SETSTAT `atime`+`mtime`, batch cancel cardinality, single-step `exec` JSON, SCP `sync_data`, E2E SFTP checksum E17/E18.
+- Historical note: **0.4.2** closed TUN-003 / IO-010; **0.5.0** was the EN/API rename + secrets force-init reencrypt; current product line is **0.5.5** (tunnel `--reverse` / `--socks5` / `--remote-socket`, eight payload-shaping flags, `tunnel_closed`, partial multi-host exit **1**, security fixes A1–A3). **0.5.3** brought export/import agent roundtrip, wire schema v3 dual-read, secrets CLI flags and tunnel `--bind`, and also closed **G1–G19**: SFTP integrity (no zero-byte truncate), crate-scoped graduated verbosity `-v`/`-vv`/`-vvv` (no russh password dump), SETSTAT `atime`+`mtime`, batch cancel cardinality, single-step `exec` JSON, SCP `sync_data`, E2E SFTP checksum E17/E18.
 
 [![docs.rs](https://img.shields.io/docsrs/ssh-cli)](https://docs.rs/ssh-cli)
 [![crates.io](https://img.shields.io/crates/v/ssh-cli)](https://crates.io/crates/ssh-cli)
@@ -23,7 +25,7 @@
 - Follow first use in [docs/HOW_TO_USE.md](docs/HOW_TO_USE.md).
 - Copy recipes from [docs/COOKBOOK.md](docs/COOKBOOK.md).
 - Check platforms in [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md).
-- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.5.4**).
+- Migrate from 0.3.3+ in [docs/MIGRATION.md](docs/MIGRATION.md) (target line **0.5.5**).
 - Run tests via [docs/TESTING.md](docs/TESTING.md).
 - Consume JSON contracts under [docs/schemas/README.md](docs/schemas/README.md).
 - Teach LLMs with [skills/ssh-cli-en/SKILL.md](skills/ssh-cli-en/SKILL.md).
@@ -175,27 +177,32 @@ ssh-cli exec prod "hostname" --json
 | `ssh-cli commands` | Emit full command tree as JSON (agent discovery) |
 | `ssh-cli vps export` | Export hosts in the **resolved output format**: JSON on any non-TTY stdout, even into a `.toml` filename; `--output-format text` for a TOML body; secrets redacted by default; empty secrets stay `""` (never fake `sshcli-enc:`); `--include-secrets` to pipe/non-TTY requires `-o`/`--output` or `--i-understand-secrets-on-stdout` |
 | `ssh-cli vps import --file` | Import hosts from **TOML** (EN keys + PT aliases) **or** JSON `vps-export` envelope; redacted skeletons need `--allow-incomplete` |
-| `ssh-cli connect <name>` | Write sibling `active` file |
+| `ssh-cli connect <name>` | Write sibling `active` file (a marker only — it opens no session) |
+| **Target designation (0.5.5)** | Every remote surface demands an explicit target: `<VPS> <COMMAND>`, a selector (`--all` / `--hosts a,b` / `--tags prod`), or the marker on purpose via `--use-active`. A lone positional is a usage error (exit **64**) — it used to run the host name as a remote binary on whichever host `connect` last selected (GAP-SSH-EXEC-ARGC-001, CWE-441). Read `target_resolved` and `target_source` back before trusting a mutation |
 | `ssh-cli exec <vps> <cmd>` | One-shot remote command |
+| `ssh-cli exec --hosts a,b '<cmd>'` / `--tags prod` | Explicit fleet subset; `--tags` matches any host carrying any listed tag |
+| `ssh-cli exec --use-active '<cmd>'` | Deliberate opt-in to the `connect` marker; exit **66** when no marker exists |
 | `ssh-cli exec --all '<cmd>'` | **Bounded concurrent** remote command on every registered host (`exec-batch` JSON) |
 | `ssh-cli sudo-exec <vps> <cmd>` / `--all` | One-shot sudo with safe packing (fleet with `--all`) |
 | `ssh-cli su-exec <vps> <cmd>` / `--all` | One-shot `su -` elevation (fleet with `--all`) |
-| `ssh-cli scp upload|download` | Regular files only (no `-r` on SCP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--use-agent`, `--json` → `scp-transfer` schema; missing remote → exit **66**; **`--all`** → `scp-batch` |
-| `ssh-cli sftp upload\|download\|ls\|mkdir\|rmdir\|rm\|stat\|rename` | SFTP v3 subsystem (**0.5.3** integrity: no zero-byte truncate); `--recursive` trees (no symlink follow); auth parity with scp; JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch` |
+| `ssh-cli scp upload` / `ssh-cli scp download` | Regular files only (no `-r` on SCP); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase[-stdin]`, `--use-agent`, `--json` → `scp-transfer` schema; missing remote → exit **66**; **`--all`** → `scp-batch` |
+| `ssh-cli sftp upload` / `ssh-cli sftp download` | SFTP v3 transfers (**0.5.3** integrity: no zero-byte truncate); `--recursive` trees (no symlink follow); auth parity with scp; JSON `sftp-transfer` / `sftp-batch` |
+| `ssh-cli sftp ls` / `ssh-cli sftp stat` | Read remote filesystem state; JSON `sftp-list` / `sftp-fs-op` |
+| `ssh-cli sftp mkdir` / `ssh-cli sftp rmdir` / `ssh-cli sftp rm` / `ssh-cli sftp rename` | Mutate remote filesystem; `rmdir` needs an empty directory; `rm` and `rmdir` preview under `--dry-run`; JSON `sftp-fs-op` |
 | `ssh-cli tunnel ... --timeout-ms N [--bind ADDR] [--json]` | Bounded local port forward; `--bind` default `127.0.0.1`; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`; `--json` emits `tunnel_listening` after bind; post-bind deadline exits **0** (pre-bind timeout still **74**); concurrent accepts gated by `--max-concurrency` |
 | `ssh-cli tunnel <vps> <port> --socks5 --timeout-ms N` | SOCKS5 proxy (RFC 1928, no-auth `CONNECT`); each connection opens one SSH channel; host names resolve on the remote side; `BIND`/`UDP ASSOCIATE` answered `0x07` |
 | `ssh-cli tunnel <vps> <port> --remote-socket PATH --timeout-ms N` | Forwards a local port to a Unix domain socket on the remote host; `PATH` must be absolute (it names the **server's** filesystem) |
 | `ssh-cli tunnel <vps> <port> <bind> <rport> --reverse --timeout-ms N` | Server listens on `<bind>:<rport>` and delivers back to local `<port>`; `<rport> 0` lets the server allocate and report it in `local_port`; a non-loopback `<bind>` requires `--i-accept-network-exposure` |
 | `ssh-cli --dry-run <destructive command>` | Prints the plan and exits without executing (`vps remove`, `vps import`, `sftp rm`, `sftp rmdir`, `secrets init`, `secrets reencrypt`); rejected with exit **64** on any other command |
 | `ssh-cli health-check [<vps>] [--timeout N]` / `--all` | Connectivity probe; optional `--timeout` ms; auth `--password-stdin` / `--key` / `--key-passphrase[-stdin]`; **`--all`** → fleet probe (`health-check-batch`) |
-| `ssh-cli secrets status|init|reencrypt` | Master-key and at-rest encryption (never prints key); `--json` emits `secrets-init` / `secrets-reencrypt`; first secret write folds `secrets_key_auto_created: true` into the same `vps-added` JSON (one document); flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` |
+| `ssh-cli secrets status` / `ssh-cli secrets init` / `ssh-cli secrets reencrypt` | Master-key and at-rest encryption (never prints key); `--json` emits `secrets-init` / `secrets-reencrypt`; first secret write folds `secrets_key_auto_created: true` into the same `vps-added` JSON (one document); flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` |
 | `ssh-cli completions <shell>` | Shell completion scripts |
-| `ssh-cli locale show\|set\|clear` | UI language resolution (`show` default; `set` persists XDG `lang`; `clear` removes preference) |
+| `ssh-cli locale show` / `ssh-cli locale set` / `ssh-cli locale clear` | UI language resolution (`show` default; `set` persists XDG `lang`; `clear` removes preference) |
 | `ssh-cli tls provider` | rustls `CryptoProvider` status (`aws_lc_rs`) |
 | `ssh-cli tls paths` | XDG TLS directory layout |
-| `ssh-cli tls mtls list\|import\|show\|remove` | mTLS identity store under XDG `tls/mtls/` |
-| `ssh-cli tls acme account create\|show` | ACME account lifecycle |
-| `ssh-cli tls acme issue\|complete\|status\|list` | ACME DNS-01 cert lifecycle |
+| `ssh-cli tls mtls list` / `ssh-cli tls mtls import` / `ssh-cli tls mtls show` / `ssh-cli tls mtls remove` | mTLS identity store under XDG `tls/mtls/` |
+| `ssh-cli tls acme account create` / `ssh-cli tls acme account show` | ACME account lifecycle |
+| `ssh-cli tls acme issue` / `ssh-cli tls acme complete` / `ssh-cli tls acme status` / `ssh-cli tls acme list` | ACME DNS-01 cert lifecycle; `issue --print-challenge` then publish DNS TXT, then `complete` |
 | `ssh-cli --max-concurrency N …` | Global cap (1..=64) for multi-host fan-out and tunnel forwards (auto CPUs×RAM formula when omitted) |
 | `ssh-cli -v` / `-vv` / `-vvv` | Graduated verbosity: info / debug / trace; always crate-scoped (`warn,ssh_cli=*`); ambient `RUST_LOG` ignored (G2/G14) |
 
@@ -315,7 +322,8 @@ ssh-cli exec prod "hostname" --json
 
 ## Changelog
 - Read version history in [CHANGELOG.md](CHANGELOG.md).
-- Do not paste release notes into this README.
+- The banner above and the one-line product-line note are the only history this README carries, and `tests/docs_conformance.rs` requires the latter so a reader landing on 0.5.x knows which line they are on.
+- Do not paste per-release notes beyond that: the changelog is the one place they age correctly, and a second copy here drifts from it silently.
 
 
 ## License

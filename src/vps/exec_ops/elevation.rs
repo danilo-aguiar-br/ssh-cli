@@ -31,12 +31,17 @@ pub async fn run_sudo_exec(
         .await;
     }
     let vps_name = expect_single(selection)?;
+    let target = crate::json_wire::ExecTarget::new(vps_name.clone(), opts.target_source);
     let path = resolve_config_path(config_override.as_deref())?;
     let mut file = load(&path)?;
     let mut vps = file
         .hosts
         .remove(&vps_name)
         .ok_or(SshCliError::VpsNotFound(vps_name))?;
+    // GAP-SSH-EXEC-ENVELOPE-002: see `single.rs` — published after the lookup so a
+    // `VpsNotFound` never claims a resolved host. Elevation needs this more than the
+    // plain path does: a misdirected `sudo` step writes root-owned state.
+    crate::json_wire::set_resolved_target(&target);
 
     apply_overrides(&mut vps, opts.take_auth_overrides());
     if opts.disable_sudo || vps.disable_sudo {
@@ -49,7 +54,7 @@ pub async fn run_sudo_exec(
     }
     let cfg = build_connection_config(&vps, Some(&path), opts.replace_host_key);
     let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
-    run_sudo_exec_with_client_steps(&vps, &cmd, &opts.steps, client, format, json).await
+    run_sudo_exec_with_client_steps(&vps, &cmd, &opts.steps, client, format, json, &target).await
 }
 
 /// Testable version of sudo-exec.
@@ -60,7 +65,9 @@ pub async fn run_sudo_exec_with_client(
     format: OutputFormat,
     json: bool,
 ) -> Result<()> {
-    run_sudo_exec_with_client_steps(vps, command, &[], client, format, json).await
+    let target =
+        crate::json_wire::ExecTarget::new(vps.name.as_str(), crate::json_wire::TargetSource::Argv);
+    run_sudo_exec_with_client_steps(vps, command, &[], client, format, json, &target).await
 }
 
 /// G-O3 parity: `sudo-exec` primary command plus `--step` commands on one session.
@@ -75,6 +82,7 @@ pub async fn run_sudo_exec_with_client_steps(
     client: Box<dyn SshClientTrait>,
     format: OutputFormat,
     json: bool,
+    target: &crate::json_wire::ExecTarget,
 ) -> Result<()> {
     if crate::signals::should_stop() {
         return Err(cancelled_err());
@@ -86,7 +94,7 @@ pub async fn run_sudo_exec_with_client_steps(
         .iter()
         .map(|c| PreparedStep::packed(c, pack_sudo(c, vps.sudo_password.as_ref())))
         .collect();
-    run_prepared_steps(vps, prepared, client, format, json).await
+    run_prepared_steps(vps, prepared, client, format, json, target).await
 }
 
 /// Runs a command via `su -` one-shot (consumes `su_password`).
@@ -116,12 +124,17 @@ pub async fn run_su_exec(
         .await;
     }
     let vps_name = expect_single(selection)?;
+    let target = crate::json_wire::ExecTarget::new(vps_name.clone(), opts.target_source);
     let path = resolve_config_path(config_override.as_deref())?;
     let mut file = load(&path)?;
     let mut vps = file
         .hosts
         .remove(&vps_name)
         .ok_or(SshCliError::VpsNotFound(vps_name))?;
+    // GAP-SSH-EXEC-ENVELOPE-002: see `single.rs` — published after the lookup so a
+    // `VpsNotFound` never claims a resolved host. Elevation needs this more than the
+    // plain path does: a misdirected `sudo` step writes root-owned state.
+    crate::json_wire::set_resolved_target(&target);
 
     apply_overrides(&mut vps, opts.take_auth_overrides());
     if opts.disable_sudo || vps.disable_sudo {
@@ -145,5 +158,5 @@ pub async fn run_su_exec(
         .collect();
     let cfg = build_connection_config(&vps, Some(&path), opts.replace_host_key);
     let client: Box<dyn SshClientTrait> = <SshClient as SshClientTrait>::connect(cfg).await?;
-    run_prepared_steps(&vps, prepared, client, format, json).await
+    run_prepared_steps(&vps, prepared, client, format, json, &target).await
 }

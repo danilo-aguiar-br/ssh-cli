@@ -77,12 +77,20 @@ EOF
 # id|description|command
 # Order matters: fmt and the build come first because they are the cheapest signals,
 # and because a tree that does not compile makes every later gate meaningless.
+#
+# `exec-target` runs a suite `test` already covers, and that redundancy is the point.
+# GAP-SSH-EXEC-ARGC-001 was an argv that executed a day of configuration on a machine
+# nobody named; a regression there is not one red test among nine hundred, it is a
+# safety property coming back off. Naming it as its own gate means the report says
+# which property broke instead of "the suite failed", and `--only exec-target` gives
+# a sub-second check of that one property.
 GATES=(
   "fmt|rustfmt is clean|cargo fmt --manifest-path '$MANIFEST' --all --check"
   "build-release|release build succeeds|cargo build --manifest-path '$MANIFEST' --release"
   "build-no-default|builds without default features (Windows path, A8)|cargo build --manifest-path '$MANIFEST' --no-default-features"
   "clippy|clippy clean with warnings denied|cargo clippy --manifest-path '$MANIFEST' --all-targets --all-features -- -D warnings"
   "test|full test suite green|cargo test --manifest-path '$MANIFEST' --locked --all-features"
+  "exec-target|the dangerous exec argv stays rejected (GAP-SSH-EXEC-ARGC-001)|cargo test --manifest-path '$MANIFEST' --locked --all-features --test gaps_v065_exec_target_designation"
   "deny|supply chain clean|cargo deny --manifest-path '$MANIFEST' check"
   "cross-targets|windows and macos type-check (B1)|bash '$ROOT/scripts/check_cross_targets.sh'"
   "advisory-freshness|advisory database is current|bash '$ROOT/scripts/check_advisory_freshness.sh'"

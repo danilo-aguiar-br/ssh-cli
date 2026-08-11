@@ -7,6 +7,16 @@
   "additionalProperties": true,
   "required": ["event", "batch_run_id", "direction", "max_concurrency", "results"],
   "properties": {
+    "target_source": {
+      "type": "string",
+      "const": "selector",
+      "description": "A batch envelope exists only because --all/--hosts produced the host set, so the provenance is constant. There is deliberately no target_resolved: a fleet run resolves to a set, and every member is named in results[].name."
+    },
+    "host_source": {
+      "type": "string",
+      "const": "selector",
+      "description": "Compatibility alias of target_source (0.5.5 spelling)."
+    },
     "event": { "type": "string", "const": "sftp-batch" },
     "batch_run_id": {
       "type": "string",

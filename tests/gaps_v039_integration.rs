@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Regressão e2e dos gaps residuais da auditoria pós-0.3.8 (v0.3.9).
+//! End-to-end regression for the residual gaps from the post-0.3.8 audit (0.3.9).
 //!
 //! IDs: LOG-001, JSON-001, CLI-004, DOC-003 (version string), DENY-002 (policy),
-//! REL-003 (tag/version), CHG-001 (docs), SEC-001..003 (higiene de exposição).
+//! REL-003 (tag/version), CHG-001 (docs), SEC-001..003 (exposure hygiene).
 //! Usa apenas credenciais FALSAS.
 
 use assert_cmd::Command;
@@ -84,7 +84,7 @@ fn write_ed25519(tmp: &TempDir) -> Option<std::path::PathBuf> {
 
 #[test]
 #[serial]
-fn gap_log_001_tunnel_json_stderr_sem_info_prosa() {
+fn gap_log_001_tunnel_json_stderr_has_no_info_prose() {
     let tmp = TempDir::new().unwrap();
     add_host_password(&tmp, "tlog");
     let assert = cmd_json(&tmp)
@@ -102,15 +102,15 @@ fn gap_log_001_tunnel_json_stderr_sem_info_prosa() {
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     assert!(
         !stderr.contains("Tunnel SSH:"),
-        "stderr não deve ter prosa INFO: {stderr}"
+        "stderr must carry no INFO prose: {stderr}"
     );
     assert!(
         !stderr.contains("iniciando tunnel"),
-        "stderr não deve ter INFO default: {stderr}"
+        "stderr must not default to INFO: {stderr}"
     );
     assert!(
         stderr.contains("\"exit_code\""),
-        "stderr deve conter envelope JSON: {stderr}"
+        "stderr must carry the JSON envelope: {stderr}"
     );
 }
 
@@ -149,7 +149,7 @@ fn gap_json_001_key_only_password_null() {
 
 #[test]
 #[serial]
-fn gap_json_001_com_password_continua_mascara() {
+fn gap_json_001_password_stays_masked() {
     let tmp = TempDir::new().unwrap();
     add_host_password(&tmp, "withpwd");
     cmd_json(&tmp)
@@ -166,15 +166,17 @@ fn gap_json_001_com_password_continua_mascara() {
 #[serial]
 fn gap_cli_004_health_check_aceita_timeout() {
     let tmp = TempDir::new().unwrap();
-    // clap aceita a flag (falha de domínio sem VPS, não parse error)
+    // clap accepts the flag; without a VPS this is a domain failure, not a parse error.
+    // `--use-active` designates the target explicitly (GAP-SSH-EXEC-ARGC-001); without
+    // it the run would fail at argv parsing and never reach the flag under test.
     let assert = cmd(&tmp)
-        .args(["health-check", "--json", "--timeout", "50"])
+        .args(["health-check", "--use-active", "--json", "--timeout", "50"])
         .assert()
         .failure();
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     assert!(
         !stderr.contains("unexpected argument"),
-        "health-check deve aceitar --timeout: {stderr}"
+        "health-check must accept --timeout: {stderr}"
     );
     assert!(
         stderr.contains("66") || stderr.contains("Nenhuma VPS") || stderr.contains("ativa"),
@@ -186,8 +188,8 @@ fn gap_cli_004_health_check_aceita_timeout() {
 
 #[test]
 #[serial]
-fn gap_doc_003_version_contem_039() {
-    // Suite histórica 0.3.9: product line current é 0.4.0+ (mantém regressão de behaviours LOG/JSON/CLI).
+fn gap_doc_003_version_mentions_039() {
+    // Historical 0.3.9 suite; the product line is 0.4.0+ and this keeps the LOG/JSON/CLI behaviour regression.
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .arg("--version")
@@ -198,7 +200,7 @@ fn gap_doc_003_version_contem_039() {
 
 /// Product-line public docs must state current package version (not stale 0.3.6-as-current).
 #[test]
-fn gap_doc_003_product_line_docs_contem_039() {
+fn gap_doc_003_product_line_docs_mention_039() {
     let current = env!("CARGO_PKG_VERSION");
     const FILES: &[&str] = &[
         "README.md",
@@ -228,7 +230,7 @@ fn gap_doc_003_product_line_docs_contem_039() {
         let body = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("ler {path}: {e}"));
         assert!(
             body.contains(current),
-            "{path} deve mencionar product line {current}"
+            "{path} must mention product line {current}"
         );
         // HOW_TO_USE/COOKBOOK/TESTING/CROSS_PLATFORM must not claim current line is only 0.3.6
         if path.contains("HOW_TO_USE")
@@ -262,15 +264,15 @@ fn gap_doc_003_residual_behaviors_documentados() {
         assert!(
             body.to_ascii_lowercase().contains("error")
                 && (body.contains("RUST_LOG") || body.contains("tracing")),
-            "{label} deve documentar default tracing error / RUST_LOG"
+            "{label} must document the default tracing error level and RUST_LOG"
         );
         assert!(
             body.contains("null"),
-            "{label} deve documentar password JSON null"
+            "{label} must document the JSON null password"
         );
         assert!(
             body.contains("health-check") && body.contains("--timeout"),
-            "{label} deve documentar health-check --timeout"
+            "{label} must document health-check --timeout"
         );
     }
     for (label, skill) in [("en", skill_en.as_str()), ("pt", skill_pt.as_str())] {
@@ -287,7 +289,7 @@ fn gap_doc_003_residual_behaviors_documentados() {
                 && !skill.contains("in version 0.3.9")
                 && !skill.contains("versão 0.3.9")
                 && !skill.contains("na versão 0.3.9"),
-            "skill {label} deve consolidar null/timeout/error/envelope/quiet sem changelog por versão"
+            "skill {label} must consolidate null/timeout/error/envelope/quiet without a per-version changelog"
         );
         // Frontmatter description constraints (GraphRAG skill rules).
         let fm = skill
@@ -302,21 +304,21 @@ fn gap_doc_003_residual_behaviors_documentados() {
         let desc = desc_line.trim_start_matches("description:").trim();
         assert!(
             desc.chars().count() < 1024,
-            "skill {label} description deve ter < 1024 chars (got {})",
+            "skill {label} description must be under 1024 chars (got {})",
             desc.chars().count()
         );
         assert_eq!(
             desc.matches(':').count(),
             0,
-            "skill {label} description NÃO DEVE conter ':' no conteúdo"
+            "skill {label} description MUST NOT contain ':' in its body"
         );
         assert!(
             desc.starts_with("This skill MUST") || desc.starts_with("Esta skill DEVE"),
-            "skill {label} description DEVE ser terceira pessoa com auto-ativação"
+            "skill {label} description MUST be third person and declare auto-activation"
         );
         assert!(
             desc.contains("auto-activate") || desc.contains("auto-ativar"),
-            "skill {label} description DEVE declarar auto-ativação"
+            "skill {label} description MUST declare auto-activation"
         );
     }
 
@@ -326,24 +328,24 @@ fn gap_doc_003_residual_behaviors_documentados() {
     let password_block = schema
         .split("\"password\"")
         .nth(1)
-        .expect("schema deve declarar propriedade password");
+        .expect("schema must declare the password property");
     // First property after "password" key: type array must list string and null.
     let window: String = password_block.chars().take(120).collect();
     assert!(
         window.contains("null") && window.contains("string"),
-        "vps-show.schema.json password deve permitir type null|string (JSON-001): {window}"
+        "vps-show.schema.json password must allow type null|string (JSON-001): {window}"
     );
 }
 
 // --- DENY-002 policy still yanked=deny ignore empty ---
 
 #[test]
-fn gap_deny_002_deny_toml_sem_ignore_cve() {
+fn gap_deny_002_deny_toml_ignores_no_cve() {
     let deny = std::fs::read_to_string("deny.toml").expect("deny.toml");
     assert!(deny.contains("yanked = \"deny\"") || deny.contains("yanked=\"deny\""));
     assert!(
         deny.contains("ignore = []") || deny.contains("ignore=[]"),
-        "ignore deve permanecer vazio"
+        "ignore must stay empty"
     );
     // A3: the assertion used to pin `multiple-versions = "warn"` literally, which meant
     // *tightening* the policy broke the test while loosening it to `allow` would have
@@ -366,31 +368,34 @@ fn gap_deny_002_deny_toml_sem_ignore_cve() {
 #[test]
 fn gap_chg_001_changelog_tem_039() {
     let ch = std::fs::read_to_string("CHANGELOG.md").expect("CHANGELOG");
-    assert!(ch.contains("## [0.3.9]"), "CHANGELOG deve ter seção 0.3.9");
+    assert!(
+        ch.contains("## [0.3.9]"),
+        "CHANGELOG must carry a 0.3.9 section"
+    );
     assert!(
         ch.contains("[0.3.9]:") || ch.contains("compare/v0.3.8"),
-        "CHANGELOG deve ter âncora/link 0.3.9"
+        "CHANGELOG must carry a 0.3.9 anchor or link"
     );
 }
 
 // --- SEC-001..003: higiene anti-vazamento (auditoria workspace) ---
 
 #[test]
-fn gap_sec_001_setting_cyber_ignorado_por_diretorio() {
+fn gap_sec_001_setting_cyber_ignored_by_directory() {
     let gi = std::fs::read_to_string(".gitignore").expect(".gitignore");
     assert!(
         gi.lines().any(|l| l.trim() == ".setting.cyber/"),
-        ".gitignore DEVE ignorar o diretório .setting.cyber/ (não só *.log)"
+        ".gitignore MUST ignore the .setting.cyber/ directory, not just *.log"
     );
     let cargo = std::fs::read_to_string("Cargo.toml").expect("Cargo.toml");
     assert!(
         cargo.contains("\".setting.cyber/\""),
-        "Cargo.toml exclude DEVE listar .setting.cyber/"
+        "Cargo.toml exclude MUST list .setting.cyber/"
     );
     let cargoignore = std::fs::read_to_string(".cargoignore").expect(".cargoignore");
     assert!(
         cargoignore.lines().any(|l| l.trim() == ".setting.cyber/"),
-        ".cargoignore DEVE listar .setting.cyber/"
+        ".cargoignore MUST list .setting.cyber/"
     );
 }
 
@@ -411,7 +416,7 @@ fn gap_sec_001_setting_cyber_ignorado_por_diretorio() {
 /// far as Cargo's engine is concerned. It is asserted anyway because the repository maintains it
 /// and a half-updated hygiene file is worse than a consistent one.
 #[test]
-fn gap_sec_001b_todo_sidecar_pontuado_esta_barrado_do_pacote() {
+fn gap_sec_001b_every_dotted_sidecar_is_barred_from_the_package() {
     // Deliberately packaged or invisible to Cargo; everything else must be barred.
     const ALLOWED: &[&str] = &[".git", ".cargo"];
 
@@ -437,47 +442,47 @@ fn gap_sec_001b_todo_sidecar_pontuado_esta_barrado_do_pacote() {
     for name in &sidecars {
         let dir = format!("{name}/");
         if !gitignore.lines().any(|l| l.trim() == dir) {
-            missing.push(format!("{dir} ausente em .gitignore"));
+            missing.push(format!("{dir} missing from .gitignore"));
         }
         if !cargo_toml.contains(&format!("\"{dir}\"")) {
-            missing.push(format!("{dir} ausente no exclude de Cargo.toml"));
+            missing.push(format!("{dir} missing from the Cargo.toml exclude"));
         }
         if !cargoignore.lines().any(|l| l.trim() == dir) {
-            missing.push(format!("{dir} ausente em .cargoignore"));
+            missing.push(format!("{dir} missing from .cargoignore"));
         }
     }
 
     assert!(
         missing.is_empty(),
-        "sidecar pontuado sem barreira de empacotamento:\n  {}\n\
-         Cargo empacota arquivo nao rastreado E nao ignorado, entao nao estar no git NAO protege. \
-         Barre o diretorio em .gitignore, no exclude de Cargo.toml e em .cargoignore, ou \
-         acrescente-o a ALLOWED se ele deve mesmo ser publicado.",
+        "dotted sidecar with no packaging barrier:\n  {}\n\
+         Cargo packages any file that is neither tracked nor ignored, so being absent from \
+         git is NOT protection. Bar the directory in .gitignore, in the Cargo.toml exclude \
+         and in .cargoignore, or add it to ALLOWED if it really is meant to ship.",
         missing.join("\n  ")
     );
 }
 
 #[test]
-fn gap_sec_002_e2e_recusa_grok_config_dentro_do_repo() {
+fn gap_sec_002_e2e_refuses_a_grok_config_inside_the_repo() {
     let script = std::fs::read_to_string("scripts/e2e_real_ssh.sh").expect("e2e script");
     assert!(
         script.contains("must not live inside the repository"),
-        "e2e_real_ssh.sh DEVE recusar grok config sob a raiz do repo"
+        "e2e_real_ssh.sh MUST refuse a grok config under the repository root"
     );
     assert!(
         script.contains("GROK_CFG_ABS") && script.contains("ROOT_ABS"),
-        "e2e_real_ssh.sh DEVE comparar path absoluto do grok config com ROOT"
+        "e2e_real_ssh.sh MUST compare the grok config absolute path against ROOT"
     );
     let testing = std::fs::read_to_string("docs/TESTING.md").expect("TESTING");
     assert!(
         testing.contains("$HOME/.grok/config.toml")
             && testing.contains("never copy it into this repository"),
-        "TESTING.md DEVE documentar grok config só em $HOME"
+        "TESTING.md MUST document grok config as $HOME-only"
     );
 }
 
 #[test]
-fn gap_sec_003_docs_sem_s3cret_usa_placeholder_demo() {
+fn gap_sec_003_docs_use_a_demo_placeholder_not_s3cret() {
     for path in [
         "README.md",
         "README.pt-BR.md",
@@ -487,18 +492,18 @@ fn gap_sec_003_docs_sem_s3cret_usa_placeholder_demo() {
         let body = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("ler {path}: {e}"));
         assert!(
             !body.contains("s3cret"),
-            "{path} não deve usar senha demo ambígua 's3cret'"
+            "{path} must not use the ambiguous demo password 's3cret'"
         );
         if body.contains("password-stdin") || body.contains("vps add") {
             assert!(
                 body.contains("demo-password-not-real"),
-                "{path} deve usar placeholder demo-password-not-real"
+                "{path} must use the demo-password-not-real placeholder"
             );
         }
     }
     let sec = std::fs::read_to_string("SECURITY.md").expect("SECURITY");
     assert!(
         sec.contains(".setting.cyber/") && sec.contains("demo-password-not-real"),
-        "SECURITY.md deve documentar higiene SEC-001/003"
+        "SECURITY.md must document SEC-001/003 hygiene"
     );
 }

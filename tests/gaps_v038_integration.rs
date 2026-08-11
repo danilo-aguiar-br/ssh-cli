@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Regressão e2e 1:1 dos gaps produto 0.3.7 + residuais 0.3.8 (TEST-004).
+//! One-to-one end-to-end regression for the 0.3.7 product gaps plus the 0.3.8 residuals (TEST-004).
 //!
 //! Usa apenas senhas/caminhos FALSOS. Nunca credenciais reais SSH.
 
@@ -122,7 +122,7 @@ fn gap_val_002_rejects_port_zero() {
 
 #[test]
 #[serial]
-fn gap_val_003_rejeita_key_inexistente() {
+fn gap_val_003_rejects_a_missing_key() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -144,7 +144,7 @@ fn gap_val_003_rejeita_key_inexistente() {
 
 #[test]
 #[serial]
-fn gap_val_004_key_lixo_rejeitada() {
+fn gap_val_004_garbage_key_is_rejected() {
     let tmp = TempDir::new().unwrap();
     let key = tmp.path().join("not-a-key");
     std::fs::write(&key, b"this is not an openssh private key\n").unwrap();
@@ -195,7 +195,7 @@ fn gap_io_002_health_check_aceita_json_local() {
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     assert!(
         !stderr.contains("unexpected argument"),
-        "health-check --json deve ser flag válida: {stderr}"
+        "health-check --json must be a valid flag: {stderr}"
     );
 }
 
@@ -237,7 +237,7 @@ fn gap_io_004_quiet_suprime_sucesso() {
 
 #[test]
 #[serial]
-fn gap_io_005_doctor_json_sem_println_cru() {
+fn gap_io_005_doctor_json_avoids_raw_println() {
     let tmp = TempDir::new().unwrap();
     cmd_json(&tmp)
         .args(["vps", "doctor"])
@@ -278,7 +278,7 @@ fn gap_io_006_tunnel_no_banner_nontty() {
 
 #[test]
 #[serial]
-fn gap_tun_001_timeout_curto_nao_hang() {
+fn gap_tun_001_short_timeout_does_not_hang() {
     let tmp = TempDir::new().unwrap();
     add_host(&tmp, "tun2");
     let start = std::time::Instant::now();
@@ -296,13 +296,13 @@ fn gap_tun_001_timeout_curto_nao_hang() {
         .failure();
     assert!(
         start.elapsed().as_secs() < 15,
-        "tunnel com timeout 100ms não deve hang >15s"
+        "a tunnel with a 100ms timeout must not hang past 15s"
     );
 }
 
 #[test]
 #[serial]
-fn gap_scp_001_upload_arquivo_local_antes_connect() {
+fn gap_scp_001_upload_checks_local_file_before_connect() {
     let tmp = TempDir::new().unwrap();
     add_host(&tmp, "scp1");
     cmd(&tmp)
@@ -380,7 +380,7 @@ fn gap_cli_001_su_exec_aceita_password_stdin() {
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     assert!(
         !stderr.contains("unexpected argument"),
-        "su-exec --password-stdin deve ser válido: {stderr}"
+        "su-exec --password-stdin must be valid: {stderr}"
     );
 }
 
@@ -424,10 +424,14 @@ fn gap_sec_001_packing_unit_via_lib() {
 
 #[test]
 #[serial]
-fn gap_exit_002_sem_vps_ativa_66() {
+fn gap_exit_002_no_active_vps_exits_66() {
     let tmp = TempDir::new().unwrap();
+    // GAP-SSH-EXEC-ARGC-001 narrowed this contract in 0.5.5. Omitting the name is no
+    // longer a request for the active marker — it is an undesignated target, which is
+    // exit 64. Exit 66 now means what it says: the target was designated (here by
+    // `--use-active`) and does not exist. The old shape conflated the two.
     cmd_json(&tmp)
-        .args(["health-check"])
+        .args(["health-check", "--use-active"])
         .assert()
         .failure()
         .code(66)
@@ -529,7 +533,7 @@ fn gap_test_001_signals_api() {
 
 #[test]
 #[serial]
-fn gap_test_002_version_contem_semver() {
+fn gap_test_002_version_is_semver() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .arg("--version")
@@ -540,7 +544,7 @@ fn gap_test_002_version_contem_semver() {
 
 #[test]
 #[serial]
-fn gap_test_003_padrao_abort_nao_tautologico() {
+fn gap_test_003_abort_pattern_is_not_tautological() {
     use ssh_cli::ssh::packing::remote_abort_pattern;
     assert!(remote_abort_pattern("$(rm -rf)").is_none());
     assert_eq!(remote_abort_pattern("sleep 9"), Some("sleep 9".into()));

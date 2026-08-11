@@ -28,7 +28,7 @@ timeout 900 bash scripts/check_cross_targets.sh
 
 ### Full gate battery (required before declaring a round closed)
 - Run `scripts/check_all_gates.sh` before claiming any gate is green.
-- It runs all ten mandatory gates in one invocation and reports every result.
+- It runs all eleven mandatory gates in one invocation and reports every result.
 - The ten are `fmt`, `build-release`, `build-no-default`, `clippy`, `test`, `deny`, `cross-targets`, `advisory-freshness`, `en-identifiers` and `install-resolve`.
 - `scripts/check_advisory_freshness.sh` has no other caller, so skipping the battery skips that gate entirely.
 - The reason it exists is structural, not stylistic.

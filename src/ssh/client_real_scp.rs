@@ -32,15 +32,11 @@
             })?;
 
             if metadata.is_dir() {
-                return Err(SshCliError::InvalidArgument(crate::i18n::t(
-                    crate::i18n::Message::ScpUploadFileOnly,
-                )));
+                return Err(SshCliError::InvalidArgument(crate::constants::SCP_UPLOAD_FILE_ONLY_MSG.to_string()));
             }
 
             if !metadata.is_file() {
-                return Err(SshCliError::InvalidArgument(crate::i18n::t(
-                    crate::i18n::Message::ScpUploadFileOnly,
-                )));
+                return Err(SshCliError::InvalidArgument(crate::constants::SCP_UPLOAD_FILE_ONLY_MSG.to_string()));
             }
 
             let size = metadata.len();
@@ -59,9 +55,7 @@
             let result =
                 tokio::time::timeout(timeout, async {
                     if crate::signals::should_stop() {
-                        return Err(SshCliError::InvalidArgument(crate::i18n::t(
-                            crate::i18n::Message::OperationCancelled,
-                        )));
+                        return Err(SshCliError::InvalidArgument(crate::constants::OPERATION_CANCELLED_MSG.to_string()));
                     }
 
                     let mut channel =
@@ -105,9 +99,7 @@
                     let mut sent: u64 = 0;
                     while sent < size {
                         if crate::signals::should_stop() {
-                            return Err(SshCliError::InvalidArgument(crate::i18n::t(
-                                crate::i18n::Message::OperationCancelled,
-                            )));
+                            return Err(SshCliError::InvalidArgument(crate::constants::OPERATION_CANCELLED_MSG.to_string()));
                         }
                         let remaining =
                             usize::try_from(size.saturating_sub(sent)).unwrap_or(usize::MAX);
@@ -184,9 +176,7 @@
             use crate::constants::SCP_IO_CHUNK;
 
             if local.is_dir() {
-                return Err(SshCliError::InvalidArgument(crate::i18n::t(
-                    crate::i18n::Message::ScpDownloadLocalNotDirectory,
-                )));
+                return Err(SshCliError::InvalidArgument(crate::constants::SCP_DOWNLOAD_LOCAL_NOT_DIRECTORY_MSG.to_string()));
             }
 
             let start = Instant::now();
@@ -195,9 +185,7 @@
 
             let result = tokio::time::timeout(timeout, async {
                 if crate::signals::should_stop() {
-                    return Err(SshCliError::InvalidArgument(crate::i18n::t(
-                        crate::i18n::Message::OperationCancelled,
-                    )));
+                    return Err(SshCliError::InvalidArgument(crate::constants::OPERATION_CANCELLED_MSG.to_string()));
                 }
 
                 let mut channel = self
@@ -265,9 +253,7 @@
 
                 while received < size {
                     if crate::signals::should_stop() {
-                        return Err(SshCliError::InvalidArgument(crate::i18n::t(
-                            crate::i18n::Message::OperationCancelled,
-                        )));
+                        return Err(SshCliError::InvalidArgument(crate::constants::OPERATION_CANCELLED_MSG.to_string()));
                     }
                     if pending.is_empty() {
                         let chunk = scp_read_data(&mut channel).await?;

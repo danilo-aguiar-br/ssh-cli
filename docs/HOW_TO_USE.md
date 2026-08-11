@@ -1,5 +1,7 @@
 # How to Use ssh-cli
 
+> **0.5.5** — target-designation security release. Fixes GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decided the target host by positional *count*, so `exec <HOST> --step <CMD>` executed the host name as a remote binary on whatever host `connect` last selected. BREAKING: a lone positional is now a usage error; reach the active marker with the new `--use-active <COMMAND>`. The single-host envelope gained `target_resolved` and `target_source` — bind new consumers to those; `host_resolved`/`host_source` are the 0.5.5 read aliases — plus `active_fallback`, and `doctor` now reports `local.active_vps`.
+>
 > **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
 
 
@@ -55,7 +57,7 @@ ssh-cli exec demo "uname -a" --json
 | `vps export` | Export inventory (default body **TOML**; redacted by default) |
 | `vps import` | Import TOML or JSON `vps-export` envelope |
 | `connect` | Mark the active host |
-| `exec` | Run a remote command (active VPS if name omitted) |
+| `exec` | Run a remote command (`<VPS> <COMMAND>`; active marker only with `--use-active`) |
 | `sudo-exec` | Run via remote `sudo` + safe `sh -c` packing |
 | `su-exec` | Run via remote `su` when su password is stored |
 | `scp upload` | Upload **regular file(s)** (no directories / no `-r`) |
@@ -69,7 +71,7 @@ ssh-cli exec demo "uname -a" --json
 | `sftp stat` | Stat a remote path |
 | `sftp rename` | Rename/move a remote path |
 | `tunnel` | Port-forward with required `--timeout-ms`; four modes (local, `--reverse`, `--socks5`, `--remote-socket`) |
-| `health-check` | Probe connectivity / latency |
+| `health-check` | Probe connectivity / latency (`<VPS>`, a selector, or `--use-active`) |
 | `secrets status` | Encryption mode without printing the key |
 | `secrets init` | Create primary-key (never prints it) |
 | `secrets reencrypt` | Re-cipher inventory under current primary-key |
@@ -108,7 +110,7 @@ ssh-cli exec demo "uname -a" --json
 - Failed download keeps the final path untouched: writes `{path}.ssh-cli.partial`, applies mode/times on the partial, then atomic rename. SCP download propagates `sync_data` failure before rename (G9).
 - Upload streams in 32 KiB chunks (does not load the whole file into RAM).
 - mtime/mode preservation is attempted both directions automatically (remote `scp -tp` / `-fp`; no extra user flag) and is **best-effort**: the `scp-transfer` event reports `mtime_preserved` and `durable` so you never have to guess (G-SCP-R01/R02).
-- Manage primary-key with `ssh-cli secrets status|init|reencrypt` (never prints the key). Keyring may still accept the legacy `secrets-master-key` alias on read.
+- Manage primary-key with `ssh-cli secrets status`, `ssh-cli secrets init`, `ssh-cli secrets reencrypt` (never prints the key). Keyring may still accept the legacy `secrets-master-key` alias on read.
 - `secrets init --json` / `secrets reencrypt --json` emit success events (`secrets-init`, `secrets-reencrypt`; schemas `docs/schemas/secrets-init.schema.json`, `docs/schemas/secrets-reencrypt.schema.json`); first secret write may set field `secrets_key_auto_created: true` on the same `vps-added` JSON document (never a second stdout event). See [docs/schemas/README.md](schemas/README.md).
 - CRUD success JSON events when JSON is effective: `vps-added`, `vps-edited`, `vps-removed`, `vps-connected`, `vps-import` (with field `secrets_key_auto_created` when a key is auto-created — one document). Catalog: [docs/schemas/README.md](schemas/README.md).
 
@@ -338,7 +340,7 @@ ssh-cli tunnel prod 8080 0.0.0.0 9000 --reverse --i-accept-network-exposure --ti
 | 130 | SIGINT |
 | 143 | SIGTERM |
 
-Product line: 0.5.4.
+Product line: 0.5.5.
 
 
 ## Integration With AI Agents

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// G-COMP: stdout/stderr emit primitives (extracted from output monólito).
+// G-COMP: stdout/stderr emit primitives (extracted from output monolith).
 #![forbid(unsafe_code)]
 //! Quiet/JSON-error flags and LF writers for agent + human paths.
 
@@ -329,6 +329,14 @@ pub fn print_error_envelope(
     retryable: bool,
     suggestion: Option<&str>,
 ) -> io::Result<()> {
+    // GAP-SSH-EXEC-ENVELOPE-002: the target is read here rather than passed in.
+    // This function already carries seven parameters, which is the ceiling
+    // `clippy::too_many_arguments` enforces under `-D warnings`; an eighth would
+    // need an allow, and `gaps_v062_component_budget` caps those at two crate-wide
+    // and both are already spent. Reading process state at the emission seam also
+    // means the two call sites in `lib.rs` — which rebuild errors by downcast and
+    // could not forward a field they never saw — need no change at all.
+    let target = json_wire::resolved_target();
     let env = ErrorEnvelope {
         exit_code,
         error_code: error_code.to_string(),
@@ -337,6 +345,11 @@ pub fn print_error_envelope(
         error_class,
         retryable,
         suggestion: suggestion.map(str::to_string),
+        target_resolved: target.as_ref().map(|t| t.host.clone()),
+        target_source: target.as_ref().map(|t| t.source),
+        host_resolved: target.as_ref().map(|t| t.host.clone()),
+        host_source: target.as_ref().map(|t| t.source),
+        active_fallback: target.as_ref().map(|t| t.source.is_ambient()),
     };
     // Fallback if serialization ever fails (should not for this plain struct).
     match json_wire::print_json_line_stderr(&env) {

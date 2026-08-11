@@ -7,7 +7,7 @@
 //!
 //! 1. CLI `--lang` flag (validated BCP47; must negotiate to a supported locale)
 //! 2. Persisted preference (`<config_dir>/lang`, XDG; 0o600 when written) via `locale set`
-//! 3. OS locale via `sys_locale::get_locale()` (never raw `LANG` / `LC_*` in portável)
+//! 3. OS locale via `sys_locale::get_locale()` (never raw `LANG` / `LC_*` in portable code)
 //! 4. Fallback: [`Language::English`] (`en`)
 //!
 //! `SSH_CLI_LANG` is a **historical constant name only** — not read as a product

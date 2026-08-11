@@ -226,6 +226,12 @@ pub enum Message {
         /// Detail of the invalid argument.
         detail: String,
     },
+    /// `--use-active` was requested but no active marker is set.
+    ///
+    /// Previously this error fell through to the untranslated branch and reached a
+    /// pt-BR operator in English. It is operator prose, not machine plumbing: the
+    /// remedy is a command the human has to type.
+    ErrorNoActiveVps,
     /// A failure that carries no product error type.
     ///
     /// Reached from the last branch of `resolve_exit_code`, where an `anyhow`
@@ -269,8 +275,18 @@ pub enum Message {
         /// Name of the checked VPS.
         name: String,
     },
-    /// Operation cancelled by user signal (Ctrl+C or SIGTERM).
-    OperationCancelled,
+    // `OperationCancelled`, `ScpUploadFileOnly` and `ScpDownloadLocalNotDirectory`
+    // used to live here. Every call site fed them into a failure that reaches a JSON
+    // envelope — either as the body of `SshCliError::InvalidArgument` or as the
+    // `error` field of a batch entry on stdout. Under `--lang pt-BR` that put
+    // Portuguese inside the one channel `docs/schemas/error-envelope.schema.json`
+    // pins to English, so the translation was not a courtesy but a contract break.
+    //
+    // Their English text now lives in `crate::constants` as a plain `&str`. Nothing
+    // was lost for the human reader: the *label* around the body is still translated
+    // by `localized_error_text`, which is the split this table was always meant to
+    // express. A `Message` variant is a promise that the string is safe to localize,
+    // and for these three it never was.
     // SCP (GAP-SSH-SCP-020)
     /// SCP upload completed.
     ScpUploadCompleted {
@@ -286,10 +302,6 @@ pub enum Message {
         /// Duration in milliseconds.
         ms: u64,
     },
-    /// Upload refused: local path is a directory (file-only, no -r).
-    ScpUploadFileOnly,
-    /// Download refused: local path is already a directory.
-    ScpDownloadLocalNotDirectory,
     /// SFTP upload completed (G-SFTP).
     SftpUploadCompleted {
         /// Bytes transferred.
@@ -562,6 +574,7 @@ pub fn localized_error_text(err: &SshCliError) -> Option<String> {
         SshCliError::InvalidArgument(detail) => Message::ErrorInvalidArgument {
             detail: detail.clone(),
         },
+        SshCliError::NoActiveVps => Message::ErrorNoActiveVps,
         SshCliError::VpsNotFound(name) => Message::VpsNotFound { name: name.clone() },
         SshCliError::VpsDuplicate(name) => Message::VpsDuplicate { name: name.clone() },
         // Untranslated variants (io, json, toml_*, broken_pipe, crypto, tls, …)

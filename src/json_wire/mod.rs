@@ -23,6 +23,7 @@
 //!   and optional `vps export --json` / import of that envelope.
 
 mod emit;
+mod exec_target;
 mod execution;
 mod vps_export;
 
@@ -30,6 +31,7 @@ pub use emit::{
     print_json_line, print_json_line_stderr, strip_utf8_bom, write_json_line, ErrorEnvelope,
     SuccessEnvelope, UTF8_BOM,
 };
+pub use exec_target::{resolved_target, set_resolved_target, ExecTarget, TargetEcho, TargetSource};
 pub use execution::{
     ExecBatchJson, ExecHostJson, ExecutionJson, HealthBatchJson, HealthCheckJson, HealthHostJson,
     ScpBatchJson, ScpHostJson, ScpTransferJson, SftpBatchJson, SftpFsOpJson, SftpListEntryJson,

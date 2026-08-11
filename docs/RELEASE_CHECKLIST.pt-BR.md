@@ -1,5 +1,7 @@
 # Checklist de release — ssh-cli
 
+> **0.5.5** — release de segurança de designação de alvo. Corrige GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decidiam o host alvo pela *contagem* de posicionais, então `exec <HOST> --step <CMD>` executava o nome do host como binário remoto no host que `connect` selecionara por último. BREAKING: um único posicional agora é erro de uso; alcance o marcador ativo com a nova `--use-active <COMANDO>`. O envelope single-host ganhou `target_resolved` e `target_source` — vincule consumidores novos a esses; `host_resolved`/`host_source` são os aliases de leitura da 0.5.5 — mais `active_fallback`, e o `doctor` passa a reportar `local.active_vps`.
+>
 > **0.5.4** — release de segurança e agent-native. Corrige DoS remoto pré-auth no banner SSH (A1), impede que bits setuid enviados pelo servidor caiam no arquivo baixado (A3), fecha a janela de leitura pública em chaves privadas ACME/mTLS (A2) e adiciona flags de redução de payload (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) aplicadas antes da serialização. BREAKING: falha parcial multi-host agora sai com exit **1** (era 65); `--bind` fora do loopback exige `--i-accept-network-exposure`. Novo evento `tunnel_closed`.
 
 
@@ -9,7 +11,7 @@
 - Alvo de release / linha de produto: **0.5.4**.
 - Gate histórico: **0.4.1** DOC-041 / honestidade AUD-POST (export empty, tunnel exit 0, paridade de auth, evento scp-transfer).
 - Inventário de auditoria local (não publicado): `gaps.md` — **gitignored** e excluído do cargo; mantenedores podem manter localmente. Testes não devem assertar seu texto FIXED (G13/G15).
-- Suites residuais: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG); `tests/gaps_v040_integration.rs` (SCP-010..023, DOC-004, IO-007/007b/008, REL-004, TEST-004); `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006); `tests/gaps_v042_integration.rs` (AUD-E2E); `tests/gaps_v051_integration.rs` (wire/export/secrets 0.5.2); `tests/gaps_v056_ssh.rs` + `tests/gaps_v057_sftp.rs` (G-SSH / G-SFTP); `tests/gaps_v058_e2e_residual.rs` (residual G-E2E: schema/doctor root, um único `vps-added`, `--use-agent`, purge de env help/clap, FIXED_MASK, ACME 64).
+- Suites residuais: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG); `tests/gaps_v040_integration.rs` (SCP-010..023, DOC-004, IO-007/007b/008, REL-004, TEST-004); `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006); `tests/gaps_v042_integration.rs` (AUD-E2E); `tests/gaps_v051_integration.rs` (wire/export/secrets 0.5.2); `tests/gaps_v056_ssh.rs` + `tests/gaps_v057_sftp.rs` (G-SSH / G-SFTP); `tests/gaps_v058_e2e_residual.rs` (residual G-E2E: schema/doctor root, um único `vps-added`, `--use-agent`, purge de env help/clap, FIXED_MASK, ACME 64); `tests/gaps_v065_exec_target_designation.rs` (GAP-SSH-EXEC-ARGC-001: a família exec e o `health-check` precisam receber o alvo no argv); `tests/gaps_v066_transfer_target_designation.rs` (a mesma regra estendida a `scp` e `sftp`); `tests/gaps_v067_packaging_reach.rs` (todo arquivo-fonte deve sobreviver ao `cargo package` — um padrão de `.gitignore` que engole diretório de código-fonte é invisível a todo build local); `tests/gaps_v068_source_language.rs` (prosa não-ASCII fora de citação, a metade que `scripts/check_en_identifiers.sh` não consegue ler); `tests/gaps_v069_markdown_tables.rs` (linha de tabela cujos pipes não escapados discordam da linha delimitadora — Markdown válido que renderiza com colunas fantasma, então nenhum gate de prosa o enxergava); `tests/gaps_v070_doc_reference_reach.rs` (documento que nomeia uma suíte que o repositório nunca teve — a varredura direta só pergunta se toda suíte do disco está listada, então não enxerga fantasma).
 
 
 ## Propósito
@@ -20,7 +22,7 @@
 
 ## Gates (obrigatórios)
 
-0. Bateria completa de gates — `bash scripts/check_all_gates.sh` exit 0 com os dez gates verdes e zero pulados. Ela cobre os itens 1 a 5 mais a checagem cross-target, o gate de frescor de advisories e o build `--no-default-features` numa invocação. Rode isso antes de marcar qualquer item abaixo: `cargo clippy` e `cargo test` abortam no primeiro alvo que não compila, então um único arquivo de teste quebrado esconde o estado de todo gate atrás dele. `scripts/check_advisory_freshness.sh` não tem outro chamador, então pular a bateria pula esse gate inteiro.
+0. Bateria completa de gates — `bash scripts/check_all_gates.sh` exit 0 com os onze gates verdes e zero pulados (`--list` imprime os ids; conte ali em vez de confiar nesta frase). Ela cobre os itens 1 a 5 mais a checagem cross-target, o gate de frescor de advisories e o build `--no-default-features` numa invocação. Rode isso antes de marcar qualquer item abaixo: `cargo clippy` e `cargo test` abortam no primeiro alvo que não compila, então um único arquivo de teste quebrado esconde o estado de todo gate atrás dele. `scripts/check_advisory_freshness.sh` não tem outro chamador, então pular a bateria pula esse gate inteiro.
 1. Build de release — `cargo build --release` exit 0.
 2. Clippy limpo — `cargo clippy --all-targets -- -D warnings` exit 0.
 3. Identificadores em inglês — `bash scripts/check_en_identifiers.sh` exit 0.
@@ -39,9 +41,9 @@
     - Windows usa `--no-default-features`: a pilha TLS padrão puxa `aws-lc-sys`, que compila C (A8).
     - `docs/CROSS_PLATFORM.pt-BR.md` não pode declarar alvo que este script não verifica.
 5. Install resolve — `bash scripts/verify_install_resolve.sh` exit 0; russh no piso de segurança (≥ 0.60.3; linha de produto usa 0.62.5).
-6. Testes completos — `cargo test --locked --all-targets` verde (lib + integration + gaps_v037…v042 + **gaps_v051** + **gaps_v052** + **gaps_v056** + **gaps_v057** + **gaps_v058**).
+6. Testes completos — `cargo test --locked --all-targets` verde (lib + integration + gaps_v037…v042 + **gaps_v051** + **gaps_v052** + **gaps_v056** + **gaps_v057** + **gaps_v058** + **gaps_v065**…**gaps_v068**).
 6b. Formatação (G10) — `cargo fmt --check` exit 0.
-7. Suites residuais de gaps verdes — todos os testes em `tests/gaps_v038_integration.rs`, `tests/gaps_v039_integration.rs`, `tests/gaps_v040_integration.rs`, `tests/gaps_v041_integration.rs`, `tests/gaps_v042_integration.rs`, `tests/gaps_v051_integration.rs`, `tests/gaps_v052_tls_policy.rs`, `tests/gaps_v056_ssh.rs`, `tests/gaps_v057_sftp.rs` `tests/gaps_v058_e2e_residual.rs` e `tests/gaps_v064_gate_runner.rs` passam (incluindo testes que não se chamam `gap_*`).
+7. Suites residuais de gaps verdes — todos os testes em `tests/gaps_v038_integration.rs`, `tests/gaps_v039_integration.rs`, `tests/gaps_v040_integration.rs`, `tests/gaps_v041_integration.rs`, `tests/gaps_v042_integration.rs`, `tests/gaps_v051_integration.rs`, `tests/gaps_v052_tls_policy.rs`, `tests/gaps_v056_ssh.rs`, `tests/gaps_v057_sftp.rs` `tests/gaps_v058_e2e_residual.rs`, `tests/gaps_v064_gate_runner.rs`, `tests/gaps_v065_exec_target_designation.rs`, `tests/gaps_v066_transfer_target_designation.rs`, `tests/gaps_v067_packaging_reach.rs`, `tests/gaps_v068_source_language.rs` `tests/gaps_v069_markdown_tables.rs` e `tests/gaps_v070_doc_reference_reach.rs` passam (incluindo testes que não se chamam `gap_*`).
 8. E2e local (sem VPS real) — help, CRUD fake de VPS, completions se comportam como documentado.
 9. Smoke VPS real (quando disponível) — `health-check` / `exec` mais matriz SCP **E10–E14** e SFTP **E17/E18** (matriz completa **E01–E18**) via `scripts/e2e_real_ssh.sh` quando houver credenciais; prefira sshd local / VPS throwaway; sem tempestade de auth em produção; registrar resultado em notas locais do mantenedor sem segredos (`gaps.md` é só local).
 10. Inventário não publicado — `gaps.md` **NÃO DEVE** ser publicado; está **gitignored** e excluído do cargo (`/gaps.md` em `.gitignore` e exclude do `Cargo.toml`). `git check-ignore gaps.md` **deve bater** (exit 0). PROIBIDO: testes circulares que assertam texto FIXED dentro de `gaps.md` (G13/G15).
@@ -135,6 +137,12 @@ cargo test --locked --test gaps_v051_integration
 cargo test --locked --test gaps_v056_ssh
 cargo test --locked --test gaps_v057_sftp
 cargo test --locked --test gaps_v058_e2e_residual
+cargo test --locked --test gaps_v065_exec_target_designation
+cargo test --locked --test gaps_v066_transfer_target_designation
+cargo test --locked --test gaps_v067_packaging_reach
+cargo test --locked --test gaps_v068_source_language
+cargo test --locked --test gaps_v069_markdown_tables
+cargo test --locked --test gaps_v070_doc_reference_reach
 cargo fmt --check
 cargo deny check
 bash scripts/check_en_identifiers.sh
@@ -237,7 +245,7 @@ bash scripts/generate_sbom.sh
 - [../scripts/dist_multiarch.sh](../scripts/dist_multiarch.sh) — build multi-arch
 - [../scripts/generate_sbom.sh](../scripts/generate_sbom.sh) — SBOM / inventário
 - [../deny.toml](../deny.toml) — política de supply-chain
-- [../scripts/check_all_gates.sh](../scripts/check_all_gates.sh) — runner da bateria obrigatória de gates (os dez gates, uma invocação)
+- [../scripts/check_all_gates.sh](../scripts/check_all_gates.sh) — runner da bateria obrigatória de gates (os onze gates, uma invocação)
 - [../scripts/check_advisory_freshness.sh](../scripts/check_advisory_freshness.sh) — gate de frescor do banco de advisories
 - [../scripts/verify_install_resolve.sh](../scripts/verify_install_resolve.sh) — gate de re-resolve de install
 - [../scripts/check_en_identifiers.sh](../scripts/check_en_identifiers.sh) — gate residual de identificadores em inglês

@@ -80,6 +80,13 @@ fn g_err_08_envelope_includes_error_code() {
         error_class: ssh_cli::errors::ErrorClass::Permanent,
         retryable: false,
         suggestion: None,
+        // GAP-SSH-EXEC-ENVELOPE-002: absent here because this failure has no target.
+        // `vps_not_found` is precisely the case where no host was ever resolved.
+        target_resolved: None,
+        target_source: None,
+        host_resolved: None,
+        host_source: None,
+        active_fallback: None,
     };
     let s = serde_json::to_string(&env).expect("ser");
     assert!(s.contains("\"error_code\":\"vps_not_found\""), "{s}");
@@ -123,7 +130,7 @@ fn g_err_14_resolve_limit_ignores_env() {
 
 #[test]
 fn g_err_12_client_monolith_split_files_exist() {
-    // Structural gate: monólito split artifacts present.
+    // Structural gate: monolith split artifacts present.
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // layout-pinned on purpose: G-ERR-12 is the monolith split itself, so the
     // artifacts' existence *is* the contract. `client_real.rs` was listed twice

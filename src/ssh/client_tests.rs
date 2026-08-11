@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// G-ERR-12: unit tests for ssh client (split from monólito client.rs).
+// G-ERR-12: unit tests for ssh client (split from monolith client.rs).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use super::*;
 use secrecy::SecretString;

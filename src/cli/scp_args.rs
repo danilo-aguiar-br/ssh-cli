@@ -19,9 +19,15 @@ pub enum ScpAction {
         /// Comma-separated host subset (bounded fan-out).
         #[arg(long, value_name = "LIST", conflicts_with = "all")]
         hosts: Option<String>,
+        /// Named source slot (repeatable). Pairs with `--dest`; never remaps a positional.
+        #[arg(long = "src", value_name = "PATH", action = ArgAction::Append)]
+        src: Vec<String>,
+        /// Named destination slot. Always a directory, whatever the source count.
+        #[arg(long = "dest", value_name = "DIR")]
+        dest: Option<String>,
         /// Paths: `VPS LOCAL REMOTE`, or `VPS LOCAL... REMOTE_DIR` (multi-file, one session),
-        /// or with `--all`/`--hosts`: `LOCAL REMOTE` (one file) or `LOCAL... REMOTE_DIR` (multi-file × fleet).
-        #[arg(required = true, num_args = 2.., value_names = ["VPS", "LOCAL", "REMOTE"])]
+        /// or with `--all`/`--hosts`: `LOCAL REMOTE` (one file only — more sources need `--src`/`--dest`).
+        #[arg(num_args = 0.., value_names = ["VPS", "LOCAL", "REMOTE"])]
         target: Vec<String>,
         /// SSH authentication overrides (password/key/passphrase).
         #[command(flatten)]
@@ -42,9 +48,15 @@ pub enum ScpAction {
         /// Comma-separated host subset (bounded fan-out).
         #[arg(long, value_name = "LIST", conflicts_with = "all")]
         hosts: Option<String>,
+        /// Named source slot (repeatable). Pairs with `--dest`; never remaps a positional.
+        #[arg(long = "src", value_name = "PATH", action = ArgAction::Append)]
+        src: Vec<String>,
+        /// Named destination slot. Always a directory, whatever the source count.
+        #[arg(long = "dest", value_name = "DIR")]
+        dest: Option<String>,
         /// Paths: `VPS REMOTE LOCAL`, or `VPS REMOTE... LOCAL_DIR` (multi-file, one session),
-        /// or with `--all`/`--hosts`: `REMOTE LOCAL` (prefix) or `REMOTE... LOCAL_DIR` (per-host subdirs).
-        #[arg(required = true, num_args = 2.., value_names = ["VPS", "REMOTE", "LOCAL"])]
+        /// or with `--all`/`--hosts`: `REMOTE LOCAL` (one file only — more sources need `--src`/`--dest`).
+        #[arg(num_args = 0.., value_names = ["VPS", "REMOTE", "LOCAL"])]
         target: Vec<String>,
         /// SSH authentication overrides (password/key/passphrase).
         #[command(flatten)]

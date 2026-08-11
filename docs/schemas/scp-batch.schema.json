@@ -7,6 +7,16 @@
   "additionalProperties": true,
   "required": ["event", "batch_run_id", "direction", "max_concurrency", "results"],
   "properties": {
+    "target_source": {
+      "type": "string",
+      "enum": ["argv", "selector"],
+      "description": "How the host set was designated: `selector` for --all/--hosts, `argv` for the single-host multi-file form (G-PAR-37/47), which reuses this envelope for a host the caller typed. There is deliberately no target_resolved: a fleet run resolves to a set, and every member is named in results[].name."
+    },
+    "host_source": {
+      "type": "string",
+      "enum": ["argv", "selector"],
+      "description": "Compatibility alias of target_source (0.5.5 spelling)."
+    },
     "event": {
       "type": "string",
       "const": "scp-batch"

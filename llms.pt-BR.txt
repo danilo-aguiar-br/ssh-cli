@@ -1,13 +1,15 @@
 # ssh-cli
 
+> CLI SSH multi-host one-shot para agentes de IA com storage XDG e sem daemon Node
+
+> **0.5.5** — release de segurança de designação de alvo. Corrige GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decidiam o host alvo pela *contagem* de posicionais, então `exec <HOST> --step <CMD>` executava o nome do host como binário remoto no host que `connect` selecionara por último. BREAKING: um único posicional agora é erro de uso; alcance o marcador ativo com a nova `--use-active <COMANDO>`. O envelope single-host ganhou `target_resolved` e `target_source` — vincule consumidores novos a esses; `host_resolved`/`host_source` são os aliases de leitura da 0.5.5 — mais `active_fallback`, e o `doctor` passa a reportar `local.active_vps`.
+>
 > **0.5.4** — release de segurança e agent-native. Corrige DoS remoto pré-auth no banner SSH (A1), impede que bits setuid enviados pelo servidor caiam no arquivo baixado (A3), fecha a janela de leitura pública em chaves privadas ACME/mTLS (A2) e adiciona flags de redução de payload (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) aplicadas antes da serialização. BREAKING: falha parcial multi-host agora sai com exit **1** (era 65); `--bind` fora do loopback exige `--i-accept-network-exposure`. Novo evento `tunnel_closed`.
 
 
-- Nota histórica: **0.4.1** fechou AUD-POST (export empty honesty, tunnel deadline, auth parity, scp-transfer event); **0.4.2** fechou TUN-003 / IO-010; **0.5.0** foi o rename EN/API + reencrypt de secrets force-init; **0.5.2** fechou G-E2E residual + wire v3 dual-read; **0.5.3** fechou G1–G19 (integridade SFTP, verbosidade graduada crate-scoped, cardinalidade de cancel em batch; ver [CHANGELOG 0.5.3](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.pt-BR.md#053---2026-07-30)); a linha de produto atual é **0.5.4**, que fechou A1–A3 mais G-TUN-R01/R02/R03 (remote forward, SOCKS5 dinâmico, socket Unix remoto) e G-ERR-R02 (falha parcial multi-host sai com exit **1**).
+- Nota histórica: **0.4.1** fechou AUD-POST (export empty honesty, tunnel deadline, auth parity, scp-transfer event); **0.4.2** fechou TUN-003 / IO-010; **0.5.0** foi o rename EN/API + reencrypt de secrets force-init; **0.5.2** fechou G-E2E residual + wire v3 dual-read; **0.5.3** fechou G1–G19 (integridade SFTP, verbosidade graduada crate-scoped, cardinalidade de cancel em batch; ver [CHANGELOG 0.5.3](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.pt-BR.md#053---2026-07-30)); a linha de produto atual é **0.5.5**, que fechou GAP-SSH-EXEC-ARGC-001 (designação explícita de alvo, CWE-441) e GAP-SSH-EXEC-ENVELOPE-002 (`target_resolved` / `target_source` / `active_fallback` nos envelopes de sucesso e de erro; `host_resolved` e `host_source` são aliases de leitura da 0.5.5), sobre o trabalho da 0.5.4 (A1–A3, G-TUN-R01/R02/R03, G-ERR-R02).
 
-> CLI SSH multi-host one-shot para agentes de IA com storage XDG e sem daemon Node
-
-ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores remotos via stdin/stdout. Substitui processos long-lived Node SSH daemons persistentes por invocações nascer-executar-morrer, inventário multi-host XDG, auth por senha ou chave, packing seguro de sudo, su-exec, tunnels limitados, known_hosts TOFU, limites dual de comando/saída e **cifragem at-rest de segredos por padrão** (ChaCha20-Poly1305 + `secrets.key`). **Transporte é SSH-2** (`russh` + **aws-lc-rs**), não TLS/HTTPS — sem `rustls`/`native-tls`/OpenSSL de produto; compressão SSH só `none`. Telemetria é proibida. Prefira `cargo install ssh-cli --locked`. Linha de produto atual: **0.5.4** (47 comandos folha; `tunnel` serve quatro modos — local, `--reverse`, `--socks5`, `--remote-socket`; oito flags de redução de payload aplicadas antes da serialização; `--dry-run` e `--no-input` globais; falha parcial multi-host sai com exit **1**; prefira **0.5.3+** para SFTP; russh 0.62.5; wire schema v3; `-v`/`-vv`/`-vvv` crate-scoped; ver CHANGELOG 0.5.4).
+ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores remotos via stdin/stdout. Substitui processos long-lived Node SSH daemons persistentes por invocações nascer-executar-morrer, inventário multi-host XDG, auth por senha ou chave, packing seguro de sudo, su-exec, tunnels limitados, known_hosts TOFU, limites dual de comando/saída e **cifragem at-rest de segredos por padrão** (ChaCha20-Poly1305 + `secrets.key`). **Transporte é SSH-2** (`russh` + **aws-lc-rs**), não TLS/HTTPS — sem `rustls`/`native-tls`/OpenSSL de produto; compressão SSH só `none`. Telemetria é proibida. Prefira `cargo install ssh-cli --locked`. Linha de produto atual: **0.5.5** (47 comandos folha; `tunnel` serve quatro modos — local, `--reverse`, `--socks5`, `--remote-socket`; oito flags de redução de payload aplicadas antes da serialização; `--dry-run` e `--no-input` globais; falha parcial multi-host sai com exit **1**; prefira **0.5.3+** para SFTP; russh 0.62.5; wire schema v3; `-v`/`-vv`/`-vvv` crate-scoped; ver CHANGELOG 0.5.5).
 
 - Read this document in [English](llms.txt).
 - Índice expandido: [llms-full.txt](llms-full.txt)
@@ -18,9 +20,9 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - [HOW_TO_USE](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/HOW_TO_USE.pt-BR.md): primeiro comando em 60 segundos
 - [COOKBOOK](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/COOKBOOK.pt-BR.md): receitas executáveis
 - [AGENTS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/AGENTS.pt-BR.md): economia do agente e contrato JSON
-- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.pt-BR.md): upgrade de 0.3.3 para **0.5.4**
+- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.pt-BR.md): upgrade de 0.3.3 para **0.5.5**
 - [INTEGRATIONS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/INTEGRATIONS.pt-BR.md): catálogo de agentes e IDEs
-- [CHANGELOG](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.pt-BR.md): histórico de releases (**0.5.4** = segurança A1–A3 + modos de tunnel + redução de payload; **0.5.3** = G1–G19)
+- [CHANGELOG](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.pt-BR.md): histórico de releases (**0.5.5** = designação explícita de alvo + proveniência de alvo em todo envelope; **0.5.4** = segurança A1–A3 + modos de tunnel + redução de payload; **0.5.3** = G1–G19)
 - [CONTRIBUTING](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CONTRIBUTING.pt-BR.md): fluxo de contribuição
 - [SECURITY](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/SECURITY.pt-BR.md): divulgação de vulnerabilidades e segredos at-rest
 - [CODE_OF_CONDUCT](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CODE_OF_CONDUCT.pt-BR.md): padrões da comunidade
@@ -61,7 +63,7 @@ ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores rem
 - **Modus operandi multi-host:** prefira `exec|sudo-exec|su-exec|scp|sftp|health-check --all` **ou** `--hosts a,b` (um processo, SSH concorrente com bound) a N spawns single-host; schemas batch `health-check-batch` / `exec-batch` / `scp-batch` / `sftp-batch` incluem `max_concurrency`; no cancel, o resto é preenchido como cancelled para `results.len() == input.len()` (G5/G17)
 - Global `--max-concurrency N` (1..=64) limita fan-out e forwards de tunnel (auto = CPUs×4 vs RAM livre/2 / 16 MiB)
 - `vps doctor --probe-ssh [--hosts a,b] --json` = um root `event: vps-doctor` (`local` + `ssh_probe`); `tunnel` é single-host por contrato
-- SCP multi-arquivo (single-host): `scp upload VPS f1 f2 … REMOTE_DIR` com bound por arquivo; não com `--all`/`--hosts`
+- SCP multi-arquivo (single-host): `scp upload VPS f1 f2 … REMOTE_DIR` com bound por arquivo. Frota multi-arquivo usa os slots nomeados `--all --src f1 --src f2 --dest REMOTE_DIR`; seletor com três ou mais posicionais é exit 64 (Explicit Target Designation)
 - Telemetria é sempre false
 - Install: sempre prefira `--locked`; linha de produto **0.5.3+**
 

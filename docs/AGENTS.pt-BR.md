@@ -1,5 +1,7 @@
 # Guia de agentes para ssh-cli
 
+> **0.5.5** — release de segurança de designação de alvo. Corrige GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decidiam o host alvo pela *contagem* de posicionais, então `exec <HOST> --step <CMD>` executava o nome do host como binário remoto no host que `connect` selecionara por último. BREAKING: um único posicional agora é erro de uso; alcance o marcador ativo com a nova `--use-active <COMANDO>`. O envelope single-host ganhou `target_resolved` e `target_source` — vincule consumidores novos a esses; `host_resolved`/`host_source` são os aliases de leitura da 0.5.5 — mais `active_fallback`, e o `doctor` passa a reportar `local.active_vps`.
+>
 > **0.5.4** — release de segurança e agent-native. Corrige DoS remoto pré-auth no banner SSH (A1), impede que bits setuid enviados pelo servidor caiam no arquivo baixado (A3), fecha a janela de leitura pública em chaves privadas ACME/mTLS (A2) e adiciona flags de redução de payload (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) aplicadas antes da serialização. BREAKING: falha parcial multi-host agora sai com exit **1** (era 65); `--bind` fora do loopback exige `--i-accept-network-exposure`. Novo evento `tunnel_closed`.
 
 
@@ -16,7 +18,7 @@
 
 - Leia este documento em [inglês](AGENTS.md).
 - Combine com [../INTEGRATIONS.pt-BR.md](../INTEGRATIONS.pt-BR.md) e [../skills/ssh-cli-pt/SKILL.md](../skills/ssh-cli-pt/SKILL.md).
-- Linha de produto: 0.5.4.
+- Linha de produto: 0.5.5.
 
 
 ## Por quê
@@ -114,7 +116,7 @@ runtime com `ssh-cli commands` (`event: "commands"`).
 - OBRIGATÓRIO: cadastrar hosts com `vps add` antes de trabalho remoto repetido (auth: senha **ou** chave **ou** `--use-agent` / `--agent-socket`).
 - OBRIGATÓRIO: fornecer senha ou chave; credenciais vazias são rejeitadas na escrita.
 - OBRIGATÓRIO: tratar senha vazia em list/show JSON como `null` (hosts só-chave); não vazia mascara `***`.
-- OBRIGATÓRIO: comando remoto vazio falha com mensagem técnica `empty command` (sempre em inglês) e exit de uso 64.
+- OBRIGATÓRIO: comando remoto vazio falha com mensagem técnica `empty command` (sempre em inglês) e exit 64 de uso de domínio.
 - OBRIGATÓRIO: passar `--timeout-ms` em toda invocação de `tunnel`.
 - OBRIGATÓRIO: tratar `scp` como **somente arquivos regulares** (sem diretórios, sem `-r`). Para árvores / FS remoto use `sftp` (`upload|download --recursive`, `ls`, `mkdir`, `rm`, `stat`, `rename`).
 - OBRIGATÓRIO: preferir linha de produto **0.5.3+** para SFTP — G1 corrigiu truncamento de upload a zero bytes; verifique transferências com `sha256` no destino (G15), não só tamanho reportado pelo cliente.
@@ -175,20 +177,26 @@ runtime com `ssh-cli commands` (`event: "commands"`).
 - Doctor: `ssh-cli vps doctor --json` (ou `ssh-cli doctor --json`) devolve layer, paths, schema, contagem de hosts, `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out` (booleano JSON), telemetry false.
 - Secrets: `ssh-cli secrets status --json` devolve modo de cifragem sem material de chave; `secrets init --json` → `event: "secrets-init"`; `secrets reencrypt --json` → `event: "secrets-reencrypt"`.
 - Eventos de sucesso CRUD quando JSON está efetivo (`--json` / `--output-format json` / JSON auto non-TTY): `vps-added`, `vps-edited`, `vps-removed`, `vps-connected`, `vps-import` (com campo opcional `secrets_key_auto_created` quando uma chave é auto-criada — ainda um documento).
-- Família exec (host único): `ssh-cli exec|sudo-exec|su-exec <vps> <cmd> --json` devolve stdout, stderr, exit_code, flags de truncamento, duration_ms — **um objeto** (G8).
-- Família exec (frota): `ssh-cli exec|sudo-exec|su-exec --all '<cmd>' --json` ou `--hosts a,b '<cmd>'` → `event: "exec-batch"` (`exec-batch.schema.json`); falha parcial por host não aborta irmãos.
+- Família exec (host único) — `ssh-cli exec <vps> <cmd> --json`, `ssh-cli sudo-exec <vps> <cmd> --json`, `ssh-cli su-exec <vps> <cmd> --json` devolve target_resolved, target_source, seus aliases de leitura da 0.5.5 host_resolved e host_source, active_fallback, stdout, stderr, exit_code, flags de truncamento, duration_ms — **um objeto** (G8).
+- OBRIGATÓRIO: designe o host alvo no argv, em **toda** superfície, inclusive `health-check`. Um único posicional é erro de uso (exit 64); o marcador escrito por `connect` só é alcançado com `--use-active` (GAP-SSH-EXEC-ARGC-001). A divisão é estável em toda a CLI: **64** = nenhum alvo designado, **66** = alvo designado não existe. Leia `target_source` (`argv` | `active_marker` | `selector`), ou seu alias `host_source`, antes de confiar em onde a mutação caiu — sem round-trip de crachá.
+- OBRIGATÓRIO: leia `target_resolved`, `target_source` e `active_fallback` também no envelope de **erro**. Eles estão presentes sempre que a falha ocorreu depois de o host ser resolvido, e ausentes (nunca vazios) quando não — `vps_not_found` é o caso ausente, porque nada foi resolvido. `host_resolved` e `host_source` viajam ao lado como aliases de leitura da 0.5.5, escritos a partir do mesmo valor e nunca de forma independente; vincule consumidor novo à grafia canônica `target_*`.
+- OBRIGATÓRIO: `exec --step` aborta o lote quando o passo **zero** sai com 127. Esse código no primeiro passo é a assinatura de um nome de host lido como comando; um 127 em índice posterior ainda executa os passos restantes.
+- OBRIGATÓRIO: `ssh-cli doctor --json` expõe `local.active_vps` (o nome do host, `null` quando ausente) ao lado de `local.active_file` (o caminho).
+- Família exec (frota) — `ssh-cli exec --all '<cmd>' --json`, `ssh-cli sudo-exec --all '<cmd>' --json`, `ssh-cli su-exec --all '<cmd>' --json` ou `--hosts a,b '<cmd>'` → `event: "exec-batch"` (`exec-batch.schema.json`); falha parcial por host não aborta irmãos.
 - Tunnel: **somente host único** (um bind + uma sessão por one-shot). Tunnels multi-host = N invocações com portas/`--bind` distintos. Forwards ainda limitados por `--max-concurrency`.
 - Doctor: `ssh-cli vps doctor [--json]` emite raiz única `event: vps-doctor` (`local` + `ssh_probe: null`). Adicione `--probe-ssh` para fan-out de health multi-host embutido em `ssh_probe` (opcional `--hosts a,b`). Nunca duas raízes JSON.
 - SCP multi-arquivo (host único): `ssh-cli scp upload <VPS> f1 f2 … <REMOTE_DIR>` / `download <VPS> r1 r2 … <LOCAL_DIR>` usa **uma sessão SSH** e transfers seriais (auth uma vez; G-PAR-47).
-- SCP multi-host × multi-arquivo: `ssh-cli scp upload --all f1 f2 … <REMOTE_DIR>` ou `--hosts a,b` — **sessões** limitadas por host; arquivos seriais em cada sessão (G-PAR-48). Download de frota multi-arquivo grava sob `<LOCAL_DIR>/<host>/`.
+- SCP multi-host × multi-arquivo: `ssh-cli scp upload --all --src f1 --src f2 --dest <REMOTE_DIR>` ou `--hosts a,b` — **sessões** limitadas por host; arquivos seriais em cada sessão (G-PAR-48). Download de frota multi-arquivo grava sob `<LOCAL_DIR>/<host>/`.
+- OBRIGATÓRIO: com `--all`/`--hosts`, mais de uma origem passa pelos slots nomeados `--src` (repetível) e `--dest`. Seletor com três ou mais posicionais é **exit 64**, porque o primeiro token significaria o slot de host sem o seletor e um caminho de origem com ele — flag não posicional não pode remapear posicional (Explicit Target Designation). `--dest` é sempre um diretório, qualquer que seja a contagem de origens.
+- Os slots nomeados também valem em host único: `ssh-cli scp upload <VPS> --src f1 --src f2 --dest <REMOTE_DIR>`; o VPS continua sendo o único posicional.
 - Health (único): `ssh-cli health-check [<vps>] [--timeout <ms>] [--password-stdin|--key|--key-passphrase[-stdin]] --json` devolve name, status, latency_ms.
 - Health (frota): `ssh-cli health-check --all --json` ou `--hosts a,b --json` → `event: "health-check-batch"` (`health-check-batch.schema.json`).
 - SCP (único): `ssh-cli scp upload|download <vps> <local> <remote> --json` devolve sucesso de transfer no stdout (`scp-transfer.schema.json` com `event: "scp-transfer"` obrigatório); falhas usam envelope de erro em stderr; arquivo ausente → exit 66 `file not found: <path>` (path canônico/normalizado).
 - SCP (frota / batch multi-arquivo): `event: "scp-batch"` (`scp-batch.schema.json`); download de frota de um arquivo grava `local.<vps>`; multi-arquivo usa subdirs por host; resultado multi-host×multi-arquivo pode ter `name` `host:path`.
 - Fatos operacionais SCP: exija 0.5.3+; upload faz stream de 32 KiB; download grava `{path}.ssh-cli.partial` e renomeia; falha de `sync_data` é propagada antes do rename (G9); preservação de mtime/mode é best-effort e reportada em `mtime_preserved`, e o fsync do diretório pai em `durable` (G-SCP-R01/R02).
-- SFTP: `ssh-cli sftp upload|download|ls|mkdir|rmdir|rm|stat|rename` com schemas `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`; prefira 0.5.3+ (integridade G1).
-- Locale: `ssh-cli locale show|set|clear`; one-shot `--lang`.
-- TLS: `ssh-cli tls provider|paths`; `tls mtls list|import|show|remove`; `tls acme account create|show`; `tls acme issue|complete|status|list`.
+- SFTP: `ssh-cli sftp upload`, `ssh-cli sftp download`, `ssh-cli sftp ls`, `ssh-cli sftp mkdir`, `ssh-cli sftp rmdir`, `ssh-cli sftp rm`, `ssh-cli sftp stat`, `ssh-cli sftp rename` com schemas `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`; prefira 0.5.3+ (integridade G1).
+- Locale: `ssh-cli locale show`, `ssh-cli locale set`, `ssh-cli locale clear`; one-shot `--lang`.
+- TLS: `ssh-cli tls provider`, `ssh-cli tls paths`, `ssh-cli tls mtls list`, `ssh-cli tls mtls import`, `ssh-cli tls mtls show`, `ssh-cli tls mtls remove`, `ssh-cli tls acme account create`, `ssh-cli tls acme account show`, `ssh-cli tls acme issue`, `ssh-cli tls acme complete`, `ssh-cli tls acme status`, `ssh-cli tls acme list`.
 - Tunnel: `ssh-cli tunnel <vps> <local_port> [remote_host] [remote_port] --timeout-ms <ms> [--bind 127.0.0.1] [--password-stdin|--key|--key-passphrase[-stdin]] --json` emite `tunnel_listening` no stdout após o bind; `--bind` padrão `127.0.0.1`; deadline pós-bind sai com exit 0; timeout pré-bind permanece 74.
 - Modos de tunnel (0.5.4): `--socks5` serve proxy `CONNECT` sem autenticação (RFC 1928), `--remote-socket <PATH>` encaminha para socket Unix remoto, `--reverse` pede ao servidor que escute e entregue de volta em `<local_port>`. Os três são mutuamente exclusivos. `remote_host`/`remote_port` são omitidos sob `--socks5` e `--remote-socket` (passá-los é exit 64) e significam o bind do **servidor** sob `--reverse`, onde `remote_port 0` deixa o servidor alocar e informar a porta em `local_port`.
 - Os dois eventos de tunnel carregam `mode` (`local` / `socks5` / `streamlocal` / `reverse`); leia-o antes de interpretar os campos vizinhos, já que `local_port` é a porta do servidor sob `--reverse` e não existe destino único sob `--socks5`.

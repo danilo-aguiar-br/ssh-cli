@@ -1,18 +1,16 @@
 ---
 name: ssh-cli
-description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, inventário VPS, config XDG, exec ou sudo-exec ou su-exec, transferência scp de arquivo regular, árvores sftp e operações de filesystem remoto, tunnel_listening e port forward com deadline, probes de health-check, ciclo de vida da primary-key de secrets, TLS provider ou mTLS ou certificados ACME, locale, descoberta por schema ou commands, frota --all ou --hosts ou --tags, lote --step na mesma sessão, ou devops de agente sem TTY, mesmo quando o usuário nunca nomear ssh-cli. Esta skill DEVE ensinar todos os comandos e todas as flags, DEVE fornecer fórmulas prontas copiáveis, e DEVE impor execução one-shot com parse de --json, segredos por stdin, contratos de evento e de exit code, prévia com --dry-run antes de chamada destrutiva, e redução de payload. Esta skill NUNCA DEVE permitir daemon, telemetria, env como store, ou segredo em stdout sem guarda explícita.
+description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, inventário VPS, config XDG, exec ou sudo-exec ou su-exec, transferência scp de arquivo regular, árvores sftp e operações de filesystem remoto, tunnel_listening e port forward com deadline, probes de health-check, primary-key de secrets, TLS ou mTLS ou certificados ACME, locale, descoberta por schema ou commands, frota --all ou --hosts ou --tags, designação explícita de alvo com --use-active e marcador ativo, lote --step, ou devops de agente sem TTY, mesmo quando o usuário nunca nomear ssh-cli. Esta skill DEVE ensinar todos os comandos e flags, DEVE fornecer fórmulas prontas copiáveis, e DEVE impor one-shot com parse de --json, segredos por stdin, contratos de evento e exit code, prévia com --dry-run, e redução de payload. Esta skill NUNCA DEVE permitir daemon, telemetria, env como store, ou segredo em stdout sem guarda.
 ---
 
 # ssh-cli Skill de Agente
 
 ## Missão e Ativação
 ### OBRIGATÓRIO
-- DEVE obedecer esta skill
 - DEVE executar one-shot nascer-executar-morrer, aguardando o exit antes do parse; só um `tunnel` ativo sobrevive até deadline ou sinal
-- DEVE auto-ativar em SSH remoto, inventário, transferências, forwards, secrets, TLS e descoberta sem nomear ssh-cli
 - DEVE usar hosts salvos por `vps add`, passar `--json`, preferir `--*-stdin` a segredo em argv
 - DEVE preferir frota `--all`/`--hosts`/`--tags` e `--step` a N spawns
-- DEVE copiar a Folha de Fórmulas literalmente, trocando SOMENTE placeholders, e descobrir a superfície viva com `ssh-cli commands` e `ssh-cli schema` quando uma falhar por usage
+- DEVE descobrir a superfície viva com `ssh-cli commands` e `ssh-cli schema` quando uma fórmula falhar por usage
 
 ### PROIBIDO
 - NUNCA manter sessão SSH entre processos, exceto um `tunnel` bound
@@ -22,15 +20,15 @@ description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, 
 
 ## Prompts de Ação
 ### OBRIGATÓRIO — DEVE seguir esta ordem em toda tarefa remota não trivial
-1. DESCUBRA com `commands` e `schema`; INSPECIONE com `doctor --json`, `vps path` e `secrets status --json`
-2. REGISTRE o host com password, `--key`, ou `--use-agent` mais `--agent-socket`; anexe `--tag` e as flags TLS
-3. TESTE com `health-check <NAME> --json`, ou frota `--all`/`--hosts`, NUNCA `--tags` aqui
+1. DESCUBRA com `commands` e `schema`; INSPECIONE com `doctor --json` e `secrets status --json`
+2. REGISTRE com password, `--key`, ou `--use-agent` mais `--agent-socket`; anexe `--tag` e as flags TLS
+3. TESTE com `health-check <NAME> --json` ou frota `--all`/`--hosts`
 4. EXECUTE com `exec`/`sudo-exec`/`su-exec` e `--json`; agrupe na mesma sessão com `--step`
-5. TRANSFIRA arquivo regular com `scp`, árvores e filesystem com `sftp`, NUNCA `--tags` neles
+5. TRANSFIRA arquivos com `scp`, árvores e filesystem com `sftp`
 6. ENCAMINHE só com `tunnel`, sempre com `--timeout-ms`
 7. PREVEJA toda chamada destrutiva sem supervisão com `--dry-run`
-8. PARSEIE o exit do processo, depois o sucesso em stdout, depois o envelope de erro em stderr
-9. SANITIZE logs duráveis para que nenhum segredo e nenhuma primary-key permaneça
+8. PARSEIE o exit do processo, depois o sucesso em stdout, depois o envelope em stderr
+9. SANITIZE logs duráveis de todo segredo e primary-key
 
 
 ## Catálogo de Comandos
@@ -51,11 +49,24 @@ description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, 
 - `tls acme account create`, `tls acme account show`, `tls acme issue`, `tls acme complete`, `tls acme status`, `tls acme list` — conta e ciclo DNS-01
 
 
+## Designação de Alvo
+### OBRIGATÓRIO — DEVE declarar o alvo por FLAG, NUNCA por contagem de posicionais
+- DEVE passar `<VPS> <COMANDO>`, dois posicionais, para nomear o host
+- DEVE passar `--all`/`--hosts`/`--tags` com UM posicional, o comando
+- DEVE passar `--use-active` com UM posicional, host do marcador de `connect`, e SOMENTE em `exec`, `sudo-exec`, `su-exec`, `health-check`
+- DEVE ler `target_resolved`, `target_source`, `active_fallback`, NUNCA os aliases `host_resolved`/`host_source`; `target_source` é `argv`, `active_marker` ou `selector`, e os três são AUSENTES — nunca vazios — antes da resolução, e SEMPRE ausentes do erro de `health-check` mesmo após o marcador resolver
+
+### PROIBIDO
+- NUNCA dar a um verbo de exec um único posicional nu; é exit 64 mesmo quando o token nomeia um host registrado
+- NUNCA passar `--use-active <NOME> <COMANDO>`, que sai 64, nem parear `--use-active` com um seletor, que o clap sai 2
+- NUNCA ler marcador ausente como frota vazia; é exit 66 `no_active_vps`
+
+
 ## Flags Globais
 ### OBRIGATÓRIO — DEVE colocar estas ANTES do subcomando
 - `--json`, `-q`/`--quiet`, `--no-color`, `--config-dir <DIR>` — `--json` é OBRIGATÓRIA para parse de agente
 - `--output-format text|json` — omitida, vira JSON sempre que o stdout não for TTY, INCLUSIVE o corpo de `vps export`
-- `--lang <LOCALE>`, `-v`/`-vv`/`-vvv` — interface BCP47 negociada para `en` ou `pt-BR`; info, debug e trace no escopo do crate sobre o default `error`
+- `--lang <LOCALE>`, `-v`/`-vv`/`-vvv` grafado `--verbose` — interface BCP47 negociada para `en` ou `pt-BR`; info, debug e trace no escopo do crate sobre o default `error`
 - `--no-input` — recusa stdin, então toda flag `--*-stdin` falha com exit 64 em vez de bloquear esperando humano ausente
 - `--dry-run` — imprime o plano e sai
 - `--disable-sudo` — suprime elevação SOMENTE nesta invocação
@@ -75,13 +86,11 @@ description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, 
 - DEVE saber que `vps list --json` emite um ARRAY PURO na raiz, então ali o relatório de redução vai para stderr
 
 ### OBRIGATÓRIO — Prévia com dry-run
-- DEVE prever chamada destrutiva sem supervisão; o plano é JSON no stdout mesmo em modo texto
-- DEVE ler o evento `dry-run` com `operation`, `dry_run` true, `executed` false; EXECUTE `ssh-cli schema dry-run` para o schema
-- DEVE saber que a prévia existe SOMENTE em `vps remove`, `vps import`, `sftp rm`, `sftp rmdir`, `secrets init`, `secrets reencrypt`; exit 64 fora dessas é "sem prévia aqui", NUNCA plano defeituoso
+- DEVE prever chamada destrutiva sem supervisão, lendo o evento `dry-run` com `operation`, `dry_run` true e `executed` false; o plano é JSON no stdout mesmo em modo texto
+- DEVE saber que a prévia existe SOMENTE em `vps remove`, `vps import`, `sftp rm`, `sftp rmdir`, `secrets init`, `secrets reencrypt`, onde as duas de `sftp` nunca conectam; exit 64 fora dessas é "sem prévia aqui", NUNCA plano defeituoso
 - DEVE esperar pré-condições primeiro, então `--dry-run vps remove <ausente>` ainda sai 66
 - DEVE ler `hosts[].replaces_existing` em `vps import`, porque é esse campo, não a contagem, que decide se o import é seguro
 - DEVE ler `hosts_to_reencrypt` em `secrets init --force`, porque rotacionar sem recifrar esses hosts perde os segredos at-rest deles
-- DEVE saber que as prévias de `sftp rm` e `sftp rmdir` NÃO conectam
 - NUNCA ler ausência de evento de sucesso como inação; leia `executed` false
 
 ### PROIBIDO
@@ -91,34 +100,32 @@ description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, 
 
 ## Flags Locais Que Parecem Globais
 ### OBRIGATÓRIO — DEVE colocar estas DEPOIS do subcomando
-- DEVE vigiar as quatro que parecem globais e NÃO são, porque antes do subcomando o clap sai com exit 2 — `tunnel --bind <ADDR>`, `tunnel --i-accept-network-exposure`, `tunnel --timeout-ms <MS>`, `vps doctor --probe-ssh`
+- DEVE vigiar as quatro que parecem globais e NÃO são, pois antes do subcomando o clap sai 2 — `tunnel --bind <ADDR>`, `tunnel --i-accept-network-exposure`, `tunnel --timeout-ms <MS>`, `vps doctor --probe-ssh`
 - DEVE saber que `tunnel --bind` é loopback por padrão e parseada como IP, então typo falha no parse, e que `--i-accept-network-exposure` é OBRIGATÓRIA quando o lado exposto não for loopback
 - DEVE preferir `--max-command-chars <N>` e `--max-output-chars <N>` em `vps add|edit`, porque `--max-chars <N>` é apenas ALIAS LEGADO do teto de comando
 
 ### OBRIGATÓRIO — A flag de elevação significa duas coisas diferentes
-- DEVE saber que `--disable-sudo` ANTES do subcomando suprime elevação em UMA invocação e não muda nada em disco
-- DEVE saber que `vps edit --disable-sudo` DEPOIS do subcomando grava `disable_sudo` no config e desabilita elevação naquele host de forma PERMANENTE
-- DEVE usar `vps edit --enable-sudo` como ÚNICO desfazedor; o par conflita em `vps edit` e o clap o rejeita
-- NUNCA recorrer à forma persistente quando o que se queria era supressão efêmera, porque a grafia é idêntica e só a posição revela o tempo de vida
+- DEVE saber que `--disable-sudo` ANTES do subcomando suprime elevação em UMA invocação, sem mudar nada em disco
+- DEVE saber que `vps edit --disable-sudo` DEPOIS grava `disable_sudo` no config e desabilita elevação PERMANENTEMENTE naquele host, desfeito SOMENTE por `vps edit --enable-sudo`
+- NUNCA recorrer à forma persistente quando se queria a efêmera; só a posição revela o tempo de vida
 
 
 ## Ciclo de Vida e JSON
 ### OBRIGATÓRIO
 - DEVE parsear sucesso SOMENTE do stdout; prosa e envelope de falha dura vão para stderr
-- DEVE saber que o CORPO de `vps export` segue o formato resolvido, então o agente, cujo stdout nunca é TTY, recebe JSON até em arquivo `.toml`; TOML exige `--output-format text`
+- DEVE saber que o CORPO de `vps export` segue o formato resolvido, então o agente recebe JSON até em arquivo `.toml`; TOML exige `--output-format text`
 - DEVE parsear `vps-added`, `vps-edited`, `vps-removed`, `vps-connected`, `vps-import`, `vps-export`, e ler `secrets_key_auto_created` no MESMO documento `vps-added`, NUNCA como segundo evento
 - DEVE parsear `vps-doctor` com `local.secrets_plaintext_opt_out` BOOLEANO, e `ssh_probe` como null ou lote de health-check
 - DEVE ler em exec `stdout`, `stderr`, `exit_code`, `truncated_stdout`, `truncated_stderr`, `duration_ms`, e reportar truncagem quando qualquer um dos dois for true
 - DEVE tratar `exec --json` de passo único como exatamente UM objeto; `--step` emite um objeto por step, com `step` 0-based e o respectivo `command`
-- DEVE ler `scp-transfer` com `ok`/`direction`/`bytes`/`duration_ms`, e `sftp-transfer`, `sftp-list`, `sftp-fs-op`, `sftp-batch`
-- DEVE ler os lotes `health-check-batch`, `exec-batch`, `scp-batch`, `sftp-batch`, cada um com `max_concurrency`
+- DEVE ler `scp-transfer` com `ok`/`direction`/`bytes`/`duration_ms`, mais `sftp-transfer`, `sftp-list`, `sftp-fs-op`, e os lotes `health-check-batch`, `exec-batch`, `scp-batch`, `sftp-batch`, cada um com `max_concurrency`, onde `scp-batch` e `sftp-batch` somam `target_source` `selector` e `exec-batch` não
 - DEVE ler `tunnel_listening` com `local_port`, `remote_host`, `remote_port`, `timeout_ms`, `bind`, `mode`
 - DEVE ler `tunnel_closed` com `reason`, `forwards_served`, `capacity_waits`, `duration_ms`, `mode`, distinguindo `reason` entre `deadline`, `signal` e `accept_error`, que compartilham o mesmo exit 0
 - DEVE ler no envelope `exit_code`, `message`, `remote_exit_code`, `retryable`, `error_class`, `suggestion`
 - DEVE EXECUTAR `ssh-cli schema` SEM nome para listar todo schema válido, e NUNCA adivinhar um nome
 
 ### PROIBIDO
-- NUNCA inventar chave ausente, esperar vários objetos de `exec --json` de passo único, ou supor canal aberto de um processo anterior
+- NUNCA inventar chave ausente ou supor canal aberto de um processo anterior
 
 
 ## Inventário Auth Secrets
@@ -127,17 +134,15 @@ description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, 
 - DEVE passar `--port` quando não for 22, `--check` para probe imediato, `--tag` repetível para frota, e `--tls` mais os opcionais `--tls-sni`, `--tls-client-cert`, `--tls-client-key`, desfeitos por `--no-tls`
 - DEVE ler as máscaras — ausente é JSON `null`, armazenado é a máscara fixa, para `password`, `sudo_password`, `su_password` e `key_passphrase`
 - DEVE tratar timeouts de host como MILISSEGUNDOS; abaixo de 1000 emite warning
-- DEVE exportar sem segredos por padrão, com segredo vazio redigido como string VAZIA e nunca blob cifrado, e exigir aprovação humana mais `--output` ou `--i-understand-secrets-on-stdout` em `--include-secrets`
-- DEVE aceitar import de TOML com chaves em inglês mais aliases legados em português, ou de `vps-export` JSON onde `added_at` pode faltar; TOML inválido é exit 65
-- DEVE saber que o TOML diz `username` onde o envelope JSON diz `user`, então import TOML com `user` dá exit 65
-- DEVE preferir `--password-stdin`, `--key-passphrase-stdin`, `--sudo-password-stdin`, `--su-password-stdin` a argv, que emite warning, e aplicá-las como override em `exec`, `scp`, `sftp`, `tunnel` e `health-check` quando a credencial salva não bastar
-- DEVE passar o nome explícito do host sempre que certeza importar, porque `health-check` sem nome mira o que `connect` marcou como ativo
+- DEVE exportar sem segredos por padrão, redigindo segredo vazio como string VAZIA nunca blob, e exigir `--output` ou `--i-understand-secrets-on-stdout` em `--include-secrets`
+- DEVE importar TOML com chaves em inglês mais aliases legados em português, ou JSON `vps-export` sem `added_at`; TOML inválido é exit 65, e o TOML diz `username` onde o JSON diz `user`, então `user` no TOML dá exit 65
+- DEVE preferir as formas `-stdin` de `--password`, `--key-passphrase`, `--sudo-password` e `--su-password` às gêmeas diretas em argv, que emitem WARNING, e anexá-las a `exec`, `scp`, `sftp`, `tunnel`, `health-check` e aos seis verbos `sftp` de filesystem quando a credencial não bastar
 - DEVE resolver a primary-key nesta ordem — `--secrets-key-file`, depois o keyring do SO com `--use-keyring`, depois um `secrets.key` auto-criado no diretório de config; o keyring aceita o alias legado na leitura
 - DEVE esperar escrita atômica, mode 0600 no Unix
 - DEVE tratar divergência de host-key como PARADA DURA, usando `--replace-host-key` só após confirmação humana
 
 ### PROIBIDO
-- NUNCA criar host sem credencial, inventar senha quando o JSON mostra `null`, tratar a máscara como segredo real, commitar segredo cru, imprimir primary-key, ou habilitar plaintext fora de teste
+- NUNCA criar host sem credencial, commitar segredo cru, imprimir primary-key, ou habilitar plaintext fora de teste
 - NUNCA combinar password ou key com `--use-agent` no `vps add`, e NUNCA desabilitar TOFU por conveniência
 
 
@@ -149,57 +154,54 @@ description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, 
 - DEVE tratar `tunnel` como single-host, então forward multi-host exige N one-shots
 - DEVE enviar comando remoto não vazio; comando vazio ou `--step` vazio é exit 64 com a mensagem `empty command`, sempre em inglês
 - DEVE respeitar os tetos de comando e de saída, elevando-os com `vps edit` quando o payload exceder
-- DEVE usar `--step <CMD>` repetível para vários comandos em UMA sessão
+- DEVE usar `--step <CMD>` repetível para vários comandos em UMA sessão, esperando que exit remoto 127 no PASSO ZERO aborte o lote, e um posterior não
 - DEVE respeitar `--disable-sudo` e o ajuste do host, tratar elevação como one-shot, e anexar `--description` quando a auditoria remota importar
 
 ### PROIBIDO
-- NUNCA inventar `--tags` em `health-check`, `scp` ou `sftp`, spawnar um processo por host quando um seletor de frota cobre o conjunto, prefixar `sudo` cru em `exec`, ou supor shell elevado sticky
+- NUNCA inventar `--tags` em `health-check`, `scp` ou `sftp`, spawnar um processo por host quando um seletor cobre o conjunto, prefixar `sudo` cru, ou supor shell elevado sticky
 
 
 ## SCP SFTP Tunnel Health
 ### OBRIGATÓRIO
 - DEVE usar `scp` SOMENTE para arquivo regular, na ordem upload local depois remoto, download remoto depois local
+- DEVE preencher o slot de host da transferência com o posicional inicial ou `--all`/`--hosts`, e DEVE trocar para `--src <PATH>` repetível com `--dest <DIR>` em várias fontes, pois três ou mais posicionais junto de um seletor é exit 64
 - DEVE esperar stream de 32 KiB, com download via `.ssh-cli.partial` e rename atômico
-- DEVE tratar mtime e mode como BEST-EFFORT e ler `mtime_preserved` e `durable` no `scp-transfer`; o exit code NÃO diz que o timestamp foi aplicado nem que a entrada é durável
+- DEVE tratar mtime e mode como BEST-EFFORT, lendo `mtime_preserved` e `durable` no `scp-transfer`, porque o exit code não prova nenhum dos dois
 - DEVE tratar arquivo remoto ausente no SCP como exit 66 com a mensagem `file not found`, NUNCA como 74
 - DEVE usar `sftp` para árvores com `--recursive`, e `sftp rmdir` só em diretório VAZIO
-- DEVE saber que o SFTP recursivo NUNCA segue symlink, e que as máscaras são DIRECIONAIS — a de saída, no upload, mantém setuid, setgid e sticky num arquivo que já é seu; a de entrada, no download, `SFTP_PERM_MASK_UNTRUSTED`, os remove, então elevação do servidor nunca chega ao arquivo local
+- DEVE saber que o SFTP recursivo NUNCA segue symlink, e que as máscaras são DIRECIONAIS — o upload mantém setuid, setgid e sticky, o download os remove sob `SFTP_PERM_MASK_UNTRUSTED`, então elevação do servidor não chega ao local
 - DEVE verificar tamanho ou checksum no destino após upload SFTP crítico, NUNCA confiando só na contagem de bytes
 - DEVE passar `--timeout` em `exec`, `scp`, `sftp` e `health-check`, e `--timeout-ms` SOMENTE no `tunnel`, em TODO tunnel
 - DEVE usar a forma posicional `tunnel <VPS> <LOCAL_PORT> [REMOTE_HOST] [REMOTE_PORT]`, tratando porta local `0` como efêmera e lendo o `local_port` real após o bind
 - DEVE ler `mode` em `tunnel_listening` e `tunnel_closed` — `local`, `socks5`, `streamlocal` ou `reverse` — porque é ele que diz como ler os campos vizinhos
-- DEVE OMITIR `REMOTE_HOST` e `REMOTE_PORT` com `--socks5` e `--remote-socket`, que não têm destino único, e DEVE PASSÁ-LOS com `--reverse`, onde são o que o SERVIDOR liga; `REMOTE_PORT 0` é legal SOMENTE sob `--reverse`, voltando em `local_port`. Qualquer outra combinação é exit 64
-- DEVE passar `--i-accept-network-exposure` quando o lado exposto sair do loopback; sob `--reverse` esse lado é o host remoto posicional, comparado como TEXTO porque nome e string vazia carregam significado, então typo ali é exit 64, não erro de parse
+- DEVE OMITIR `REMOTE_HOST` e `REMOTE_PORT` com `--socks5` e `--remote-socket`, e PASSÁ-LOS com `--reverse`, onde são o que o SERVIDOR liga; `REMOTE_PORT 0` só é legal sob `--reverse`, voltando em `local_port`; outra combinação é exit 64
+- DEVE passar `--i-accept-network-exposure` quando o lado exposto sair do loopback; sob `--reverse` esse lado é o host remoto posicional, comparado como TEXTO, então typo ali é exit 64
 - DEVE saber que `--bind` é aceita e então DESCARTADA sob `--reverse`; defina o listener do servidor pelo host remoto posicional
 - DEVE esperar que `--socks5` fale só CONNECT sem autenticação, recusando BIND e UDP ASSOCIATE, e encaminhando nomes de host sem resolver
 - DEVE passar caminho POSIX ABSOLUTO em `--remote-socket`, que nomeia um socket no SERVIDOR; caminho relativo é exit 64
-- DEVE tratar forward recusado como POLÍTICA, nunca erro transitório
-- DEVE AGUARDAR `tunnel_listening` antes de usar a porta local, com o processo vivo até deadline ou sinal
+- DEVE tratar forward recusado como POLÍTICA nunca erro transitório, e DEVE AGUARDAR `tunnel_listening` antes de usar a porta local, com o processo vivo até deadline ou sinal
 
 ### PROIBIDO
 - NUNCA passar diretório no scp nem inventar flag recursiva no scp; árvores DEVEM usar `sftp --recursive`
-- NUNCA trocar `--timeout` por `--timeout-ms`, nem tratar arquivo parcial remanescente como artefato final
 - NUNCA ligar tunnel em todas as interfaces sem decisão explícita de segurança, e NUNCA substituir host-key automaticamente
 
 
 ## Locale TLS Descoberta
 ### OBRIGATÓRIO
 - DEVE resolver locale — `--lang`, depois `locale set`, depois o sistema, depois inglês
-- DEVE gerenciar identidades com `tls mtls import --name --cert --key`, depois `list`/`show`/`remove`
-- DEVE criar conta ACME com `--contact` repetível na forma mailto
+- DEVE gerenciar identidades com `tls mtls import --name --cert --key`, depois `list`/`show`/`remove`, e criar conta ACME com `--contact` repetível na forma mailto
 - DEVE emitir em DOIS passos — `tls acme issue --domain --print-challenge`, publicar o registro DNS TXT, depois `tls acme complete --domain` — e NUNCA inventar loop de espera interativo
 - DEVE tratar falha permanente de validação ACME como exit 64 com `retryable` false, e uma transitória como exit 74 só quando o envelope a marcar como retryable
 
 ### PROIBIDO
-- NUNCA guardar certificado fora do layout XDG, omitir `--print-challenge` no issue, ou inventar nome de schema
+- NUNCA guardar certificado fora do layout XDG ou inventar nome de schema
 
 
 ## Códigos de Saída e Retry
 ### OBRIGATÓRIO
 - DEVE mapear 0 sucesso, 1 geral, 64 usage, 65 dados, 66 not found, 69 indisponível, 70 erro interno, 73 cant create, 74 IO ou SSH, 77 auth, 130 SIGINT, 143 SIGTERM
-- DEVE tratar 69 como RETENTÁVEL, porque keyring do SO bloqueado ou ausente responde ao mesmo argv assim que o serviço sobe
-- DEVE tratar 70 como PERMANENTE, porque um CSPRNG que não produz bytes não se resolve esperando nem mudando argumento
-- DEVE tratar comando vazio como 64, TOML de import inválido como 65, arquivo SCP remoto ausente como 66, falha de auth como 77, validação ACME permanente como 64
+- DEVE tratar 1 em chamada de frota como `partial_failure`, NUNCA como erro genérico, lendo o detalhe por host
+- DEVE tratar 69 como RETENTÁVEL, pois keyring bloqueado responde ao mesmo argv assim que sobe, e 70 como PERMANENTE, pois CSPRNG morto não se resolve por nenhum dos dois
 - DEVE tratar deadline de tunnel alcançado DEPOIS do bind como exit 0, e timeout ANTES do bind como exit 74
 - DEVE retentar no máximo duas vezes em 74 com backoff e SOMENTE se o envelope disser `retryable` true, e falhar rápido em 64, 65, 66 e 77, mudando os inputs primeiro
 - DEVE expor `exit_code` remoto do JSON de sucesso e `remote_exit_code` do envelope de erro, separados do exit do processo
@@ -234,7 +236,7 @@ description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, 
   - `ssh-cli vps path`
   - `ssh-cli doctor --json`, e o idêntico `ssh-cli vps doctor --json`
   - `ssh-cli doctor --probe-ssh --json`, e `ssh-cli vps doctor --probe-ssh --hosts <A>,<B> --json`
-  - `ssh-cli vps export -o /tmp/hosts.json`, e `ssh-cli --output-format text vps export -o /tmp/hosts.toml`
+  - `ssh-cli vps export --output /tmp/hosts.json`, e `ssh-cli --output-format text vps export -o /tmp/hosts.toml`
   - `ssh-cli vps export --json`
   - `ssh-cli vps export --include-secrets -o /tmp/hosts-secrets.toml`
   - `ssh-cli vps import --file /tmp/hosts.toml`
@@ -246,6 +248,9 @@ description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, 
   - `ssh-cli exec <NAME> "<CMD>" --json --timeout <MS> --description "<AUDIT>"`
   - `ssh-cli -q exec <NAME> "<CMD>" --json`
   - `ssh-cli exec <NAME> "<CMD>" --step "<CMD2>" --step "<CMD3>" --json`
+  - `ssh-cli connect <NAME>` e então `ssh-cli exec --use-active "<CMD>" --json`
+  - `ssh-cli sudo-exec --use-active "<CMD>" --json`
+  - `ssh-cli su-exec --use-active "<CMD>" --json`
   - `ssh-cli exec <NAME> "id" --json --use-agent --agent-socket <SOCK>`
   - `printf '%s' "$KEY_PASS" | ssh-cli exec <NAME> "id" --json --key <KEY_PATH> --key-passphrase-stdin`
   - `ssh-cli sudo-exec <NAME> "<CMD>" --json`, e com `--step "<CMD2>"`
@@ -263,10 +268,11 @@ description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, 
   - `ssh-cli scp download <NAME> <REMOTE_FILE> <LOCAL_FILE> --json`
   - `ssh-cli scp upload <NAME> <LOCAL_FILE> <REMOTE_FILE> --json --timeout <MS>`
   - `ssh-cli scp upload <NAME> <F1> <F2> <REMOTE_DIR> --json`
+  - `ssh-cli scp upload <NAME> --src <F1> --src <F2> --dest <REMOTE_DIR> --json`
   - `ssh-cli scp download <NAME> <R1> <R2> <LOCAL_DIR> --json`
   - `ssh-cli --scp-file-concurrency <N> scp upload <NAME> <F1> <F2> <REMOTE_DIR> --json`
   - `ssh-cli scp upload --all <LOCAL_FILE> <REMOTE_FILE> --json`
-  - `ssh-cli scp upload --all <F1> <F2> <REMOTE_DIR> --json`
+  - `ssh-cli scp upload --all --src <F1> --src <F2> --dest <REMOTE_DIR> --json`
   - `ssh-cli scp download --all <REMOTE_FILE> <LOCAL_PREFIX> --json`
   - `printf '%s' "$PASS" | ssh-cli scp download <NAME> <REMOTE_FILE> <LOCAL_FILE> --json --password-stdin`
   - `printf '%s' "$KEY_PASS" | ssh-cli scp upload <NAME> <LOCAL_FILE> <REMOTE_FILE> --json --key <KEY_PATH> --key-passphrase-stdin`
@@ -298,7 +304,7 @@ description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, 
   - `ssh-cli --json --dry-run secrets init --force`
   - `ssh-cli --json --dry-run secrets reencrypt`
   - `ssh-cli health-check <NAME> --json`, e com `--timeout <MS>`
-  - `ssh-cli health-check --json`
+  - `ssh-cli health-check --use-active --json`
   - `ssh-cli health-check --all --json`, e `ssh-cli --max-concurrency <N> health-check --all --json`
   - `ssh-cli health-check --hosts <A>,<B> --json`
   - `ssh-cli health-check <NAME> --json --use-agent --agent-socket <SOCK>`
@@ -333,7 +339,3 @@ description: Esta skill DEVE auto-ativar sempre que houver trabalho SSH remoto, 
   - `ssh-cli tls acme complete --domain <DOMAIN> --json`
   - `ssh-cli tls acme status --json`, e `ssh-cli tls acme status --domain <DOMAIN> --json`
   - `ssh-cli tls acme list --json`
-
-### PROIBIDO
-- NUNCA canalizar `--include-secrets` sem `--output` ou `--i-understand-secrets-on-stdout`
-- NUNCA inventar `--local-port`; a porta local é POSICIONAL

@@ -8,12 +8,18 @@
 
 | Version | Status | Security Patches |
 | --- | --- | --- |
-| 0.5.x | Supported | Yes, **current line** |
+| 0.5.x | Supported | Yes, **current line** — but 0.5.0–0.5.4 carry GAP-SSH-EXEC-ARGC-001; upgrade to **0.5.5+** |
 | 0.4.x | Supported | Critical / high when feasible; prefer upgrade to **0.5.x** |
 | 0.3.x | Limited | Critical only when feasible; crates.io **0.3.9** SCP wire was inoperant — upgrade to **0.5.3+** for transfers |
 | 0.2.x | Limited | Critical fixes only when feasible |
 | 0.1.x | Unsupported | No patches |
 | < 0.1 | Unsupported | No patches |
+
+## Security Fixes in 0.5.5
+- **GAP-SSH-EXEC-ARGC-001 — the target host was chosen by positional *count* instead of by content (CWE-441).** `exec`, `sudo-exec` and `su-exec` accepted one or two positionals: two meant `<VPS> <COMMAND>`, one meant "command against the host `connect` last marked". `--step` is an appending flag, not a positional, so `exec <HOST> --step <CMD>` collapsed into the one-positional branch. The host name was then run as a remote *binary* (remote exit **127**) and every `--step` after it executed on the marked host — a host the operator never typed. Because the later steps succeeded, the process exited **0**, so the operator read success while systemd units, packages and firewall rules landed somewhere else. This is a security defect and not an ergonomics one: in a CLI for remote access the critical dimension is not *what* runs, it is *where*. It required no attacker — ambiguous argv from a legitimate operator was enough, which is why it outranks a bug needing a hostile peer.
+- **Fixed by making the ambiguity unrepresentable, not by guessing intent.** A lone positional is now a usage error (exit **64**) on every remote surface, `health-check` included. Designate the target explicitly with `<VPS> <COMMAND>`, with a selector (`--all`, `--hosts a,b`, `--tags prod`), or with the marker on purpose via the new `--use-active`; opting in with no marker present is exit **66**. Failure now happens during parse, before any socket opens, so the blast radius of the mistake is a usage message instead of an audit across two hosts.
+- **GAP-SSH-EXEC-ENVELOPE-002 — the single-host envelope named no host, so the deflection above was undetectable from stdout.** The fleet path already emitted a per-host `name` while the single-host path — the one that accepted the silent fallback — emitted none, so the asymmetry ran opposite to the risk. Every envelope now carries `target_resolved`, `target_source` (`argv` | `active_marker` | `selector`) and `active_fallback`, on the **error** envelope too once the target resolved, where they are absent rather than empty. `host_resolved` and `host_source` ship as 0.5.5 read aliases; bind new consumers to the canonical names. `doctor` reports `local.active_vps`, so the marker is now legible by machine — before 0.5.5 no command exposed it and the only way to read it was opening the XDG file.
+- Upgrade to **0.5.5** for both. Neither needs a remote attacker, and the first one silently rewrote the wrong machine.
 
 ## Security Fixes in 0.5.4
 - **A1 — remotely triggerable abort while logging the pre-auth banner.** The SSH banner is remote input that arrives *before* authentication, and it is retained for diagnostic logging. The `AUTH_BANNER_MAX_CHARS` (512) log cap already existed (G-SSH-14); the defect was that the cut was applied by **byte index**, which panics whenever it lands inside a multi-byte character. The release profile sets `panic = "abort"`, so there is no unwind: an unauthenticated peer could kill the process outright with a banner containing a single well-placed non-ASCII character, taking a whole multi-host fan-out down with it. Truncation now happens on character boundaries. Note the residual limit of the fix: russh materialises the complete banner and hands it to the callback, so the client still holds the full string in memory — what A1 bounds is the panic, not the allocation. This is the highest-severity class here because it needs no credentials.
@@ -66,8 +72,8 @@
 
 ## Threat Model (product — G-SEC-10)
 - **Trust boundary:** CLI argv, env, XDG files (`config.toml`, `secrets.key`, `known_hosts`), and the remote SSH server are **untrusted** inputs. Only the local process identity and OS keyring (when enabled) are treated as higher-trust material.
-- **Assets:** SSH passwords / key passphrases / sudo-su secrets (memory + at-rest), host-key fingerprints (TOFU), primary AEAD key (`secrets.key` / keyring), and the ability to run remote shell / SCP / local port forwards.
-- **Adversaries considered:** (1) hostile CLI/agent argv and env; (2) malicious or MITM SSH servers (host-key change); (3) co-tenant local users reading world-readable files or process listings; (4) compromised transitive crates (supply chain).
+- **Assets:** SSH passwords / key passphrases / sudo-su secrets (memory + at-rest), host-key fingerprints (TOFU), primary AEAD key (`secrets.key` / keyring), the ability to run remote shell / SCP / local port forwards, and — as GAP-SSH-EXEC-ARGC-001 proved — the **identity of the host reached**, since the same argv running on the wrong machine is a breach even when every credential held.
+- **Adversaries considered:** (1) hostile CLI/agent argv and env; (2) malicious or MITM SSH servers (host-key change); (3) co-tenant local users reading world-readable files or process listings; (4) compromised transitive crates (supply chain); (5) **ambiguous argv from a legitimate operator or agent** — no adversary required. GAP-SSH-EXEC-ARGC-001 was of this class: a well-formed command line that the product resolved to a host nobody named. Treat "which machine does this reach" as an attacker-controlled question even when no attacker exists.
 - **Out of scope:** multi-tenant SaaS isolation, browser XSS/CSRF, container escape, kernel Spectre mitigations beyond normal process isolation, and long-lived daemon attack surface (this CLI is **one-shot**).
 - **Controls:** typed validation at CLI/import/path boundaries; `SecretString` + zeroize; ChaCha20-Poly1305 at rest; TOFU host keys with constant-time fingerprint compare; shell packing with single-quote escape and secrets on channel stdin; no local shell-out for SSH; `deny.toml` + **local** `cargo deny check` (product gates do not require GitHub Actions); release `overflow-checks`; documented `unsafe` only at OS console/signal edges.
 - **Review trigger:** re-read this model on any change that adds network protocols, long-lived processes, new secret stores, or `unsafe` outside OS FFI wrappers.
@@ -77,7 +83,7 @@
 - **Optional SSH-over-TLS:** when a VPS has `tls = true` (or `--tls` on `vps add`/`edit`), the client dials TCP, completes a **rustls** handshake (SNI + optional mTLS), then runs SSH on the TLS stream. Floor: **rustls ≥ 0.23.18** (never 0.23.13–0.23.17 Acceptor CVE window).
 - **Provider:** binary `main` calls `CryptoProvider::install_default` with **`aws_lc_rs` only** (once, before the Tokio runtime). Libraries use `ClientConfig::builder` / process default — they never reinstall. Dual provider **`ring` is banned** in `deny.toml`.
 - **Forbidden stacks:** no `native-tls`, OpenSSL, `libssh2-sys`, or product use of `ring`. PEM parse uses `rustls-pki-types` (not unmaintained `rustls-pemfile`).
-- **mTLS:** client cert/key PEMs under XDG `tls/mtls/<name>/` (`ssh-cli tls mtls import|list|show|remove`) or absolute paths on the VPS record.
+- **mTLS:** client cert/key PEMs under XDG `tls/mtls/<name>/` (`ssh-cli tls mtls import`, `ssh-cli tls mtls list`, `ssh-cli tls mtls show`, `ssh-cli tls mtls remove`) or absolute paths on the VPS record.
 - **ACME:** Let's Encrypt via `instant-acme` (DNS-01, agent two-step: `tls acme issue --print-challenge` → set TXT → `tls acme complete`). Account + certs under XDG `tls/acme/` (0o600). Prefer staging with `--staging` for tests.
 - SSH channel compression is **disabled** (client prefers `none` only) to reduce compression side-channels when secrets cross the channel.
 - Release/supply-chain gates for this policy are **local scripts** (`cargo deny check`, `cargo tree`, residual tests) — not a required GitHub Actions workflow (G-TLS-11).
@@ -87,7 +93,7 @@
 
 | Component | S | T | R | I | D | E | Primary controls |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| CLI argv / env / stdin secrets | spoof agent args | tamper flags | — | info leak via argv | DoS huge stdin | elev via sudo-exec | typed clap + secret stdin → `SecretString` + size cap |
+| CLI argv / env / stdin secrets | spoof agent args | tamper flags | deny which host ran it | info leak via argv | DoS huge stdin | elev via sudo-exec | typed clap + secret stdin → `SecretString` + size cap + explicit target designation with `target_resolved` / `target_source` on every envelope (0.5.5) |
 | XDG `config.toml` / `secrets.key` | forge host entry | rewrite secrets | — | read co-tenant | truncate/corrupt | — | 0o600 + flock + AEAD at-rest |
 | TOFU `known_hosts` | MITM host | swap fingerprint | — | fingerprint oracle | lock starve | — | flock + constant-time compare + `--replace-host-key` explicit |
 | SSH session (russh) | fake server | MITM / key change | — | channel sniff | hang / flood | remote shell | TOFU + timeouts + no local shell-out |
@@ -95,7 +101,7 @@
 | Multi-host fan-out | — | reorder jobs | — | cross-host leak in logs | resource exhaustion | — | `Semaphore` budget + cancel + redacted JSON |
 | Supply chain (deps) | typosquat | malicious crate | — | backdoor | build DoS | — | `deny.toml` + local `cargo deny` + `--locked` + lockfile TLS bans |
 
-**Accepted residual risks (explicit):** (1) password-on-argv still parseable (warned; prefer stdin); (2) remote host after auth is fully trusted for the one-shot command the operator requested; (3) co-tenant with same UID can read process memory — OS isolation, not this CLI; (4) Spectre/side-channel CPU class threats out of scope for a one-shot userland tool.
+**Accepted residual risks (explicit):** (1) password-on-argv still parseable (warned; prefer stdin); (2) the remote host after auth is fully trusted for the one-shot command the operator requested — a premise that only holds once the target is designated explicitly, which is why 0.5.5 made designation mandatory; (3) co-tenant with same UID can read process memory — OS isolation, not this CLI; (4) Spectre/side-channel CPU class threats out of scope for a one-shot userland tool.
 
 ## Logging and secret leakage (G2 / G14)
 - **Never** rely on ambient `RUST_LOG` for product debugging — the product **ignores** it (not a config store).

@@ -37,7 +37,7 @@ fn cancelled_host_sftp(name: String, local: Option<String>) -> HostSftpResult {
         bytes: None,
         duration_ms: None,
         local,
-        error: Some(crate::i18n::t(crate::i18n::Message::OperationCancelled)),
+        error: Some(crate::constants::OPERATION_CANCELLED_MSG.to_string()),
     }
 }
 

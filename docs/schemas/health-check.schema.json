@@ -2,16 +2,37 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/health-check.schema.json",
   "title": "health-check JSON",
+  "description": "Success payload of `ssh-cli health-check <VPS> --json` on a single host. Failures use error-envelope.schema.json instead.",
   "type": "object",
   "additionalProperties": true,
   "required": [
     "name",
+    "target_resolved",
+    "target_source",
     "status",
     "latency_ms"
   ],
   "properties": {
     "name": {
       "type": "string"
+    },
+    "target_resolved": {
+      "type": "string",
+      "description": "Canonical name of the host that was probed (Explicit Target Designation). Mirrors `name`; bind new consumers here."
+    },
+    "target_source": {
+      "type": "string",
+      "enum": ["argv", "active_marker", "selector"],
+      "description": "Canonical name for how the checked host was designated. `argv` is a name typed in this invocation, `active_marker` requires the explicit --use-active opt-in, `selector` comes from --all/--hosts. Since 0.5.5 the target must always be designated: omitting all three is exit 64, not a silent probe of whatever `connect` last wrote. Bind new consumers here; `host_source` is the 0.5.5 read alias."
+    },
+    "host_resolved": {
+      "type": "string",
+      "description": "Compatibility alias of target_resolved (0.5.5 spelling), written from the same value and never an independent source of truth. Emitted on every success envelope, because HealthCheckJson flattens TargetEcho and none of its four fields is conditional."
+    },
+    "host_source": {
+      "type": "string",
+      "enum": ["argv", "active_marker", "selector"],
+      "description": "Compatibility alias of target_source (0.5.5 spelling). Bind new consumers to target_source instead."
     },
     "status": {
       "type": "string",

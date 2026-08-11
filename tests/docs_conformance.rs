@@ -414,6 +414,165 @@ fn changelogs_describe_the_same_release_surface() {
     );
 }
 
+/// Keep a Changelog section names, in the order this project writes them.
+///
+/// The pairing is what makes the parity check below possible. Nothing else in the
+/// tree maps `Security` to `Segurança`: the surface tables next door compare flags
+/// and field names on purpose, because "parity of contract does not require parity
+/// of prose". Section headings are the exception — they are navigation, and a reader
+/// looking for security fixes navigates by the heading, not by the wording under it.
+///
+/// `Internal` is not in Keep a Changelog 1.1.0. It is kept because the alternative
+/// was filing gate and tooling work under `Changed`, where it competes for attention
+/// with things a consumer must act on.
+const CHANGELOG_SECTIONS: &[(&str, &str)] = &[
+    ("Security", "Segurança"),
+    ("Added", "Adicionado"),
+    ("Changed", "Alterado"),
+    ("Deprecated", "Depreciado"),
+    ("Removed", "Removido"),
+    ("Fixed", "Corrigido"),
+    ("Internal", "Interno"),
+];
+
+/// Section headings of the topmost release, in file order.
+/// A `## [` heading that names a shipped release, so `[Unreleased]` is not one.
+///
+/// Keep a Changelog 1.1.0 opens with `## [Unreleased]`, which carries no `###`
+/// subsections until something lands in it. The first version of this parser took the
+/// first `## [` heading unconditionally, so adding the `[Unreleased]` section the
+/// format requires would have made `top_release_sections` return empty and fired the
+/// "the parser is broken, not the changelog" assertion below — a gate that forbade
+/// conformance with the very format the changelog header claims to follow.
+fn is_shipped_release_heading(line: &str) -> bool {
+    line.starts_with("## [") && !line.starts_with("## [Unreleased]")
+}
+
+fn top_release_sections(text: &str) -> Vec<String> {
+    text.lines()
+        .skip_while(|l| !is_shipped_release_heading(l))
+        .skip(1)
+        .take_while(|l| !l.starts_with("## ["))
+        .filter_map(|l| l.strip_prefix("### "))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The parser must read past `[Unreleased]` to the newest shipped release.
+#[test]
+fn the_release_parser_skips_the_unreleased_section() {
+    let with_unreleased = "\
+## [Unreleased]
+- Nothing yet.
+
+## [9.9.9] - 2026-01-01
+### Added
+- thing
+
+## [9.9.8] - 2025-01-01
+### Fixed
+- older thing
+";
+    assert_eq!(
+        top_release_sections(with_unreleased),
+        vec!["Added".to_string()],
+        "an empty `[Unreleased]` must not be mistaken for the newest release"
+    );
+
+    assert!(!is_shipped_release_heading("## [Unreleased]"));
+    assert!(is_shipped_release_heading("## [0.5.5] - 2026-08-10"));
+    assert!(!is_shipped_release_heading("### Added"));
+}
+
+/// The newest release must be one section per name, same set in both languages.
+///
+/// # What this caught
+///
+/// Measured before it existed: release 0.5.5 carried `### Security` three times,
+/// `### Added` twice and `### Changed` twice in English — the residue of successive
+/// work sessions, each appending its own heading. Portuguese had eight headings
+/// against English's nine, and the missing one mattered: four security entries,
+/// including a `russh` CVE, sat under `### Adicionado`. A reader scanning the
+/// Portuguese file for security work would not have found them.
+///
+/// Every gate here already compared *tokens*, so the words were all present and
+/// every check stayed green. Presence is not the property that failed; placement
+/// was. This asserts placement.
+///
+/// It is scoped to the topmost release deliberately. Older entries are a historical
+/// record, and rewriting shipped history to satisfy a rule added later would destroy
+/// the thing the record is for.
+#[test]
+fn the_newest_release_has_one_section_per_name_in_both_languages() {
+    let en = std::fs::read_to_string(root().join("CHANGELOG.md")).expect("CHANGELOG");
+    let pt = std::fs::read_to_string(root().join("CHANGELOG.pt-BR.md")).expect("CHANGELOG pt-BR");
+
+    let en_sections = top_release_sections(&en);
+    let pt_sections = top_release_sections(&pt);
+    assert!(
+        !en_sections.is_empty() && !pt_sections.is_empty(),
+        "no `### ` headings found under the newest `## [` heading; the parser is \
+         broken, not the changelog"
+    );
+
+    for (lang, sections, known) in [
+        ("CHANGELOG.md", &en_sections, 0usize),
+        ("CHANGELOG.pt-BR.md", &pt_sections, 1usize),
+    ] {
+        let allowed: Vec<&str> = CHANGELOG_SECTIONS
+            .iter()
+            .map(|pair| if known == 0 { pair.0 } else { pair.1 })
+            .collect();
+
+        let mut seen: Vec<&String> = Vec::new();
+        for s in sections {
+            assert!(
+                allowed.contains(&s.as_str()),
+                "{lang}: `### {s}` is not a Keep a Changelog section for this \
+                 project. Allowed: {allowed:?}"
+            );
+            assert!(
+                !seen.contains(&s),
+                "{lang}: `### {s}` appears twice in the newest release. Merge them: \
+                 a reader scanning for one heading stops at the first, and entries \
+                 under the second are invisible."
+            );
+            seen.push(s);
+        }
+
+        let order: Vec<usize> = sections
+            .iter()
+            .filter_map(|s| allowed.iter().position(|a| a == s))
+            .collect();
+        let mut sorted = order.clone();
+        sorted.sort_unstable();
+        assert_eq!(
+            order, sorted,
+            "{lang}: sections are out of canonical order {allowed:?}"
+        );
+    }
+
+    // Translate the English set through the pair table and demand equality: a
+    // section present in one language and missing in the other is the failure that
+    // hid four security entries under `Adicionado`.
+    let expected_pt: Vec<String> = en_sections
+        .iter()
+        .map(|s| {
+            CHANGELOG_SECTIONS
+                .iter()
+                .find(|pair| pair.0 == s)
+                .map(|pair| pair.1.to_string())
+                .unwrap_or_else(|| unreachable!("validated above"))
+        })
+        .collect();
+    assert_eq!(
+        expected_pt, pt_sections,
+        "the two changelogs split the newest release differently. EN {en_sections:?} \
+         maps to {expected_pt:?}, but pt-BR has {pt_sections:?}. An entry filed under \
+         a different heading in one language is unfindable to that language's reader."
+    );
+}
+
 // ── LOTE G: the 0.5.4 surface must reach the documents people actually read ──
 
 /// Per-document token contract for the 0.5.4 surface.
@@ -655,6 +814,94 @@ const SURFACE_054: &[(&str, &[&str])] = &[
     ),
 ];
 
+/// The 0.5.5 surface, owed by the documents responsible for each part.
+///
+/// [`SURFACE_054`] froze the previous release's contract and the comment above it
+/// says a future release makes its own surface non-optional the same way. This is
+/// that list. It exists because 0.5.5 is a *breaking* target-designation change:
+/// a reader who does not find `--use-active` where they look concludes the marker is
+/// still reachable by omission, which is now exit 64.
+///
+/// The audit fields are listed separately from the flag on purpose. `--use-active` is
+/// how a caller designates; `host_resolved` / `host_source` / `active_fallback` are
+/// how a caller verifies afterwards. A document can teach one and silently omit the
+/// other, and the verification half is the one that turns a misdirected run into a
+/// string comparison instead of an investigation.
+const SURFACE_055: &[(&str, &[&str])] = &[
+    (
+        "README.md",
+        &["--use-active", "host_resolved", "active_vps"],
+    ),
+    (
+        "README.pt-BR.md",
+        &["--use-active", "host_resolved", "active_vps"],
+    ),
+    (
+        "docs/AGENTS.md",
+        &[
+            "--use-active",
+            "host_resolved",
+            "host_source",
+            "active_fallback",
+        ],
+    ),
+    (
+        "docs/AGENTS.pt-BR.md",
+        &[
+            "--use-active",
+            "host_resolved",
+            "host_source",
+            "active_fallback",
+        ],
+    ),
+    (
+        "docs/HOW_TO_USE.md",
+        &["--use-active", "host_source", "active_vps"],
+    ),
+    (
+        "docs/HOW_TO_USE.pt-BR.md",
+        &["--use-active", "host_source", "active_vps"],
+    ),
+    (
+        "docs/COOKBOOK.md",
+        &["--use-active", "host_resolved", "host_source"],
+    ),
+    (
+        "docs/COOKBOOK.pt-BR.md",
+        &["--use-active", "host_resolved", "host_source"],
+    ),
+    (
+        "docs/MIGRATION.md",
+        &["--use-active", "host_resolved", "host_source"],
+    ),
+    (
+        "docs/MIGRATION.pt-BR.md",
+        &["--use-active", "host_resolved", "host_source"],
+    ),
+    (
+        "docs/schemas/README.md",
+        &["host_resolved", "host_source", "active_fallback"],
+    ),
+    (
+        "skills/ssh-cli-en/SKILL.md",
+        &[
+            "--use-active",
+            "host_resolved",
+            "host_source",
+            "active_fallback",
+        ],
+    ),
+    (
+        "skills/ssh-cli-pt/SKILL.md",
+        &[
+            "--use-active",
+            "host_resolved",
+            "host_source",
+            "active_fallback",
+        ],
+    ),
+];
+
 /// Documents that own the fleet surface, and therefore owe every selector.
 ///
 /// `--all` and `--hosts` were documented everywhere; `--tags` was documented
@@ -678,7 +925,11 @@ fn fleet_documents_name_every_selector() {
     for doc in FLEET_SELECTOR_DOCS {
         let text = std::fs::read_to_string(root().join(doc))
             .unwrap_or_else(|e| panic!("cannot read {doc}: {e}"));
-        for selector in ["--all", "--hosts", "--tags"] {
+        // `--use-active` belongs in this list even though it selects one host rather
+        // than a fleet: it is the only remaining way to reach the active marker, so a
+        // document that describes target selection without it teaches an argv the
+        // parser rejects.
+        for selector in ["--all", "--hosts", "--tags", "--use-active"] {
             if !text.contains(selector) {
                 missing.push(format!("{doc}: {selector}"));
             }
@@ -784,7 +1035,7 @@ fn permission_mask_claims_are_directional() {
 fn the_054_surface_reaches_every_user_facing_document() {
     let mut missing = Vec::new();
 
-    for (doc, tokens) in SURFACE_054 {
+    for (doc, tokens) in SURFACE_054.iter().chain(SURFACE_055) {
         let text = std::fs::read_to_string(root().join(doc))
             .unwrap_or_else(|e| panic!("cannot read {doc}: {e}"));
         for token in *tokens {
@@ -866,8 +1117,18 @@ const LEAF_COMMANDS: &[&str] = &[
 /// Compact brace notation (`vps {add,list,…}`) is fine in a short index a human skims,
 /// but these files are read by retrieval: an agent grepping `tls acme account create`
 /// finds nothing in a brace list, and concludes the command does not exist.
+/// The two READMEs joined this list in 0.5.5. They carry a `Commands` table that has
+/// always named all 47 leaves, but it named them *folded* — `sftp
+/// upload|download|ls|…` in one cell. Folding satisfies a human skimming the table and
+/// defeats the retrieval this constant exists to protect: measured before the change,
+/// `rg -F 'sftp ls' README.md` returned nothing while the command was, in a sense,
+/// right there. Two of those folded cells also carried unescaped pipes, so the row
+/// rendered with phantom columns on crates.io — the landing page of the product.
+/// Unfolding fixed both at once, and listing the files here is what keeps them unfolded.
 const FULL_INVENTORY_DOCS: &[&str] = &[
     "llms-full.txt",
+    "README.md",
+    "README.pt-BR.md",
     "docs/AGENTS.md",
     "docs/AGENTS.pt-BR.md",
     "docs/HOW_TO_USE.md",

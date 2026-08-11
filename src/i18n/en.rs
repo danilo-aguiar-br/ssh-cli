@@ -35,6 +35,13 @@ pub(super) fn en(msg: &Message) -> String {
         Message::ErrorSoftware { op } => format!("Internal failure in {op}; retrying will not help"),
         Message::ErrorPartialFailure { detail } => format!("Partial failure: {detail}"),
         Message::ErrorInvalidArgument { detail } => format!("Invalid argument: {detail}"),
+        Message::ErrorNoActiveVps => {
+            // Deliberately surface-agnostic: `health-check --use-active` reaches this
+            // variant too, and that surface takes no command, so the older
+            // `<VPS> <COMMAND>` wording taught an argv it rejects.
+            "no active VPS; run `connect <NAME>` first, or name the target on the command line"
+                .to_string()
+        }
         Message::ErrorUnexpected { detail } => format!("Unexpected error: {detail}"),
         Message::VpsEdited { name } => format!("VPS '{name}' edited."),
         Message::ExportCompleted { path } => format!("exported to {path}"),
@@ -47,18 +54,11 @@ pub(super) fn en(msg: &Message) -> String {
         }
         Message::TunnelPressCtrlC => "Press Ctrl+C to terminate.".to_string(),
         Message::HealthCheckOk { name } => format!("Health check passed for '{name}'."),
-        Message::OperationCancelled => "Operation cancelled by user.".to_string(),
         Message::ScpUploadCompleted { bytes, ms } => {
             format!("Upload completed: {bytes} bytes in {ms}ms")
         }
         Message::ScpDownloadCompleted { bytes, ms } => {
             format!("Download completed: {bytes} bytes in {ms}ms")
-        }
-        Message::ScpUploadFileOnly => {
-            "upload only supports regular files (no directories / no -r)".to_string()
-        }
-        Message::ScpDownloadLocalNotDirectory => {
-            "download local path must be a file path, not an existing directory".to_string()
         }
         Message::SftpUploadCompleted { bytes, ms } => {
             format!("SFTP upload completed: {bytes} bytes in {ms}ms")

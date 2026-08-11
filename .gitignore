@@ -1,5 +1,14 @@
 # Artefatos de build
-target/
+#
+# ANCORADO de proposito. Um padrao de gitignore SEM barra inicial casa em QUALQUER
+# profundidade, entao o antigo `target/` engolia tambem `src/cli/target/`, um modulo
+# de codigo-fonte. Dentro de um checkout o Cargo monta a lista do pacote a partir do
+# git, logo os dois arquivos daquele modulo sumiam do tarball: o build local ficava
+# verde, os testes ficavam verdes, os onze gates ficavam verdes, e so
+# `cargo publish --dry-run` falhava, com `E0583: file not found for module target`.
+# A saida de build deste crate mora na raiz — `ws_members=1` — entao ancorar nao
+# perde nada e devolve a regra ao que ela sempre quis dizer.
+/target/
 Cargo.lock.bak
 *.rs.bk
 # Cópia local acidental do binário release (polui git describe dirty)
@@ -89,8 +98,9 @@ Cross.toml
 
 
 
+
 # BEGIN GH_SKILL_HYGIENE
-# Managed by ~/.grok/skills/crates-io-gh/scripts/pre-commit-hygiene.sh — do not hand-edit inside markers
+# Managed by ~/.grok/skills/gh/scripts/pre-commit-hygiene.sh — do not hand-edit inside markers
 # Ensures agent residual, secrets, DBs, media dumps and temp dirs never enter git
 # Empty/whitespace-only patterns are rejected (never added). No *.lock patterns.
 # --- extensions ---
@@ -156,6 +166,8 @@ graphrag.sqlite-wal
 **/.ingest-queue.sqlite-wal
 CLAUDE.md
 /CLAUDE.md
+.commit_hash
+**/.commit_hash
 # --- directories (prefix + contents) ---
 base_*/
 docs_rules*/

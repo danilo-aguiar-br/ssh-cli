@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Regressão 1:1 dos gaps AUD-SCP fechados na v0.4.0.
+//! One-to-one regression for the AUD-SCP gaps closed in 0.4.0.
 //!
 //! IDs: SCP-010..023, REL-004, DOC-004, TEST-004, IO-007.
-//! Credenciais FALSAS apenas; sem rede real.
+//! FAKE credentials only; no real network.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -52,7 +52,7 @@ fn root() -> std::path::PathBuf {
 
 #[test]
 fn gap_version_040() {
-    // Suite histórica 0.4.0 SCP/IO; product line current is 0.5.x after EN/API rename.
+    // Historical 0.4.0 SCP/IO suite; the product line is 0.5.x after the EN/API rename.
     let v = env!("CARGO_PKG_VERSION");
     assert!(
         v.starts_with("0.5.") || v.starts_with("0.4."),
@@ -62,7 +62,7 @@ fn gap_version_040() {
 
 #[test]
 #[serial]
-fn gap_version_cli_contem_040() {
+fn gap_version_cli_reports_040() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .arg("--version")
@@ -75,7 +75,7 @@ fn gap_version_cli_contem_040() {
 
 #[test]
 #[serial]
-fn gap_scp_017_help_contem_flags() {
+fn gap_scp_017_help_lists_flags() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["scp", "upload", "--help"])
@@ -113,7 +113,7 @@ fn gap_scp_017_password_stdin_conflict() {
 
 #[test]
 #[serial]
-fn gap_scp_019_upload_diretorio_rejeita() {
+fn gap_scp_019_upload_rejects_a_directory() {
     let tmp = TempDir::new().unwrap();
     add_host(&tmp, "scpdir");
     cmd(&tmp)
@@ -133,7 +133,7 @@ fn gap_scp_019_upload_diretorio_rejeita() {
 
 #[test]
 #[serial]
-fn gap_scp_001_upload_arquivo_local_antes_connect() {
+fn gap_scp_001_upload_checks_local_file_before_connect() {
     let tmp = TempDir::new().unwrap();
     add_host(&tmp, "scp1");
     cmd(&tmp)
@@ -152,7 +152,7 @@ fn gap_scp_001_upload_arquivo_local_antes_connect() {
 
 #[test]
 #[serial]
-fn gap_io_007_scp_json_flag_na_help() {
+fn gap_io_007_scp_json_flag_in_help() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args(["scp", "download", "--help"])
@@ -204,7 +204,7 @@ fn gap_e2e_script_e10_e12() {
 }
 
 #[test]
-fn gap_scp_023_comando_remoto_usa_p() {
+fn gap_scp_023_remote_command_uses_dash_p() {
     let src = std::fs::read_to_string(root().join("src/ssh/client_real.rs")).unwrap()
         + &std::fs::read_to_string(root().join("src/ssh/client_real_scp.rs")).unwrap()
         + &std::fs::read_to_string(root().join("src/ssh/client_real_core.rs")).unwrap()
@@ -265,7 +265,7 @@ fn gap_scp_022_partial_suffix_na_fonte() {
         !src.contains("std::fs::read(local)"),
         "upload must not load entire file with fs::read"
     );
-    // SCP-022b: mode/times no partial antes do rename (sem residual pós-rename).
+    // SCP-022b: mode and times land on the partial file before the rename, leaving no residue after it.
     assert!(
         src.contains("apply_local_mode(&partial") || src.contains("aplicar_mode_local(&partial"),
         "mode must be applied on partial before rename"
@@ -330,15 +330,44 @@ fn output_subsystem() -> String {
     )
 }
 
+/// SCP-020: the *completion* notices are localized, and the rejections are not.
+///
+/// The split is the point. `ScpUploadCompleted` is prose a human reads on stdout in
+/// text mode, so it earns a translation. `ScpUploadFileOnly` and
+/// `ScpDownloadLocalNotDirectory` were once here too, and every call site fed them
+/// into `SshCliError::InvalidArgument` — whose text lands in the JSON envelope that
+/// `docs/schemas/error-envelope.schema.json` pins to English. Translating them put
+/// Portuguese in the one channel that promised never to move.
+///
+/// So this test now asserts both halves: the notices still translate, and the two
+/// rejection bodies have left the message table for good. Checking only the first
+/// half is what let the leak live here for two releases.
 #[test]
-fn gap_scp_020_i18n_mensagens() {
+fn scp_completion_notices_translate_and_rejections_do_not() {
     let src = i18n_subsystem();
     assert!(src.contains("ScpUploadCompleted"));
     assert!(src.contains("ScpDownloadCompleted"));
-    assert!(src.contains("ScpUploadFileOnly"));
-    assert!(src.contains("ScpDownloadLocalNotDirectory"));
     assert!(src.contains("Upload completed"));
     assert!(src.contains("Upload concluído") || src.contains("Upload concluido"));
+
+    // Comments are excluded, and finding that out was the useful part: the first
+    // version of this assertion went red against the comment in `src/i18n.rs` that
+    // records *why* the two variants left. A gate that punishes the explanation of
+    // its own rule teaches the next author to delete the explanation.
+    let code: String = src
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for gone in ["ScpUploadFileOnly", "ScpDownloadLocalNotDirectory"] {
+        assert!(
+            !code.contains(gone),
+            "`{gone}` is back in the i18n tables; its text reaches the JSON error \
+             envelope, which is English by contract. Keep the phrase in \
+             `crate::constants` as a plain `&str` instead."
+        );
+    }
 }
 
 /// IO-007b: `scp --json` local promove envelope de err JSON (paridade tunnel).

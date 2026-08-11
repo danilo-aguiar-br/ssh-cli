@@ -483,7 +483,13 @@ fn doctor_hosts_requires_probe_ssh() {
         .stderr(predicate::str::contains("--probe-ssh"));
 }
 
-/// G-PAR-48: multi-file scp with --all is accepted (cartesian); fails on SSH, not parse.
+/// G-PAR-48: multi-file scp with --all is accepted; fails on SSH, not parse.
+///
+/// The spelling moved to the named slots. Positionally, `--all a b /tmp/out` would
+/// have made `a` a source path while the identical argv without `--all` made it the
+/// host slot, so that form is now a usage error (see
+/// `gaps_v066_transfer_target_designation`). The capability is unchanged — only the
+/// way it is designated.
 #[test]
 fn scp_multi_file_with_all_parses_and_attempts_transfer() {
     let tmp = TempDir::new().unwrap();
@@ -498,8 +504,11 @@ fn scp_multi_file_with_all_parses_and_attempts_transfer() {
             "scp",
             "upload",
             "--all",
+            "--src",
             a.to_str().unwrap(),
+            "--src",
             b.to_str().unwrap(),
+            "--dest",
             "/tmp/out",
         ])
         .assert()

@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-list.schema.json",
   "title": "vps list JSON",
+  "description": "Payload of `ssh-cli vps list --json`: an array whose items `$ref` vps-show.schema.json, so any gap there propagates here. Carries no `event` discriminator.",
   "type": "array",
   "items": {
     "$ref": "vps-show.schema.json"

@@ -1,5 +1,7 @@
 # Release checklist — ssh-cli
 
+> **0.5.5** — target-designation security release. Fixes GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decided the target host by positional *count*, so `exec <HOST> --step <CMD>` executed the host name as a remote binary on whatever host `connect` last selected. BREAKING: a lone positional is now a usage error; reach the active marker with the new `--use-active <COMMAND>`. The single-host envelope gained `target_resolved` and `target_source` — bind new consumers to those; `host_resolved`/`host_source` are the 0.5.5 read aliases — plus `active_fallback`, and `doctor` now reports `local.active_vps`.
+>
 > **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
 
 
@@ -9,7 +11,7 @@
 - Release target / product line: **0.5.4**.
 - Historical gate: **0.4.1** DOC-041 / AUD-POST honesty (export empty, tunnel exit 0, auth parity, scp-transfer event).
 - Local audit inventory (not published): `gaps.md` — **gitignored** and cargo-excluded; maintainers may keep it locally. Tests must not assert its FIXED text (G13/G15).
-- Residual suites: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG); `tests/gaps_v040_integration.rs` (SCP 0.4.0); `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006); `tests/gaps_v042_integration.rs` (AUD-E2E); `tests/gaps_v051_integration.rs` (0.5.2 wire/export/secrets); `tests/gaps_v056_ssh.rs` + `tests/gaps_v057_sftp.rs` (G-SSH / G-SFTP); `tests/gaps_v058_e2e_residual.rs` (G-E2E residual: schema/doctor root, single `vps-added`, `--use-agent`, help/clap env purge, FIXED_MASK, ACME 64).
+- Residual suites: `tests/gaps_v039_integration.rs` (LOG-001, JSON-001, CLI-004, DOC-003, DENY-002, REL/CHG); `tests/gaps_v040_integration.rs` (SCP 0.4.0); `tests/gaps_v041_integration.rs` (EXP-001, TUN-002, CLI-005/006, IO-009, REL-006); `tests/gaps_v042_integration.rs` (AUD-E2E); `tests/gaps_v051_integration.rs` (0.5.2 wire/export/secrets); `tests/gaps_v056_ssh.rs` + `tests/gaps_v057_sftp.rs` (G-SSH / G-SFTP); `tests/gaps_v058_e2e_residual.rs` (G-E2E residual: schema/doctor root, single `vps-added`, `--use-agent`, help/clap env purge, FIXED_MASK, ACME 64); `tests/gaps_v065_exec_target_designation.rs` (GAP-SSH-EXEC-ARGC-001: the exec family and `health-check` must be told their target in argv); `tests/gaps_v066_transfer_target_designation.rs` (the same rule extended to `scp` and `sftp`); `tests/gaps_v067_packaging_reach.rs` (every source file must survive `cargo package` — a `.gitignore` pattern that swallows a source directory is invisible to every local build); `tests/gaps_v068_source_language.rs` (non-ASCII prose outside a citation, the half `scripts/check_en_identifiers.sh` cannot read); `tests/gaps_v069_markdown_tables.rs` (a table row whose unescaped pipes disagree with its delimiter row — valid Markdown that renders with phantom columns, so no prose gate could see it); `tests/gaps_v070_doc_reference_reach.rs` (a document naming a suite the repository never had — the forward sweep only asks whether every suite on disk is listed, so it cannot see a phantom).
 
 
 ## Purpose
@@ -20,7 +22,7 @@
 
 ## Gates (required)
 
-0. Full gate battery — `bash scripts/check_all_gates.sh` exits 0 with all ten gates green and zero skipped. It covers items 1 to 5 plus the cross-target check, the advisory freshness gate and the `--no-default-features` build in one invocation. Run this before ticking anything below: `cargo clippy` and `cargo test` abort on the first unbuildable target, so a single broken test file hides the state of every gate behind it. `scripts/check_advisory_freshness.sh` has no other caller, so skipping the battery skips that gate entirely.
+0. Full gate battery — `bash scripts/check_all_gates.sh` exits 0 with all eleven gates green and zero skipped (`--list` prints the ids; count them there rather than trusting this sentence). It covers items 1 to 5 plus the cross-target check, the advisory freshness gate and the `--no-default-features` build in one invocation. Run this before ticking anything below: `cargo clippy` and `cargo test` abort on the first unbuildable target, so a single broken test file hides the state of every gate behind it. `scripts/check_advisory_freshness.sh` has no other caller, so skipping the battery skips that gate entirely.
 1. Release build — `cargo build --release` exits 0.
 2. Clippy clean — `cargo clippy --all-targets -- -D warnings` exits 0.
 3. English identifiers — `bash scripts/check_en_identifiers.sh` exits 0.
@@ -39,9 +41,9 @@
     - Windows uses `--no-default-features`: the default TLS stack pulls `aws-lc-sys`, which compiles C (A8).
     - `docs/CROSS_PLATFORM.md` must not claim a target this script does not check.
 5. Install resolve — `bash scripts/verify_install_resolve.sh` exits 0; russh at security floor (≥ 0.60.3; product line uses 0.62.5).
-6. Full tests — `cargo test --locked --all-targets` green (lib + integration + gaps_v037…v042 + **gaps_v051** + **gaps_v052** + **gaps_v056** + **gaps_v057** + **gaps_v058**).
+6. Full tests — `cargo test --locked --all-targets` green (lib + integration + gaps_v037…v042 + **gaps_v051** + **gaps_v052** + **gaps_v056** + **gaps_v057** + **gaps_v058** + **gaps_v065**…**gaps_v068**).
 6b. Formatting (G10) — `cargo fmt --check` exits 0.
-7. Gap residual suites green — every test in `tests/gaps_v038_integration.rs`, `tests/gaps_v039_integration.rs`, `tests/gaps_v040_integration.rs`, `tests/gaps_v041_integration.rs`, `tests/gaps_v042_integration.rs`, `tests/gaps_v051_integration.rs`, `tests/gaps_v052_tls_policy.rs`, `tests/gaps_v056_ssh.rs`, `tests/gaps_v057_sftp.rs`, `tests/gaps_v058_e2e_residual.rs`, and `tests/gaps_v064_gate_runner.rs` passes (including tests not named `gap_*`).
+7. Gap residual suites green — every test in `tests/gaps_v038_integration.rs`, `tests/gaps_v039_integration.rs`, `tests/gaps_v040_integration.rs`, `tests/gaps_v041_integration.rs`, `tests/gaps_v042_integration.rs`, `tests/gaps_v051_integration.rs`, `tests/gaps_v052_tls_policy.rs`, `tests/gaps_v056_ssh.rs`, `tests/gaps_v057_sftp.rs`, `tests/gaps_v058_e2e_residual.rs`, `tests/gaps_v064_gate_runner.rs`, `tests/gaps_v065_exec_target_designation.rs`, `tests/gaps_v066_transfer_target_designation.rs`, `tests/gaps_v067_packaging_reach.rs`, `tests/gaps_v068_source_language.rs`, `tests/gaps_v069_markdown_tables.rs`, and `tests/gaps_v070_doc_reference_reach.rs` passes (including tests not named `gap_*`).
 8. Local e2e (no real VPS) — help, fake VPS CRUD, completions behave as documented.
 9. Real VPS smoke (when available) — `health-check` / `exec` plus SCP matrix **E10–E14** and SFTP **E17/E18** (full matrix **E01–E18**) via `scripts/e2e_real_ssh.sh` when credentials exist; prefer local sshd / throwaway VPS; no auth-failure storms on production; record outcome in local maintainer notes without secrets (do not publish secrets; `gaps.md` is local-only).
 10. Inventory not published — `gaps.md` **MUST NOT** be published; it is **gitignored** and cargo-excluded (`/gaps.md` in `.gitignore` and `Cargo.toml` exclude). `git check-ignore gaps.md` **must match** (exit 0). FORBIDDEN: circular tests that assert FIXED text inside `gaps.md` (G13/G15).
@@ -135,6 +137,12 @@ cargo test --locked --test gaps_v051_integration
 cargo test --locked --test gaps_v056_ssh
 cargo test --locked --test gaps_v057_sftp
 cargo test --locked --test gaps_v058_e2e_residual
+cargo test --locked --test gaps_v065_exec_target_designation
+cargo test --locked --test gaps_v066_transfer_target_designation
+cargo test --locked --test gaps_v067_packaging_reach
+cargo test --locked --test gaps_v068_source_language
+cargo test --locked --test gaps_v069_markdown_tables
+cargo test --locked --test gaps_v070_doc_reference_reach
 cargo fmt --check
 cargo deny check
 bash scripts/check_en_identifiers.sh
@@ -168,6 +176,7 @@ git check-ignore gaps.md   # must match (exit 0)
 - FORBIDDEN: eternal RUSTSEC / CVE waive without closed tracking in the same release.
 - FORBIDDEN: `git push` or crates.io publish without explicit maintainer authorization.
 - FORBIDDEN: log or paste real secrets into inventory, checklist notes, or CI logs.
+- FORBIDDEN: publish `gaps.md` or assert its FIXED text from product tests (G13/G15).
 - REQUIRED: multi-line inventory / CHANGELOG writes use atomwrite (or equivalent atomic write).
 - REQUIRED: Status Resolvido only with code + test + version note (destination-effect evidence; not inventory FIXED text).
 
@@ -236,7 +245,7 @@ bash scripts/generate_sbom.sh
 - [../scripts/dist_multiarch.sh](../scripts/dist_multiarch.sh) — multi-arch build
 - [../scripts/generate_sbom.sh](../scripts/generate_sbom.sh) — SBOM / inventory
 - [../deny.toml](../deny.toml) — supply-chain policy
-- [../scripts/check_all_gates.sh](../scripts/check_all_gates.sh) — mandatory gate battery runner (all ten gates, one invocation)
+- [../scripts/check_all_gates.sh](../scripts/check_all_gates.sh) — mandatory gate battery runner (all eleven gates, one invocation)
 - [../scripts/check_advisory_freshness.sh](../scripts/check_advisory_freshness.sh) — advisory database freshness gate
 - [../scripts/verify_install_resolve.sh](../scripts/verify_install_resolve.sh) — install re-resolve gate
 - [../scripts/check_en_identifiers.sh](../scripts/check_en_identifiers.sh) — English identifier residual gate
@@ -283,4 +292,3 @@ bash scripts/generate_sbom.sh
 - Local multi-arch: `scripts/dist_multiarch.sh` when cross toolchains are installed.
 - Validate path length / agent socket notes on macOS and Windows before tagging a release.
 - Do **not** reintroduce `.github/workflows` for CI (policy: one-shot CLI, no cloud CI product).
-

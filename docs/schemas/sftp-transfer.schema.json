@@ -8,6 +8,8 @@
   "required": [
     "ok",
     "event",
+    "target_resolved",
+    "target_source",
     "direction",
     "vps",
     "local",
@@ -16,6 +18,24 @@
     "duration_ms"
   ],
   "properties": {
+    "target_resolved": {
+      "type": "string",
+      "description": "Canonical name of the host the transfer reached (Explicit Target Designation). Mirrors `vps`; bind new consumers here. `host_resolved` is the 0.5.5 read alias, written from the same value."
+    },
+    "target_source": {
+      "type": "string",
+      "enum": ["argv", "active_marker", "selector"],
+      "description": "How the target was designated: `argv` for a name typed in this invocation, `selector` for --all/--hosts. Transfers never read the active marker, so `active_marker` does not occur here. Without this field a fleet transfer and a single-host transfer to the same name were byte-identical on the wire."
+    },
+    "host_resolved": {
+      "type": "string",
+      "description": "Compatibility alias of target_resolved (0.5.5 spelling)."
+    },
+    "host_source": {
+      "type": "string",
+      "enum": ["argv", "active_marker", "selector"],
+      "description": "Compatibility alias of target_source (0.5.5 spelling)."
+    },
     "ok": { "type": "boolean", "const": true },
     "event": {
       "type": "string",

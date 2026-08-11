@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// G-COMP: human-readable VPS/exec output (extracted from output monólito).
+// G-COMP: human-readable VPS/exec output (extracted from output monolith).
 #![forbid(unsafe_code)]
 //! Text-mode formatters for VPS CRUD and one-shot execution.
 

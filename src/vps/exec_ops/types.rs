@@ -37,6 +37,13 @@ pub struct ExecOptions {
     pub disable_sudo: bool,
     /// Extra commands on the same SSH session after the primary (G-O3 / G-TYPE-19).
     pub steps: Vec<crate::domain::RemoteCommand>,
+    /// How the target host was designated, echoed into the execution envelope.
+    ///
+    /// GAP-SSH-EXEC-ENVELOPE-002: the host is decided while parsing argv and the
+    /// execution output only knows what happened, not where. Carrying the provenance
+    /// alongside the credentials is what lets the single-host envelope name its own
+    /// target without a second SSH round-trip.
+    pub target_source: crate::json_wire::TargetSource,
 }
 
 impl ExecOptions {
@@ -87,7 +94,7 @@ pub struct HostExecResult {
 }
 
 pub(crate) fn cancelled_err() -> anyhow::Error {
-    anyhow::anyhow!(crate::i18n::t(crate::i18n::Message::OperationCancelled))
+    anyhow::anyhow!(crate::constants::OPERATION_CANCELLED_MSG)
 }
 
 pub(crate) fn expect_single(selection: HostSelection) -> Result<String> {

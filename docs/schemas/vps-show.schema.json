@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-show.schema.json",
   "title": "vps show JSON",
+  "description": "Payload of `ssh-cli vps show <VPS> --json`, with every secret masked to a fixed marker. Five fields are conditional and vanish when unset rather than appearing empty: tags, tls, tls_sni, tls_client_cert, tls_client_key. Carries no `event` discriminator.",
   "type": "object",
   "additionalProperties": true,
   "required": [
@@ -16,6 +17,27 @@
     "schema_version"
   ],
   "properties": {
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Host tags used by the `--tags` fleet selector on the exec family. Omitted when empty (`skip_serializing_if`), never emitted as `[]`."
+    },
+    "tls": {
+      "type": "boolean",
+      "description": "True when this host runs SSH inside a rustls TLS tunnel. Omitted when false, so absence means plain TCP."
+    },
+    "tls_sni": {
+      "type": ["string", "null"],
+      "description": "SNI presented on the TLS handshake. Omitted when unset."
+    },
+    "tls_client_cert": {
+      "type": ["string", "null"],
+      "description": "Absolute path to the mTLS client certificate, when the host authenticates with one. Omitted when unset."
+    },
+    "tls_client_key": {
+      "type": ["string", "null"],
+      "description": "Absolute path to the mTLS client key. Omitted when unset; never contains key material."
+    },
     "name": {
       "type": "string"
     },

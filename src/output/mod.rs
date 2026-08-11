@@ -363,6 +363,10 @@ mod tests {
             truncated_stderr: false,
             duration_ms: 100,
         };
-        print_execution_output_json(&output).expect("json print in unit test");
+        print_execution_output_json(
+            &output,
+            &crate::json_wire::ExecTarget::new("t", crate::json_wire::TargetSource::Argv),
+        )
+        .expect("json print in unit test");
     }
 }

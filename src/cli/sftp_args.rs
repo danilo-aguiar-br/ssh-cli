@@ -17,8 +17,14 @@ pub enum SftpAction {
         /// Comma-separated host subset (bounded fan-out).
         #[arg(long, value_name = "LIST", conflicts_with = "all")]
         hosts: Option<String>,
-        /// Paths: `VPS LOCAL REMOTE`, multi-file `VPS LOCAL... REMOTE_DIR`, or fleet forms with `--all`/`--hosts`.
-        #[arg(required = true, num_args = 2.., value_names = ["VPS", "LOCAL", "REMOTE"])]
+        /// Named source slot (repeatable). Pairs with `--dest`; never remaps a positional.
+        #[arg(long = "src", value_name = "PATH", action = ArgAction::Append)]
+        src: Vec<String>,
+        /// Named destination slot. Always a directory, whatever the source count.
+        #[arg(long = "dest", value_name = "DIR")]
+        dest: Option<String>,
+        /// Paths: `VPS LOCAL REMOTE`, multi-file `VPS LOCAL... REMOTE_DIR`, or fleet `--all`/`--hosts` `LOCAL REMOTE`.
+        #[arg(num_args = 0.., value_names = ["VPS", "LOCAL", "REMOTE"])]
         target: Vec<String>,
         /// Recursively upload a local directory tree (no symlink follow).
         #[arg(short = 'r', long, action = ArgAction::SetTrue)]
@@ -42,8 +48,14 @@ pub enum SftpAction {
         /// Comma-separated host subset (bounded fan-out).
         #[arg(long, value_name = "LIST", conflicts_with = "all")]
         hosts: Option<String>,
-        /// Paths: `VPS REMOTE LOCAL`, multi-file forms, or fleet forms with `--all`/`--hosts`.
-        #[arg(required = true, num_args = 2.., value_names = ["VPS", "REMOTE", "LOCAL"])]
+        /// Named source slot (repeatable). Pairs with `--dest`; never remaps a positional.
+        #[arg(long = "src", value_name = "PATH", action = ArgAction::Append)]
+        src: Vec<String>,
+        /// Named destination slot. Always a directory, whatever the source count.
+        #[arg(long = "dest", value_name = "DIR")]
+        dest: Option<String>,
+        /// Paths: `VPS REMOTE LOCAL`, multi-file forms, or fleet `--all`/`--hosts` `REMOTE LOCAL`.
+        #[arg(num_args = 0.., value_names = ["VPS", "REMOTE", "LOCAL"])]
         target: Vec<String>,
         /// Recursively download a remote directory tree (no symlink follow).
         #[arg(short = 'r', long, action = ArgAction::SetTrue)]

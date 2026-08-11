@@ -2,7 +2,7 @@
 //! Testes E2E da CLI via `assert_cmd`.
 //!
 //! TODOS os tests usam `--config-dir <TempDir>` para isolar completamente o
-//! estado do sistema real. Testes que escrevem/leem env vars são marcados
+//! real system state. Tests that read or write env vars are marked
 //! com `#[serial]`.
 
 use assert_cmd::Command;
@@ -134,7 +134,7 @@ fn vps_list_masks_passwords() {
         .assert()
         .success()
         .stdout(predicate::str::contains("alfa"))
-        // Senha NÃO pode aparecer inteira
+        // The password must never appear in full
         .stdout(predicate::str::contains("senha-muito-longa-para-mascarar-123").not())
         // GAP-SSH-SEC-002: mask agent-safe sempre "***"
         .stdout(predicate::str::contains("***"));
@@ -316,7 +316,7 @@ fn vps_path_returns_path() {
 
 #[test]
 #[serial]
-fn testa_connect_seleciona_vps() {
+fn connect_selects_the_vps() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp)
         .args([
@@ -343,14 +343,14 @@ fn testa_connect_seleciona_vps() {
 
 #[test]
 #[serial]
-fn testa_connect_vps_inexistente_retorna_erro() {
+fn connect_to_a_missing_vps_returns_an_error() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp).args(["connect", "fantasma"]).assert().failure();
 }
 
 #[test]
 #[serial]
-fn testa_list_vazio_mostra_mensagem() {
+fn list_shows_a_message_when_empty() {
     let tmp = TempDir::new().unwrap();
     cmd(&tmp).args(["vps", "list"]).assert().success();
 }

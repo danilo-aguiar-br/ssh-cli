@@ -36,6 +36,21 @@ impl HostSelection {
     pub fn is_batch(&self) -> bool {
         matches!(self, Self::All | Self::Named(_) | Self::Tagged(_))
     }
+
+    /// Provenance of this selection, for the `target_source` wire field.
+    ///
+    /// Transfers have no active-marker path — `scp` and `sftp` never read the file
+    /// `connect` writes — so the mapping is total: a lone name came from a positional
+    /// (`argv`), and every plural form came from a selector flag.
+    #[must_use]
+    pub fn target_source(&self) -> crate::json_wire::TargetSource {
+        match self {
+            Self::Single(_) => crate::json_wire::TargetSource::Argv,
+            Self::All | Self::Named(_) | Self::Tagged(_) => {
+                crate::json_wire::TargetSource::Selector
+            }
+        }
+    }
 }
 
 /// Deduplicate host names preserving first-seen order (trim empty segments).

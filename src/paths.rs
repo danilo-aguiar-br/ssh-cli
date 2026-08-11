@@ -477,7 +477,7 @@ mod tests {
     #[test]
     fn normalize_nfc_converts_nfd_to_nfc() {
         let nfd = "e\u{0301}"; // e + combining acute
-        let nfc = "\u{00e9}"; // é precomposed
+        let nfc = "\u{00e9}"; // precomposed `é`
         assert_eq!(normalize_nfc(nfd), nfc);
     }
 

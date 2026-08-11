@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Testes de integração do módulo tunnel.
+//! Integration tests for the tunnel module.
 //!
-//! Testa o subcomando `tunnel` via CLI, validando help e parâmetros obrigatórios.
+//! Exercises the `tunnel` subcommand through the CLI: help text and required arguments.
 
 use assert_cmd::Command;
 use predicates::prelude::*;

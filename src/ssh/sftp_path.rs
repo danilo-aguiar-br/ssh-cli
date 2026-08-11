@@ -106,6 +106,10 @@ pub fn check_depth(depth: u32) -> SshCliResult<()> {
 ///
 /// Reserved for optional follow-symlink-if-under-root policy; unit-tested.
 #[must_use]
+// Reachable only from this module's tests today. Kept because it encodes the
+// containment rule that SFTP recursion depends on: deleting it would move that
+// rule into whichever call site next needs it, which is how path-traversal
+// checks drift apart.
 #[allow(dead_code)]
 pub fn remote_is_under(root: &str, candidate: &str) -> bool {
     if root.is_empty() {

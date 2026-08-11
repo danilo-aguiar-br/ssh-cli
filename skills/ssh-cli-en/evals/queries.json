@@ -224,6 +224,70 @@
     {
       "query": "debug why my local next.js hot reload is broken",
       "should_trigger": false
+    },
+    {
+      "query": "run uptime on the host i marked active earlier without typing its name again",
+      "should_trigger": true
+    },
+    {
+      "query": "can i export SSH_CLI_SECRETS_KEY or SSH_CLI_HOME to configure the tool from the environment",
+      "should_trigger": true
+    },
+    {
+      "query": "why does exec prod exit 64 when prod is a registered vps in my inventory",
+      "should_trigger": true
+    },
+    {
+      "query": "got exit 66 no_active_vps from sudo-exec --use-active, what do i run first",
+      "should_trigger": true
+    },
+    {
+      "query": "which json field tells me whether the host came from argv or from the active marker",
+      "should_trigger": true
+    },
+    {
+      "query": "upload three local files to a whole fleet, positional form says argv is ambiguous",
+      "should_trigger": true
+    },
+    {
+      "query": "harden sshd_config on the server to disable password authentication and root login",
+      "should_trigger": false
+    },
+    {
+      "query": "generate an ed25519 keypair with ssh-keygen and add the passphrase to my agent",
+      "should_trigger": false
+    },
+    {
+      "query": "write an ansible playbook that installs nginx across my inventory",
+      "should_trigger": false
+    },
+    {
+      "query": "set up a ProxyJump bastion stanza in my ~/.ssh/config for openssh",
+      "should_trigger": false
+    },
+    {
+      "query": "my rsync over ssh is slow, tune the cipher and compression flags",
+      "should_trigger": false
+    },
+    {
+      "query": "build a terraform module that provisions ec2 instances with a security group",
+      "should_trigger": false
+    },
+    {
+      "query": "explain how the ssh protocol key exchange and diffie-hellman handshake works",
+      "should_trigger": false
+    },
+    {
+      "query": "docker compose file for a postgres and redis local dev stack",
+      "should_trigger": false
+    },
+    {
+      "query": "configure fail2ban jails to block repeated ssh brute force attempts",
+      "should_trigger": false
+    },
+    {
+      "query": "write a systemd unit that restarts my api service on failure",
+      "should_trigger": false
     }
   ]
 }
