@@ -1,86 +1,337 @@
 # JSON Schemas Index
 
-> **0.5.5** — target-designation security release. Fixes GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decided the target host by positional *count*, so `exec <HOST> --step <CMD>` executed the host name as a remote binary on whatever host `connect` last selected. BREAKING: a lone positional is now a usage error; reach the active marker with the new `--use-active <COMMAND>`. The single-host envelope gained `target_resolved` and `target_source` — bind new consumers to those; `host_resolved`/`host_source` are the 0.5.5 read aliases — plus `active_fallback`, and `doctor` now reports `local.active_vps`.
->
-> **0.5.4** — security and agent-native release. Fixes a remote pre-auth DoS in the SSH banner path (A1), stops server-sent setuid bits landing on downloaded files (A3), closes the world-readable window on ACME/mTLS private keys (A2), and adds payload-shaping flags (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) applied before serialization. BREAKING: partial multi-host failure now exits **1** (was 65); a non-loopback `--bind` requires `--i-accept-network-exposure`. New `tunnel_closed` event.
-
 
 ## English
-- This directory versions machine-readable JSON contracts for ssh-cli stdout/stderr payloads (**0.5.4**).
-- **Runtime discovery:** `ssh-cli schema` lists the embedded catalog; `ssh-cli schema <name>` emits one schema body (G-E2E-02). Root `ssh-cli doctor` is an alias of `vps doctor` (G-E2E-03).
-- **Wire format:** classic single-root JSON (RFC 8259 object or array) — **not** NDJSON/JSONL. Emit is **compact** (one line + trailing LF), UTF-8 without BOM. Pretty-print is not part of the agent contract.
-- Host wire inventory on disk uses **schema v3** (English serialize + dual-read Portuguese aliases); JSON schemas here contract CLI stdout/stderr, not the full TOML host file.
-- Validate agent parsers against these schemas before treating fields as stable. Unknown fields on import follow Must-Ignore (serde default).
-- `vps-list.schema.json` contracts `ssh-cli vps list --json`.
-- `vps-show.schema.json` contracts `ssh-cli vps show <name> --json`.
-- `vps-list.schema.json` reuses the vps-show item schema via `$ref` (`items.$ref` → `vps-show.schema.json`).
-- `vps-show` / `vps-list` schemas allow `password` as JSON `null` or the masked string `***` (GAP-SSH-JSON-001 / **0.4.0**): empty/key-only hosts serialize as `null`; non-empty is never a raw credential.
-- `vps-doctor.schema.json` contracts `ssh-cli vps doctor --json` **and** root `ssh-cli doctor --json` (same payload) including, **under `local`**, `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out`, `telemetry: false` and `active_vps` (the name `connect` last marked, `null` when there is none), plus optional `runtime` (`os`/`arch`/WSL/container/CI/Termux/sandbox). Bind to `local.telemetry`, not `telemetry`: the flat spelling reads `null`.
-- `exec.schema.json` contracts `ssh-cli exec ... --json`.
-- `sudo-exec.schema.json` contracts `ssh-cli sudo-exec ... --json`.
-- `su-exec.schema.json` contracts `ssh-cli su-exec ... --json`.
-- `health-check.schema.json` contracts `ssh-cli health-check --json` (single host).
-- `health-check-batch.schema.json` contracts `ssh-cli health-check --all --json` (`event: "health-check-batch"`).
-- `exec-batch.schema.json` contracts `ssh-cli exec --all --json`, `ssh-cli sudo-exec --all --json` and `ssh-cli su-exec --all --json` (`event: "exec-batch"`).
-- `scp-batch.schema.json` contracts `ssh-cli scp upload --all --json` and `ssh-cli scp download --all --json` (`event: "scp-batch"`).
-- Optional CLI `--timeout` on `health-check` does not change response schema fields.
-- Global `--max-concurrency N` (CLI-only; auto formula when omitted) bounds multi-host fan-out and tunnel forwards (not a JSON field except `max_concurrency` inside batch envelopes).
-- `scp-transfer.schema.json` contracts `ssh-cli scp upload --json` / `ssh-cli scp download --json` **success on stdout** (regular files only; no directories / no `-r`); required field `event: "scp-transfer"` (IO-009 from 0.4.x retained in product line **0.5.4**). Carries additive `mtime_preserved` and `durable` since the 0.5.4 line (G-SCP-R01/R02): metadata preservation and parent-directory fsync are **best-effort**, and these booleans report the real outcome instead of leaving an unqualified exit 0.
-- `sftp-transfer.schema.json` contracts `ssh-cli sftp upload --json` / `ssh-cli sftp download --json` (`event: "sftp-transfer"`; optional `recursive`). Prefer product line **0.5.3+** (G1 upload integrity). Runtime notes not encoded as schema fields: SETSTAT sends atime+mtime together (G3); mutating set_metadata is fail-closed (G4); permission bits are masked directionally — named `SFTP_PERM_MASK` `0o7777` outbound on upload (G12/G19), `SFTP_PERM_MASK_UNTRUSTED` `0o0777` inbound on download since 0.5.4 (A3), so server-sent setuid/setgid/sticky never reach the local file; SFTP download local `set_permissions` is fail-closed (G18).
-- `sftp-list.schema.json` contracts `ssh-cli sftp ls --json` (`event: "sftp-list"`).
-- `sftp-fs-op.schema.json` contracts `ssh-cli sftp mkdir --json`, `ssh-cli sftp rmdir --json`, `ssh-cli sftp rm --json`, `ssh-cli sftp rename --json` and `ssh-cli sftp stat --json` (`event: "sftp-fs-op"`).
-- `sftp-batch.schema.json` contracts `ssh-cli sftp upload --all --json` and `ssh-cli sftp download --hosts a,b --json` (`event: "sftp-batch"`). On cancel, multi-file/batch results keep input cardinality (G5/G17) — cancelled remainder filled so `results.len() == input.len()`.
-- `tunnel-listening.schema.json` contracts the post-bind stdout event for `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`). After `tunnel_listening`, one-shot post-bind deadline is process exit **0** (not a schema field; see AGENTS / TUN-002). Pre-bind timeout remains **74**.
-- `tunnel-closed.schema.json` contracts the shutdown stdout event (`event: "tunnel_closed"`), emitted on every ending. `reason` separates `deadline` / `signal` / `accept_error`, which previously all shared exit **0**; `forwards_served` and `capacity_waits` report whether anything connected and whether `--max-concurrency` throttled it.
-- Both tunnel schemas carry `mode` since **0.5.4** (`local` / `socks5` / `streamlocal` / `reverse`). It is the discriminator that tells a consumer how to read the sibling fields: under `reverse` the listener is on the SSH server, and under `socks5` there is no single destination. It defaults to `local` so events written before 0.5.4 still validate.
-- `dry-run.schema.json` contracts the plan emitted instead of executing a destructive operation under `--dry-run` (`event: "dry-run"`). It is emitted as JSON even in text mode, because a preview exists to be diffed. `--dry-run` on a command that does not implement it is rejected with exit **64** rather than accepted and ignored.
-- `vps-export.schema.json` contracts **only** `ssh-cli vps export --json` (`event: "vps-export"`, redacted by default; GAP-SSH-UX-001 / **0.5.4**). The `vps export` body follows the resolved output format, so on any non-TTY stdout it matches **this** schema even without `--json`; only `--output-format text` yields a TOML body, which this schema does not cover.
-- `secrets-init.schema.json` contracts `ssh-cli secrets init --json` (`event: "secrets-init"`).
-- `secrets-reencrypt.schema.json` contracts `ssh-cli secrets reencrypt --json` (`event: "secrets-reencrypt"`).
-- `error-envelope.schema.json` contracts **stderr** failure payloads when JSON errors mode is active (`--json` / global `--output-format json` / effective JSON on scp and tunnel): fields `exit_code`, `error_code`, `error_class`, `retryable`, `message`, optional `remote_exit_code` and `suggestion`, plus the optional provenance trio `target_resolved`, `target_source` and `active_fallback` with the read aliases `host_resolved` and `host_source`. The trio is **absent, never empty**, when the failure predates target resolution: `None` says no host was chosen, while `""` would assert that one was chosen and is nameless, and only one of those is true. `error_class` includes **`partial`** (A2): it shipped with G-ERR-R02 and was missing from the enum, so a strict validator rejected the exact envelope the CLI emits for a partial fan-out. Exit codes **69** (service unavailable, transient) and **70** (internal software failure, permanent) were added by G-ERR-R01. `message` is **stable English by contract** (B2): the human text mode localizes the same failure through `i18n::localized_error_text`, but the JSON payload must never change with the host locale — agents branch on `error_code`.
-- Secrets in list/show payloads: empty password is JSON `null` (key-only hosts); non-empty password is the masked string `***` (`FIXED_MASK`), never raw credentials. Redacted `vps export --json` uses the same `***` for non-empty secrets (empty stay `""`) (G-E2E-10).
-- There is no schema for `secrets status` key material (command never emits the primary key); treat status JSON as non-sensitive metadata only. Keyring may still accept the legacy `secrets-master-key` read alias.
-- CRUD success events — `vps-added`, `vps-edited`, `vps-removed`, `vps-connected` and `vps-import` — may appear without dedicated schema files; `vps-import` is named explicitly because it already shows up in the `operation` enum of `dry-run.schema.json`, which sends a reader looking for a schema of the real event; on first secret write the **same** `vps-added` document may include boolean `secrets_key_auto_created` (never a second stdout event). Parsers should treat the `event` field as discriminator.
-- **Not every payload carries `event`.** `exec`, `sudo-exec`, `su-exec` and `vps-show` emit an object with no `event` key at all, and `vps list` emits a bare JSON **array** with no envelope around it. A parser that branches on `event` first, and treats its absence as a malformed document, rejects five valid payloads. Branch on the invoked command; use `event` only where the schema lists it.
-- Discovery envelopes: `ssh-cli commands` emits `event: "commands"` and `ssh-cli schema` emits `event: "schema-catalog"` (catalog list). No dedicated `.schema.json` files are required for those discovery envelopes — parse via the `event` discriminator.
-- `telemetry` in doctor output is always false.
+- This directory versions machine-readable JSON contracts for ssh-cli stdout/stderr payloads (0.5.6)
+- It holds 25 schema files, and `ssh-cli schema` lists the same 25 names (the file name without `.schema.json`)
+- Runtime discovery: `ssh-cli schema` lists the embedded catalog
+- `ssh-cli schema <name>` emits one schema body (G-E2E-02)
+- The schemas are embedded in the binary, so `ssh-cli schema <name>` always matches the installed release
+- Root `ssh-cli doctor` is an alias of `ssh-cli vps doctor` (G-E2E-03)
+- Wire format: one classic single-root JSON document per event (RFC 8259 object or array), not a JSONL stream
+- The first exception is `ssh-cli tunnel --json`, which writes two documents, one per line: `tunnel_listening` and then `tunnel_closed`
+- The second exception is `ssh-cli exec`, `ssh-cli sudo-exec` and `ssh-cli su-exec` with `--step`, which print one document per step, each with the extra fields `step` and `command`
+- Emit is compact (one line + trailing LF), UTF-8 without BOM, except `ssh-cli schema <name>`, which prints the schema file as stored, indented
+- Pretty-print is not part of the agent contract
+- The schemas describe the default output, and the global shaping flags change it on request
+- `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only` and `--max-output-bytes` reduce collections only: the bare array of `ssh-cli vps list`, the `results` array of the batch envelopes and the `entries` array of `ssh-cli sftp ls`
+- `--select` and `--truncate-content` reduce collections and also a single object such as `ssh-cli vps show` or `ssh-cli doctor`, and a collection flag passed to a single object is named under `agent_shape.ignored`
+- A reduced envelope gains `agent_shape` with `input_count`, `output_count` and `dropped`, plus `content_truncated` or `output_truncated` when they apply
+- `--count-only` replaces the array by `count`, the number of items left after the other flags, and `ssh-cli vps list --count-only` prints `{"count":N}`
+- `--select` drops fields and `--count-only` drops the array, so a reduced document can lack fields that the schema requires
+- `agent_shape` and `count` are optional properties of `health-check-batch`, `exec-batch`, `scp-batch`, `sftp-batch`, `sftp-list` and `dry-run` (only the `hosts` array of the `ssh-cli vps import` plan)
+- Read `replaces_existing` from an unshaped `ssh-cli vps import --dry-run` plan, because `--limit`, `--filter` or `--count-only` can hide the host that would be overwritten
+- Host wire inventory on disk uses schema v3 (English serialize + dual-read Portuguese aliases)
+- JSON schemas here contract CLI stdout/stderr, not the full TOML host file
+- Validate agent parsers against these schemas before treating fields as stable
+- Unknown fields on import follow Must-Ignore (serde default)
+- `tests/gaps_v072_schema_conformance.rs` validates real envelopes printed by the binary against these files
+- `vps-list.schema.json` contracts `ssh-cli vps list --json`
+- `vps-edit.schema.json` contracts `ssh-cli vps edit <name> --json` (`event: "vps-edited"`, or `vps-renamed` when `--name` renames)
+- `updated` is always present and names the fields whose stored value changed, in application order, each at most once, so a mention and an effect are distinguishable
+- Its items come from 19 names: `host`, `port`, `user`, `password`, `key_path`, `key_passphrase`, `use_agent`, `agent_socket`, `timeout_ms`, `max_command_chars`, `max_output_chars`, `sudo_password`, `su_password`, `disable_sudo`, `tls`, `tls_sni`, `tls_client_cert`, `tls_client_key` and `tags`
+- It is empty when every requested value already matched or when the invocation only renamed the host
+- An edit that changes nothing exits 0 with `vps-edited` and `updated: []`, and an invocation with no field, rename or clear flag exits 64
+- `previous_name` appears only when `--name` renamed the host
+- Switching the primary auth method (`--key`, `--password`, `--use-agent`) also lists each field it cleared that held a value, such as `key_path` or `password`
+- `vps-rename.schema.json` contracts `ssh-cli vps rename <name> <new-name> --json` (`event: "vps-renamed"`)
+- Its `updated` uses the same 19 names
+- `active_rewritten` says whether the `ssh-cli connect` marker followed the rename, and `target_source` is always `argv` because the verb never reads the marker
+- `target_resolved` is the name the host had before the invocation in `vps-edited`, `vps-renamed` and the dry-run plan alike, so after a rename it equals `previous_name`, never the new `name`
+- `ssh-cli vps rename` is not idempotent: repeating it after a success exits 66, so confirm with `ssh-cli vps show <new-name>`
+- `vps-import.schema.json` contracts `ssh-cli vps import --file <FILE> --json` (`event: "vps-import"`)
+- `imported` counts every host written, and `replaced` is the sorted array of pre-existing host names the import overwrote, always present and empty when none (since 0.5.6)
+- The `--dry-run` plan stays the `dry-run` event with `operation: "vps-import"` and `replaces_existing`, documented in `dry-run.schema.json`
+- `vps-show.schema.json` contracts `ssh-cli vps show <name> --json`
+- `vps-show.schema.json` publishes two shapes with `anyOf`: the full record, and a record carrying `agent_shape` when `--select`, `--truncate-content` or a collection-only flag was passed, with `anyOf` rather than `oneOf` because the latter two keep the record whole and a `--truncate-content` alone would match both variants
+- `vps-list.schema.json` publishes two item shapes with `anyOf`: the full record through `items.anyOf[0].$ref` → `vps-show.schema.json`, and the reduced record produced by `--select`, which keeps only the projected top-level keys through `items.anyOf[1]`
+- The reduced list item carries no `agent_shape`, because `vps list` returns a bare array and its reduction report goes to stderr as `{"event":"agent-shape"}`
+- A projected key that does not resolve is omitted rather than emitted as `null`, so an item may be an empty object and still conform
+- `vps-show` / `vps-list` schemas allow `password` as JSON `null` or the masked string (GAP-SSH-JSON-001 / 0.4.0), where empty/key-only hosts serialize as `null`
+- Non-empty is never a raw credential
+- `vps-doctor.schema.json` contracts `ssh-cli vps doctor --json` and root `ssh-cli doctor --json` (same payload)
+- Under `local` it carries `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out`, `telemetry: false` and `active_vps` (the name `ssh-cli connect` last marked, `null` when there is none)
+- It also carries `config_dir_exposed` (boolean, always present), `invalid_host_names` (array of escaped strings, always present, empty when every name is valid) and `config_dir_permissions` (a four-digit octal string such as `0700`, absent off Unix)
+- The `local.runtime` object, always present, holds `os`/`arch`/WSL/container/CI/Termux/sandbox, and `ssh_probe` is `null` unless `--probe-ssh` ran
+- The `ssh_probe` object is not a `health-check-batch` document: it carries `event`, `max_concurrency`, `hosts`, `failures` and `results`, and no `batch_run_id`
+- `permissions` is the mode of `config.toml` as a string without a leading zero, such as `600`, or `missing` when the file does not exist and `n/a` off Unix
+- Read them with `ssh-cli doctor --json --select local.config_dir_exposed`
+- The global `--select` projects the doctor object directly, and the reduced envelope carries `agent_shape`
+- Bind to `local.telemetry`, not `telemetry`: the flat spelling reads `null`
+- `exec.schema.json` contracts `ssh-cli exec ... --json`
+- `sudo-exec.schema.json` contracts `ssh-cli sudo-exec ... --json`
+- `su-exec.schema.json` contracts `ssh-cli su-exec ... --json`
+- `ssh-cli exec`, `ssh-cli sudo-exec` and `ssh-cli su-exec` always carry `exit_code`, which is `null` when the remote side reported none
+- `health-check.schema.json` contracts `ssh-cli health-check --json` (single host)
+- `health-check-batch.schema.json` contracts `ssh-cli health-check --all --json` (`event: "health-check-batch"`)
+- `exec-batch.schema.json` contracts `ssh-cli exec --all --json`, `ssh-cli sudo-exec --all --json` and `ssh-cli su-exec --all --json` (`event: "exec-batch"`)
+- With `--step` on a fleet run, the `stdout` of each host joins the steps behind `--- step <i>: <command> ---` header lines, and `exit_code` is the first non-zero code, or 0 when every step succeeded
+- `scp-batch.schema.json` contracts `ssh-cli scp upload --all --json` and `ssh-cli scp download --all --json` (`event: "scp-batch"`)
+- Optional CLI `--timeout` on `ssh-cli health-check` does not change response schema fields
+- Global `--max-concurrency N` (CLI-only, auto formula when omitted) bounds multi-host fan-out and tunnel forwards (not a JSON field except `max_concurrency` inside batch envelopes)
+- `scp-transfer.schema.json` contracts `ssh-cli scp upload --json` / `ssh-cli scp download --json` success on stdout (regular files only, no directories / no `-r`)
+- Required field `event: "scp-transfer"` (IO-009 from 0.4.x retained in product line 0.5.4)
+- Carries additive `mtime_preserved` and `durable` since the 0.5.4 line (G-SCP-R01/R02): metadata preservation and parent-directory fsync are best-effort, and these booleans report the real outcome instead of leaving an unqualified exit 0
+- `sftp-transfer.schema.json` contracts `ssh-cli sftp upload --json` / `ssh-cli sftp download --json` (`event: "sftp-transfer"`, optional `recursive`)
+- Prefer product line 0.5.3+ (G1 upload integrity)
+- Runtime notes not encoded as schema fields: SETSTAT sends atime+mtime together (G3)
+- Mutating set_metadata is fail-closed (G4)
+- Permission bits are masked directionally: named `SFTP_PERM_MASK` `0o7777` outbound on upload (G12/G19), `SFTP_PERM_MASK_UNTRUSTED` `0o0777` inbound on download since 0.5.4 (A3), so server-sent setuid/setgid/sticky never reach the local file
+- SFTP download local `set_permissions` is fail-closed (G18)
+- `sftp-list.schema.json` contracts `ssh-cli sftp ls --json` (`event: "sftp-list"`)
+- `sftp-fs-op.schema.json` contracts `ssh-cli sftp mkdir --json`, `ssh-cli sftp rmdir --json`, `ssh-cli sftp rm --json`, `ssh-cli sftp rename --json` and `ssh-cli sftp stat --json` (`event: "sftp-fs-op"`)
+- `sftp-batch.schema.json` contracts `ssh-cli sftp upload --all --json` and `ssh-cli sftp download --hosts a,b --json` (`event: "sftp-batch"`)
+- On cancel, multi-file/batch results keep input cardinality (G5/G17), cancelled remainder filled so `results.len() == input.len()`
+- `tunnel-listening.schema.json` contracts the post-bind stdout event for `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`)
+- After `tunnel_listening`, one-shot post-bind deadline is process exit 0 (not a schema field, see AGENTS / TUN-002)
+- Pre-bind timeout remains 74
+- `tunnel-closed.schema.json` contracts the shutdown stdout event (`event: "tunnel_closed"`), emitted on every ending
+- `reason` separates `deadline` / `signal` / `accept_error`, which previously all shared exit 0
+- Today a signal still prints `tunnel_closed` and then ends the process with exit 143 after SIGTERM or 130 after SIGINT
+- `forwards_served` and `capacity_waits` report whether anything connected and whether `--max-concurrency` throttled it
+- Both tunnel schemas carry `mode` since 0.5.4 (`local` / `socks5` / `streamlocal` / `reverse`)
+- It is the discriminator that tells a consumer how to read the sibling fields: under `reverse` the listener is on the SSH server, and under `socks5` there is no single destination
+- It defaults to `local` so events written before 0.5.4 still validate
+- `dry-run.schema.json` contracts the plan emitted instead of executing a destructive operation under `--dry-run` (`event: "dry-run"`)
+- It is emitted as JSON even in text mode, because a preview exists to be diffed
+- It covers exactly eight operations: `ssh-cli vps remove`, `ssh-cli vps import`, `ssh-cli vps edit`, `ssh-cli vps rename`, `ssh-cli sftp rm`, `ssh-cli sftp rmdir`, `ssh-cli secrets init` and `ssh-cli secrets reencrypt`, and the `operation` enum lists them all
+- `--dry-run` on a command that does not implement it is rejected with exit 64 rather than accepted and ignored
+- For `vps-remove`, `vps-edit` and `vps-rename` the plan also echoes `target_resolved`, `target_source` (`argv`), `host_resolved` and `host_source` after a successful lookup
+- `hosts_to_reencrypt` is always present on the `secrets-init` plan and is 0 without `--force`
+- `vps-export.schema.json` contracts `ssh-cli vps export --json` (`event: "vps-export"`, redacted by default, GAP-SSH-UX-001 / 0.5.4)
+- The `ssh-cli vps export` body follows the resolved output format, so on any non-TTY stdout it matches this schema even without `--json`
+- Only `--output-format text` yields a TOML body, which this schema does not cover
+- With `-o`/`--output` the file receives the export and stdout carries only a summary with `ok`, `event`, `format`, `include_secrets` and `path`, and no `hosts`
+- The schema accepts exactly one of two shapes through `oneOf`: the body (`schema_version` and `hosts`) or the summary (`path` and `format`)
+- In text mode `-o` prints a plain message instead of JSON
+- The user field is `user` in the JSON export and `username` in the TOML body, and TOML import also reads the legacy `usuario`
+- `secrets-init.schema.json` contracts `ssh-cli secrets init --json` (`event: "secrets-init"`)
+- `secrets-reencrypt.schema.json` contracts `ssh-cli secrets reencrypt --json` (`event: "secrets-reencrypt"`)
+- `error-envelope.schema.json` contracts stderr failure payloads when JSON errors mode is active (`--json` / global `--output-format json` / effective JSON on scp and tunnel): fields `exit_code`, `error_code`, `error_class`, `retryable`, `message`, optional `remote_exit_code` and `suggestion`, plus the optional provenance trio `target_resolved`, `target_source` and `active_fallback` with the read aliases `host_resolved` and `host_source`
+- Usage errors carry no envelope: the exit 2 of the argument parser and the exit 64 of a malformed `--filter` print plain text on stderr even with `--json`, so only execution errors match `error-envelope.schema.json`
+- Exit 141 (broken pipe on stdout) also carries no envelope, only a plain line on stderr, and the document on stdout is then incomplete
+- The trio is absent, never empty, when the failure predates target resolution: `None` says no host was chosen, while `""` would assert that one was chosen and is nameless, and only one of those is true
+- `target_resolved` and `target_source` are the canonical names, and `host_resolved` and `host_source` are 0.5.5 read aliases written from the same value
+- The aliases are never in `required`, so bind new consumers to the canonical names
+- The trio appears on `ssh-cli exec`, `ssh-cli sudo-exec`, `ssh-cli su-exec`, `scp` and `sftp` failures and on `ssh-cli vps edit` and `ssh-cli vps rename` failures raised after the registry lookup, and never on `ssh-cli health-check`, `ssh-cli tunnel` or `ssh-cli vps remove`
+- When the remote command exits non-zero, `ssh-cli exec` still prints its own JSON on stdout (with `exit_code`) and the process exits 1, while stderr carries the error envelope with `error_code` `command_failed` and `remote_exit_code`
+- `error_class` is one of `transient`, `permanent`, `cancelled` and `partial`
+- `error_class` includes `partial` (A2): it shipped with G-ERR-R02 and was missing from the enum, so a strict validator rejected the exact envelope the CLI emits for a partial fan-out
+- Exit codes 69 (service unavailable, transient) and 70 (internal software failure, permanent) were added by G-ERR-R01
+- `retryable` is true only for exit 74 and exit 69, so a partial fan-out (exit 1), usage (64) and auth (77) failures never ask for a retry
+- `message` is stable English by contract (B2): the human text mode localizes the same failure through `i18n::localized_error_text`, but the JSON payload must never change with the host locale, so `error_code` is the only stable discriminator and agents branch on it
+- Secrets in list/show payloads: empty password is JSON `null` (key-only hosts)
+- Non-empty password is the masked string (`FIXED_MASK`) in `ssh-cli vps show` and `ssh-cli vps list`, never raw credentials
+- A redacted `ssh-cli vps export --json` does not mask: `password` is `""`, and `sudo_password`, `su_password` and `key_passphrase` are `null` (G-E2E-10)
+- There is no schema for `ssh-cli secrets status` key material (command never emits the primary key)
+- Treat status JSON as non-sensitive metadata only
+- Keyring may still accept the legacy `secrets-master-key` read alias
+- CRUD success events are not uniformly schematized: `vps-edited` and `vps-renamed` have dedicated documents (`vps-edit.schema.json`, `vps-rename.schema.json`) since 0.5.6, `vps-import` has `vps-import.schema.json` since 0.5.6 too, while `vps-added`, `vps-removed` and `vps-connected` still may appear without one
+- Also without a schema file are `vps-path` and every `tls-*` event of the `tls` family, while the bare objects of `ssh-cli secrets status` and `locale` carry no `event` at all
+- On first secret write the same `vps-added` document may include boolean `secrets_key_auto_created` (never a second stdout event)
+- Parsers should treat the `event` field as discriminator
+- Not every payload carries `event`: `ssh-cli exec`, `ssh-cli sudo-exec`, `ssh-cli su-exec`, the single-host `ssh-cli health-check` and `vps-show` emit an object with no `event` key at all, and `ssh-cli vps list` emits a bare JSON array with no envelope around it
+- A parser that branches on `event` first, and treats its absence as a malformed document, rejects six valid payloads
+- Branch on the invoked command
+- Use `event` only where the schema lists it
+- Discovery envelopes: `ssh-cli commands` emits `event: "commands"` and `ssh-cli schema` emits `event: "schema-catalog"` (catalog list)
+- No dedicated `.schema.json` files are required for those discovery envelopes, parse via the `event` discriminator
+- `telemetry` in doctor output is always false
+- Names from the registry or the server stay unescaped in JSON, so a control character arrives as the JSON escape `\u001b`, while the text modes and `local.invalid_host_names` print it as `\u{1b}`
+
+### Release notes 0.5.6 — audit closure
+- `vps-show.schema.json` now publishes two shapes through `anyOf`: the full body, and the body that carries `agent_shape`, and only `--select` drops the fields outside the selection, so `anyOf` is the correct keyword and `oneOf` would reject `--truncate-content` alone
+- `vps-doctor.schema.json` publishes the same two shapes through `anyOf`: the full envelope requires `event`, `ok`, `local` and `ssh_probe`, while the second carries `agent_shape`, and only `--select` drops the fields outside the selection, and `--truncate-content` or a collection-only flag keep the envelope whole
+- The reduced shape exists because a single record became reducible in 0.5.6: `--select` and `--truncate-content` reach it, while the collection flags stay inert and are named under `agent_shape.ignored`
+- An unshaped run keeps the full shape byte for byte
+### Release notes 0.5.6 — edit and rename
+- `ssh-cli vps rename <NAME> <NEW_NAME>` and `ssh-cli vps edit <NAME> --name <NEW>` change a host name natively, and every credential stays readable under the new name
+- Eight clear flags remove a field instead of overwriting it: `--clear-tags`, `--clear-sudo-password`, `--clear-su-password`, `--no-tls-sni`, `--no-tls-client-cert`, `--no-tls-client-key`, `--no-key`, `--no-agent-socket`
+- `--dry-run` now covers eight operations
+- Three new documents, `vps-edit.schema.json`, `vps-rename.schema.json` and `vps-import.schema.json`, replace the old assumption that these CRUD events had no schema
+
+### Release notes 0.5.5 — target-designation security release
+- Fixes GAP-SSH-EXEC-ARGC-001: `ssh-cli exec`/`ssh-cli sudo-exec`/`ssh-cli su-exec` decided the target host by positional count
+- So `ssh-cli exec <HOST> --step <CMD>` executed the host name as a remote binary on whatever host `ssh-cli connect` last selected
+- BREAKING: a lone positional is now a usage error
+- Reach the active marker with the new `--use-active <COMMAND>`
+- The single-host envelope gained `target_resolved` and `target_source`, so bind new consumers to those
+- `host_resolved` and `host_source` are the 0.5.5 read aliases
+- The envelope also gained `active_fallback`, and `ssh-cli doctor` now reports `local.active_vps`
+
+### Release notes 0.5.4 — security and agent-native release
+- Fixes a remote pre-auth DoS in the SSH banner path (A1)
+- Stops server-sent setuid bits landing on downloaded files (A3)
+- Closes the world-readable window on ACME/mTLS private keys (A2)
+- Adds payload-shaping flags applied before serialization: `--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`
+- BREAKING: partial multi-host failure now exits 1 (was 65)
+- BREAKING: a non-loopback `--bind` requires `--i-accept-network-exposure`
+- New `tunnel_closed` event
+
 
 ## Português Brasileiro
-- Este diretório versiona contratos JSON legíveis por máquina para payloads stdout/stderr do ssh-cli (**0.5.4**).
-- **Descoberta em runtime:** `ssh-cli schema` lista o catálogo embarcado; `ssh-cli schema <name>` emite um schema (G-E2E-02). Root `ssh-cli doctor` é alias de `vps doctor` (G-E2E-03).
-- **Formato wire:** JSON clássico de raiz única (RFC 8259 objeto ou array) — **não** NDJSON/JSONL. Emissão **compacta** (uma linha + LF final), UTF-8 sem BOM. Pretty-print não faz parte do contrato agent-first.
-- O inventário wire em disco usa **schema v3** (serialização em inglês + dual-read de aliases em português); os JSON schemas aqui contratam stdout/stderr da CLI, não o arquivo TOML completo de hosts.
-- Valide parsers de agentes contra estes schemas antes de tratar campos como estáveis. Campos desconhecidos no import seguem Must-Ignore (default serde).
-- `vps-list.schema.json` cobre `ssh-cli vps list --json`.
-- `vps-show.schema.json` cobre `ssh-cli vps show <name> --json`.
-- `vps-list.schema.json` reutiliza o schema de item de vps-show via `$ref` (`items.$ref` → `vps-show.schema.json`).
-- Os schemas `vps-show` / `vps-list` permitem `password` como JSON `null` ou a string mascarada `***` (GAP-SSH-JSON-001 / **0.4.0**): hosts vazios/só-chave serializam como `null`; não vazio nunca é credencial crua.
-- `vps-doctor.schema.json` cobre `ssh-cli vps doctor --json` **e** root `ssh-cli doctor --json` (mesmo payload) incluindo, **sob `local`**, `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out`, `telemetry: false` e `active_vps` (o nome que o `connect` marcou por último, `null` quando não há nenhum), mais `runtime` opcional (os/arch/WSL/container/CI/Termux/sandbox). Vincule a `local.telemetry`, não a `telemetry`: a grafia solta devolve `null`.
-- `exec.schema.json` cobre `ssh-cli exec ... --json`.
-- `sudo-exec.schema.json` cobre `ssh-cli sudo-exec ... --json`.
-- `su-exec.schema.json` cobre `ssh-cli su-exec ... --json`.
-- `health-check.schema.json` cobre `ssh-cli health-check --json` (host único).
-- `health-check-batch.schema.json` cobre `ssh-cli health-check --all --json` (`event: "health-check-batch"`).
-- `exec-batch.schema.json` cobre `ssh-cli exec --all --json`, `ssh-cli sudo-exec --all --json` e `ssh-cli su-exec --all --json` (`event: "exec-batch"`).
-- `scp-batch.schema.json` cobre `ssh-cli scp upload --all --json` and `ssh-cli scp download --all --json` (`event: "scp-batch"`).
-- `sftp-transfer.schema.json` cobre `ssh-cli sftp upload --json` / `ssh-cli sftp download --json` (`event: "sftp-transfer"`; `recursive` opcional). Prefira linha de produto **0.5.3+** (integridade de upload G1). Notas de runtime não codificadas como campos de schema: SETSTAT envia atime+mtime juntos (G3); set_metadata mutante é fail-closed (G4); bits de permissão são mascarados por direção — `SFTP_PERM_MASK` nomeado `0o7777` na saída, no upload (G12/G19), e `SFTP_PERM_MASK_UNTRUSTED` `0o0777` na entrada, no download, desde a 0.5.4 (A3), então setuid/setgid/sticky enviados pelo servidor nunca chegam ao arquivo local; `set_permissions` local no download SFTP é fail-closed (G18).
-- `sftp-list.schema.json` cobre `ssh-cli sftp ls --json` (`event: "sftp-list"`).
-- `sftp-fs-op.schema.json` cobre `ssh-cli sftp mkdir --json`, `ssh-cli sftp rmdir --json`, `ssh-cli sftp rm --json`, `ssh-cli sftp rename --json` and `ssh-cli sftp stat --json` (`event: "sftp-fs-op"`).
-- `sftp-batch.schema.json` cobre `ssh-cli sftp upload --all --json` and `ssh-cli sftp download --hosts a,b --json` (`event: "sftp-batch"`). Em cancel, resultados multi-arquivo/batch mantêm a cardinalidade de entrada (G5/G17) — resto cancelado preenchido para `results.len() == input.len()`.
-- O CLI opcional `--timeout` em `health-check` não altera os campos do schema de resposta.
-- Global `--max-concurrency N` (só CLI; fórmula auto quando omitido) limita fan-out multi-host e forwards de tunnel (`max_concurrency` nos envelopes batch).
-- `scp-transfer.schema.json` cobre sucesso em **stdout** de `ssh-cli scp upload --json` / `ssh-cli scp download --json` (somente arquivos regulares; sem diretórios / sem `-r`). Para árvores/FS use `sftp-*` schemas. O campo `event: "scp-transfer"` é **obrigatório** (IO-009 de 0.4.x retido na linha de produto **0.5.4**). Carrega `mtime_preserved` e `durable` aditivos desde a linha 0.5.4 (G-SCP-R01/R02): preservação de metadados e fsync do diretório pai são **best-effort**, e esses booleanos reportam o resultado real em vez de deixar um exit 0 sem qualificador.
-- `tunnel-listening.schema.json` cobre o evento pós-bind em stdout de `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`). Após `tunnel_listening`, o deadline one-shot pós-bind é exit **0** do processo (não é campo de schema; ver AGENTS / TUN-002). Timeout pré-bind permanece **74**.
-- `tunnel-closed.schema.json` cobre o evento de encerramento em stdout (`event: "tunnel_closed"`), emitido em todos os finais. `reason` separa `deadline` / `signal` / `accept_error`, que antes compartilhavam exit **0**; `forwards_served` e `capacity_waits` informam se algo conectou e se `--max-concurrency` foi o gargalo.
-- Os dois schemas de tunnel carregam `mode` desde a **0.5.4** (`local` / `socks5` / `streamlocal` / `reverse`). Ele é o discriminador que diz como ler os campos vizinhos: sob `reverse` quem escuta é o servidor SSH, e sob `socks5` não existe destino único. O default é `local`, então eventos anteriores à 0.5.4 continuam válidos.
-- `dry-run.schema.json` cobre o plano emitido no lugar da execução de uma operação destrutiva sob `--dry-run` (`event: "dry-run"`). É emitido em JSON mesmo no modo texto, porque prévia existe para ser comparada. `--dry-run` em comando que não o implementa é recusado com exit **64**, nunca aceito e ignorado.
-- `vps-export.schema.json` cobre **somente** `ssh-cli vps export --json` (`event: "vps-export"`, redacted por omissão; GAP-SSH-UX-001 / **0.5.4**). O corpo de `vps export` segue o formato de saída resolvido, então em qualquer stdout non-TTY ele casa com **este** schema mesmo sem `--json`; somente `--output-format text` produz corpo TOML, que este schema não cobre.
-- `secrets-init.schema.json` cobre `ssh-cli secrets init --json` (`event: "secrets-init"`).
-- `secrets-reencrypt.schema.json` cobre `ssh-cli secrets reencrypt --json` (`event: "secrets-reencrypt"`).
-- `error-envelope.schema.json` cobre payloads de falha em **stderr** quando o modo de erros JSON está ativo (`--json` / `--output-format json` global / JSON efetivo em scp e tunnel): campos `exit_code`, `error_code`, `error_class`, `retryable`, `message`, opcionais `remote_exit_code` e `suggestion`, mais o trio opcional de proveniência `target_resolved`, `target_source` e `active_fallback` com os aliases de leitura `host_resolved` e `host_source`. O trio fica **ausente, nunca vazio**, quando a falha antecede a resolução do alvo: `None` diz que nenhum host foi escolhido, enquanto `""` afirmaria que um host foi escolhido e não tem nome, e só uma das duas coisas é verdade.
-- Segredos em list/show: senha vazia é JSON `null` (hosts só-chave); senha não vazia é a string mascarada `***` (`FIXED_MASK`), nunca credenciais cruas. `vps export --json` redacted usa o mesmo `***` para segredos não vazios (vazios ficam `""`) (G-E2E-10).
-- Não há schema de material de chave de `secrets status` (o comando nunca emite a primary-key); trate o JSON de status como metadado não sensível. O keyring ainda pode aceitar o alias legado de leitura `secrets-master-key`.
-- Eventos de sucesso CRUD — `vps-added`, `vps-edited`, `vps-removed`, `vps-connected` e `vps-import` — podem aparecer sem arquivos de schema dedicados; o `vps-import` é nomeado de propósito porque já aparece no enum `operation` do `dry-run.schema.json`, o que manda o leitor procurar o schema do evento real; na 1ª gravação o **mesmo** documento `vps-added` pode incluir o booleano `secrets_key_auto_created` (nunca um segundo evento no stdout). Parsers devem tratar o campo `event` como discriminador.
-- **Nem todo payload carrega `event`.** O `exec`, o `sudo-exec`, o `su-exec` e o `vps-show` emitem objeto sem chave `event` alguma, e o `vps list` emite um **array** JSON puro, sem envelope em volta. Um parser que ramifica primeiro no `event` e trata a ausência como documento malformado rejeita cinco payloads válidos. Ramifique pelo comando invocado; use `event` apenas onde o schema o lista.
-- Envelopes de descoberta: `ssh-cli commands` emite `event: "commands"` e `ssh-cli schema` emite `event: "schema-catalog"` (lista do catálogo). Não há arquivos `.schema.json` dedicados obrigatórios para esses envelopes de descoberta — parseie via discriminador `event`.
-- `telemetry` no doctor é sempre false.
+- Este diretório versiona contratos JSON legíveis por máquina para payloads stdout/stderr do ssh-cli (0.5.6)
+- Ele guarda 25 arquivos de schema, e `ssh-cli schema` lista os mesmos 25 nomes (o nome do arquivo sem `.schema.json`)
+- Descoberta em tempo de execução: `ssh-cli schema` lista o catálogo embarcado
+- `ssh-cli schema <name>` emite um schema (G-E2E-02)
+- Os schemas são embarcados no binário, então `ssh-cli schema <name>` sempre bate com a release instalada
+- Root `ssh-cli doctor` é alias de `ssh-cli vps doctor` (G-E2E-03)
+- Formato wire: um documento JSON clássico de raiz única por evento (RFC 8259 objeto ou array), não um fluxo JSONL
+- A primeira exceção é `ssh-cli tunnel --json`, que escreve dois documentos, um por linha: `tunnel_listening` e depois `tunnel_closed`
+- A segunda exceção é `ssh-cli exec`, `ssh-cli sudo-exec` e `ssh-cli su-exec` com `--step`, que imprimem um documento por passo, cada um com os campos extras `step` e `command`
+- Emissão compacta (uma linha + LF final), UTF-8 sem BOM, exceto `ssh-cli schema <name>`, que imprime o arquivo de schema como está guardado, indentado
+- Pretty-print não faz parte do contrato agent-first
+- Os schemas descrevem a saída padrão, e as flags globais de redução a alteram sob pedido
+- `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only` e `--max-output-bytes` reduzem só coleções: o array puro de `ssh-cli vps list`, o array `results` dos envelopes batch e o array `entries` do `ssh-cli sftp ls`
+- `--select` e `--truncate-content` reduzem coleções e também um objeto único como `ssh-cli vps show` ou `ssh-cli doctor`, e uma flag de coleção passada a um objeto único é nomeada em `agent_shape.ignored`
+- Um envelope reduzido ganha `agent_shape` com `input_count`, `output_count` e `dropped`, mais `content_truncated` ou `output_truncated` quando se aplicam
+- `--count-only` troca o array por `count`, o número de itens que sobram depois das outras flags, e `ssh-cli vps list --count-only` imprime `{"count":N}`
+- `--select` remove campos e `--count-only` remove o array, então um documento reduzido pode não ter campos que o schema exige
+- `agent_shape` e `count` são propriedades opcionais de `health-check-batch`, `exec-batch`, `scp-batch`, `sftp-batch`, `sftp-list` e `dry-run` (só o array `hosts` do plano de `ssh-cli vps import`)
+- Leia `replaces_existing` de um plano `ssh-cli vps import --dry-run` sem redução, porque `--limit`, `--filter` ou `--count-only` podem esconder o host que seria sobrescrito
+- O inventário wire em disco usa schema v3 (serialização em inglês + dual-read de aliases em português)
+- Os JSON schemas aqui contratam stdout/stderr da CLI, não o arquivo TOML completo de hosts
+- Valide parsers de agentes contra estes schemas antes de tratar campos como estáveis
+- Campos desconhecidos no import seguem Must-Ignore (default serde)
+- `tests/gaps_v072_schema_conformance.rs` valida envelopes reais impressos pelo binário contra estes arquivos
+- `vps-list.schema.json` cobre `ssh-cli vps list --json`
+- `vps-edit.schema.json` cobre `ssh-cli vps edit <name> --json` (`event: "vps-edited"`, ou `vps-renamed` quando `--name` renomeia)
+- `updated` está sempre presente e nomeia os campos cujo valor armazenado mudou, na ordem de aplicação, cada um no máximo uma vez, então menção e efeito ficam distinguíveis
+- Os itens vêm de 19 nomes: `host`, `port`, `user`, `password`, `key_path`, `key_passphrase`, `use_agent`, `agent_socket`, `timeout_ms`, `max_command_chars`, `max_output_chars`, `sudo_password`, `su_password`, `disable_sudo`, `tls`, `tls_sni`, `tls_client_cert`, `tls_client_key` e `tags`
+- Fica vazio quando todo valor pedido já coincidia ou quando a invocação só renomeou o host
+- Edição que não muda nada sai 0 com `vps-edited` e `updated: []`, e invocação sem nenhuma flag de campo, rename ou limpeza sai 64
+- `previous_name` só aparece quando `--name` renomeou o host
+- Trocar o método de autenticação primário (`--key`, `--password`, `--use-agent`) também lista cada campo limpo que tinha valor, como `key_path` ou `password`
+- `vps-rename.schema.json` cobre `ssh-cli vps rename <name> <new-name> --json` (`event: "vps-renamed"`)
+- O `updated` dele usa os mesmos 19 nomes
+- `active_rewritten` diz se o marcador do `ssh-cli connect` acompanhou o rename, e `target_source` é sempre `argv` porque o verbo nunca lê o marcador
+- `target_resolved` é o nome que o host tinha antes da invocação em `vps-edited`, `vps-renamed` e no plano de dry-run, então depois de um rename ele vale `previous_name`, nunca o `name` novo
+- `ssh-cli vps rename` não é idempotente: repeti-lo depois de um sucesso sai 66, então confirme com `ssh-cli vps show <new-name>`
+- `vps-import.schema.json` cobre `ssh-cli vps import --file <FILE> --json` (`event: "vps-import"`)
+- `imported` conta todo host gravado, e `replaced` é o array ordenado dos nomes de hosts preexistentes que o import sobrescreveu, sempre presente e vazio quando não há nenhum (desde a 0.5.6)
+- O plano de `--dry-run` continua o evento `dry-run` com `operation: "vps-import"` e `replaces_existing`, documentado no `dry-run.schema.json`
+- `vps-show.schema.json` cobre `ssh-cli vps show <name> --json`
+- `vps-show.schema.json` publica duas formas com `anyOf`: o registro completo, e o registro que carrega `agent_shape` quando `--select`, `--truncate-content` ou uma flag de coleção foi passada, com `anyOf` e não `oneOf` porque as duas últimas mantêm o registro inteiro e um `--truncate-content` sozinho casaria com as duas variantes
+- `vps-list.schema.json` publica duas formas de item com `anyOf`: o registro completo por `items.anyOf[0].$ref` → `vps-show.schema.json`, e o registro reduzido produzido por `--select`, que mantém só as chaves de topo projetadas por `items.anyOf[1]`
+- O item reduzido da lista não carrega `agent_shape`, porque `vps list` devolve array puro e o relatório de redução vai para o stderr como `{"event":"agent-shape"}`
+- Chave projetada que não resolve é omitida e nunca vira `null`, então um item pode ser objeto vazio e ainda conformar
+- Os schemas `vps-show` / `vps-list` permitem `password` como JSON `null` ou a string mascarada (GAP-SSH-JSON-001 / 0.4.0), onde hosts vazios/só-chave serializam como `null`
+- Não vazio nunca é credencial crua
+- `vps-doctor.schema.json` cobre `ssh-cli vps doctor --json` e root `ssh-cli doctor --json` (mesmo payload)
+- Sob `local` ele carrega `secrets_at_rest`, `secrets_key_source`, `secrets_key_file`, `secrets_plaintext_opt_out`, `telemetry: false` e `active_vps` (o nome que o `ssh-cli connect` marcou por último, `null` quando não há nenhum)
+- Ele também carrega `config_dir_exposed` (booleano, sempre presente), `invalid_host_names` (array de strings escapadas, sempre presente, vazio quando todo nome é válido) e `config_dir_permissions` (string octal de quatro dígitos como `0700`, ausente fora do Unix)
+- O objeto `local.runtime`, sempre presente, guarda `os`/`arch`/WSL/container/CI/Termux/sandbox, e `ssh_probe` é `null` a menos que `--probe-ssh` tenha rodado
+- O objeto `ssh_probe` não é um documento `health-check-batch`: ele carrega `event`, `max_concurrency`, `hosts`, `failures` e `results`, e não tem `batch_run_id`
+- `permissions` é o modo do `config.toml` como string sem zero à esquerda, como `600`, ou `missing` quando o arquivo não existe e `n/a` fora do Unix
+- Leia com `ssh-cli doctor --json --select local.config_dir_exposed`
+- O `--select` global projeta o objeto do doctor direto, e o envelope reduzido carrega `agent_shape`
+- Vincule a `local.telemetry`, não a `telemetry`: a grafia solta devolve `null`
+- `exec.schema.json` cobre `ssh-cli exec ... --json`
+- `sudo-exec.schema.json` cobre `ssh-cli sudo-exec ... --json`
+- `su-exec.schema.json` cobre `ssh-cli su-exec ... --json`
+- `ssh-cli exec`, `ssh-cli sudo-exec` e `ssh-cli su-exec` sempre carregam `exit_code`, que vale `null` quando o lado remoto não informou nenhum
+- `health-check.schema.json` cobre `ssh-cli health-check --json` (host único)
+- `health-check-batch.schema.json` cobre `ssh-cli health-check --all --json` (`event: "health-check-batch"`)
+- `exec-batch.schema.json` cobre `ssh-cli exec --all --json`, `ssh-cli sudo-exec --all --json` e `ssh-cli su-exec --all --json` (`event: "exec-batch"`)
+- Com `--step` numa frota, o `stdout` de cada host junta os passos atrás de linhas de cabeçalho `--- step <i>: <command> ---`, e `exit_code` é o primeiro código diferente de zero, ou 0 quando todo passo teve sucesso
+- `scp-batch.schema.json` cobre `ssh-cli scp upload --all --json` e `ssh-cli scp download --all --json` (`event: "scp-batch"`)
+- O CLI opcional `--timeout` em `ssh-cli health-check` não altera os campos do schema de resposta
+- Global `--max-concurrency N` (só CLI, fórmula auto quando omitido) limita fan-out multi-host e forwards de tunnel (não é campo JSON, exceto `max_concurrency` dentro dos envelopes batch)
+- `scp-transfer.schema.json` cobre sucesso em stdout de `ssh-cli scp upload --json` / `ssh-cli scp download --json` (somente arquivos regulares, sem diretórios / sem `-r`)
+- O campo `event: "scp-transfer"` é obrigatório (IO-009 de 0.4.x retido na linha de produto 0.5.4)
+- Carrega `mtime_preserved` e `durable` aditivos desde a linha 0.5.4 (G-SCP-R01/R02): preservação de metadados e fsync do diretório pai são best-effort, e esses booleanos reportam o resultado real em vez de deixar um exit 0 sem qualificador
+- `sftp-transfer.schema.json` cobre `ssh-cli sftp upload --json` / `ssh-cli sftp download --json` (`event: "sftp-transfer"`, `recursive` opcional)
+- Prefira linha de produto 0.5.3+ (integridade de upload G1)
+- Notas de execução não codificadas como campos de schema: SETSTAT envia atime+mtime juntos (G3)
+- Set_metadata mutante é fail-closed (G4)
+- Bits de permissão são mascarados por direção: `SFTP_PERM_MASK` nomeado `0o7777` na saída, no upload (G12/G19), e `SFTP_PERM_MASK_UNTRUSTED` `0o0777` na entrada, no download, desde a 0.5.4 (A3), então setuid/setgid/sticky enviados pelo servidor nunca chegam ao arquivo local
+- `set_permissions` local no download SFTP é fail-closed (G18)
+- `sftp-list.schema.json` cobre `ssh-cli sftp ls --json` (`event: "sftp-list"`)
+- `sftp-fs-op.schema.json` cobre `ssh-cli sftp mkdir --json`, `ssh-cli sftp rmdir --json`, `ssh-cli sftp rm --json`, `ssh-cli sftp rename --json` e `ssh-cli sftp stat --json` (`event: "sftp-fs-op"`)
+- `sftp-batch.schema.json` cobre `ssh-cli sftp upload --all --json` e `ssh-cli sftp download --hosts a,b --json` (`event: "sftp-batch"`)
+- Em cancel, resultados multi-arquivo/batch mantêm a cardinalidade de entrada (G5/G17), resto cancelado preenchido para `results.len() == input.len()`
+- `tunnel-listening.schema.json` cobre o evento pós-bind em stdout de `ssh-cli tunnel ... --json` (`event: "tunnel_listening"`)
+- Após `tunnel_listening`, o deadline one-shot pós-bind é exit 0 do processo (não é campo de schema, ver AGENTS / TUN-002)
+- Timeout pré-bind permanece 74
+- `tunnel-closed.schema.json` cobre o evento de encerramento em stdout (`event: "tunnel_closed"`), emitido em todos os finais
+- `reason` separa `deadline` / `signal` / `accept_error`, que antes compartilhavam exit 0
+- Hoje um sinal ainda imprime `tunnel_closed` e depois encerra o processo com exit 143 após SIGTERM ou 130 após SIGINT
+- `forwards_served` e `capacity_waits` informam se algo conectou e se `--max-concurrency` foi o gargalo
+- Os dois schemas de tunnel carregam `mode` desde a 0.5.4 (`local` / `socks5` / `streamlocal` / `reverse`)
+- Ele é o discriminador que diz como ler os campos vizinhos: sob `reverse` quem escuta é o servidor SSH, e sob `socks5` não existe destino único
+- O default é `local`, então eventos anteriores à 0.5.4 continuam válidos
+- `dry-run.schema.json` cobre o plano emitido no lugar da execução de uma operação destrutiva sob `--dry-run` (`event: "dry-run"`)
+- É emitido em JSON mesmo no modo texto, porque prévia existe para ser comparada
+- Ele cobre exatamente oito operações: `ssh-cli vps remove`, `ssh-cli vps import`, `ssh-cli vps edit`, `ssh-cli vps rename`, `ssh-cli sftp rm`, `ssh-cli sftp rmdir`, `ssh-cli secrets init` e `ssh-cli secrets reencrypt`, e o enum de `operation` lista todas
+- `--dry-run` em comando que não o implementa é recusado com exit 64, nunca aceito e ignorado
+- Em `vps-remove`, `vps-edit` e `vps-rename` o plano também ecoa `target_resolved`, `target_source` (`argv`), `host_resolved` e `host_source` depois de uma busca bem-sucedida
+- `hosts_to_reencrypt` está sempre presente no plano de `secrets-init` e vale 0 sem `--force`
+- `vps-export.schema.json` cobre `ssh-cli vps export --json` (`event: "vps-export"`, redacted por omissão, GAP-SSH-UX-001 / 0.5.4)
+- O corpo de `ssh-cli vps export` segue o formato de saída resolvido, então em qualquer stdout non-TTY ele casa com este schema mesmo sem `--json`
+- Somente `--output-format text` produz corpo TOML, que este schema não cobre
+- Com `-o`/`--output` o arquivo recebe o export e o stdout leva só um resumo com `ok`, `event`, `format`, `include_secrets` e `path`, sem `hosts`
+- O schema aceita exatamente um de dois formatos por `oneOf`: o corpo (`schema_version` e `hosts`) ou o resumo (`path` e `format`)
+- No modo texto o `-o` imprime uma mensagem simples em vez de JSON
+- O campo de usuário é `user` no export JSON e `username` no corpo TOML, e o import TOML também lê o legado `usuario`
+- `secrets-init.schema.json` cobre `ssh-cli secrets init --json` (`event: "secrets-init"`)
+- `secrets-reencrypt.schema.json` cobre `ssh-cli secrets reencrypt --json` (`event: "secrets-reencrypt"`)
+- `error-envelope.schema.json` cobre payloads de falha em stderr quando o modo de erros JSON está ativo (`--json` / `--output-format json` global / JSON efetivo em scp e tunnel): campos `exit_code`, `error_code`, `error_class`, `retryable`, `message`, opcionais `remote_exit_code` e `suggestion`, mais o trio opcional de proveniência `target_resolved`, `target_source` e `active_fallback` com os aliases de leitura `host_resolved` e `host_source`
+- Erros de uso não trazem envelope: o exit 2 do parser de argumentos e o exit 64 de um `--filter` malformado saem em texto puro no stderr mesmo com `--json`, então só erros de execução casam com `error-envelope.schema.json`
+- O exit 141 (pipe quebrado no stdout) também não traz envelope, só uma linha de texto puro no stderr, e o documento no stdout fica incompleto
+- O trio fica ausente, nunca vazio, quando a falha antecede a resolução do alvo: `None` diz que nenhum host foi escolhido, enquanto `""` afirmaria que um host foi escolhido e não tem nome, e só uma das duas coisas é verdade
+- `target_resolved` e `target_source` são os nomes canônicos, e `host_resolved` e `host_source` são aliases de leitura da 0.5.5 escritos a partir do mesmo valor
+- Os aliases nunca estão em `required`, então vincule consumidores novos aos nomes canônicos
+- O trio aparece nas falhas de `ssh-cli exec`, `ssh-cli sudo-exec`, `ssh-cli su-exec`, `scp` e `sftp` e nas falhas de `ssh-cli vps edit` e `ssh-cli vps rename` levantadas depois da busca no registro, e nunca em `ssh-cli health-check`, `ssh-cli tunnel` ou `ssh-cli vps remove`
+- Quando o comando remoto sai com código diferente de zero, o `ssh-cli exec` ainda imprime o próprio JSON em stdout (com `exit_code`) e o processo sai 1, enquanto o stderr carrega o envelope de erro com `error_code` `command_failed` e `remote_exit_code`
+- `error_class` vale `transient`, `permanent`, `cancelled` ou `partial`
+- `error_class` inclui `partial` (A2): ele nasceu com o G-ERR-R02 e faltava no enum, então um validador estrito rejeitava o envelope exato que a CLI emite num fan-out parcial
+- Os exit codes 69 (serviço indisponível, transitório) e 70 (falha interna de software, permanente) foram acrescentados pelo G-ERR-R01
+- `retryable` vale true só para exit 74 e exit 69, então falha parcial de frota (exit 1), de uso (64) e de autenticação (77) nunca pedem nova tentativa
+- `message` é inglês estável por contrato (B2): o modo texto humano localiza a mesma falha por `i18n::localized_error_text`, mas o payload JSON nunca pode mudar com o locale do host, então `error_code` é o único discriminador estável e agentes ramificam por ele
+- Segredos em list/show: senha vazia é JSON `null` (hosts só-chave)
+- Senha não vazia é a string mascarada (`FIXED_MASK`) em `ssh-cli vps show` e `ssh-cli vps list`, nunca credenciais cruas
+- Um `ssh-cli vps export --json` redacted não mascara: `password` vale `""`, e `sudo_password`, `su_password` e `key_passphrase` valem `null` (G-E2E-10)
+- Não há schema de material de chave de `ssh-cli secrets status` (o comando nunca emite a primary-key)
+- Trate o JSON de status como metadado não sensível
+- O keyring ainda pode aceitar o alias legado de leitura `secrets-master-key`
+- Os eventos de sucesso CRUD não são esquematizados de forma uniforme: `vps-edited` e `vps-renamed` têm documentos dedicados (`vps-edit.schema.json`, `vps-rename.schema.json`) desde a 0.5.6, `vps-import` também tem o `vps-import.schema.json` desde a 0.5.6, enquanto `vps-added`, `vps-removed` e `vps-connected` ainda podem aparecer sem schema
+- Também não têm arquivo de schema `vps-path` e todo evento `tls-*` da família `tls`, enquanto os objetos soltos de `ssh-cli secrets status` e `locale` não carregam `event` algum
+- Na 1ª gravação o mesmo documento `vps-added` pode incluir o booleano `secrets_key_auto_created` (nunca um segundo evento no stdout)
+- Parsers devem tratar o campo `event` como discriminador
+- Nem todo payload carrega `event`: `ssh-cli exec`, `ssh-cli sudo-exec`, `ssh-cli su-exec`, o `ssh-cli health-check` de host único e `vps-show` emitem objeto sem chave `event` alguma, e `ssh-cli vps list` emite um array JSON puro, sem envelope em volta
+- Um parser que ramifica primeiro no `event` e trata a ausência como documento malformado rejeita seis payloads válidos
+- Ramifique pelo comando invocado
+- Use `event` apenas onde o schema o lista
+- Envelopes de descoberta: `ssh-cli commands` emite `event: "commands"` e `ssh-cli schema` emite `event: "schema-catalog"` (lista do catálogo)
+- Não há arquivos `.schema.json` dedicados obrigatórios para esses envelopes de descoberta, parseie via discriminador `event`
+- `telemetry` no doctor é sempre false
+- Nomes do registro ou do servidor ficam sem escape de terminal no JSON, então um caractere de controle chega como o escape JSON `\u001b`, enquanto os modos texto e `local.invalid_host_names` o imprimem como `\u{1b}`
+
+### Notas de release 0.5.6 — fechamento da auditoria
+- O `vps-show.schema.json` agora publica duas formas por `anyOf`: o corpo completo, e o corpo que carrega `agent_shape`, e só o `--select` descarta os campos fora da seleção, então `anyOf` é a palavra-chave correta e `oneOf` recusaria `--truncate-content` sozinho
+- O `vps-doctor.schema.json` publica as mesmas duas formas por `anyOf`: o envelope completo exige `event`, `ok`, `local` e `ssh_probe`, enquanto o segundo carrega `agent_shape`, e só o `--select` descarta os campos fora da seleção, e o `--truncate-content` ou uma flag de coleção mantêm o envelope inteiro
+- A forma reduzida existe porque um objeto único se tornou redutível na 0.5.6: `--select` e `--truncate-content` o alcançam, enquanto as flags de coleção seguem inertes e são nomeadas em `agent_shape.ignored`
+- Uma execução sem modelagem mantém a forma completa byte a byte
+### Notas de release 0.5.6 — edição e rename
+- `ssh-cli vps rename <NAME> <NEW_NAME>` e `ssh-cli vps edit <NAME> --name <NEW>` mudam o nome do host nativamente, e toda credencial continua legível sob o nome novo
+- Oito flags de limpeza removem o campo em vez de sobrescrevê-lo: `--clear-tags`, `--clear-sudo-password`, `--clear-su-password`, `--no-tls-sni`, `--no-tls-client-cert`, `--no-tls-client-key`, `--no-key`, `--no-agent-socket`
+- `--dry-run` agora cobre oito operações
+- Três documentos novos, `vps-edit.schema.json`, `vps-rename.schema.json` e `vps-import.schema.json`, substituem a antiga suposição de que esses eventos CRUD não tinham schema
+
+### Notas de release 0.5.5 — release de segurança de designação de alvo
+- Corrige GAP-SSH-EXEC-ARGC-001: `ssh-cli exec`/`ssh-cli sudo-exec`/`ssh-cli su-exec` decidiam o host alvo pela contagem de posicionais
+- Assim `ssh-cli exec <HOST> --step <CMD>` executava o nome do host como binário remoto no host que `ssh-cli connect` selecionara por último
+- BREAKING: um único posicional agora é erro de uso
+- Alcance o marcador ativo com a nova `--use-active <COMMAND>`
+- O envelope single-host ganhou `target_resolved` e `target_source`, então vincule consumidores novos a esses
+- `host_resolved` e `host_source` são os aliases de leitura da 0.5.5
+- O envelope também ganhou `active_fallback`, e o `ssh-cli doctor` passa a reportar `local.active_vps`
+
+### Notas de release 0.5.4 — release de segurança e agent-native
+- Corrige DoS remoto pré-auth no banner SSH (A1)
+- Impede que bits setuid enviados pelo servidor caiam no arquivo baixado (A3)
+- Fecha a janela de leitura pública em chaves privadas ACME/mTLS (A2)
+- Adiciona flags de redução de payload aplicadas antes da serialização: `--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`
+- BREAKING: falha parcial multi-host agora sai com exit 1 (era 65)
+- BREAKING: `--bind` fora do loopback exige `--i-accept-network-exposure`
+- Novo evento `tunnel_closed`

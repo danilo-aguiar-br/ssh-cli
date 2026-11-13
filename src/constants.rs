@@ -289,6 +289,42 @@ pub const HARD_RETRY_MAX_RETRIES: u32 = 10;
 /// Hard ceiling for a single delay (ms).
 pub const HARD_RETRY_MAX_DELAY_MS: u64 = 60_000;
 
+// ── Config lock contention ───────────────────────────────────────────────────
+
+/// Default total wait for the sibling `config.toml.lock` before giving up (ms).
+///
+/// `flock` blocks indefinitely, and an indefinite block is the worst outcome
+/// for a one-shot agent: it neither fails nor reports. `--lock-wait-ms`
+/// overrides this; the ceiling here is the default a caller gets for free.
+pub const CONFIG_LOCK_WAIT_MS: u64 = 5_000;
+
+/// Ceiling accepted by `--lock-wait-ms` (guards against a caller pinning a
+/// one-shot forever by typo).
+pub const CONFIG_LOCK_WAIT_MAX_MS: u64 = 300_000;
+
+/// Longest single sleep of the config lock wait between two checks of the stop
+/// signal (ms).
+///
+/// Bounds how late a SIGINT/SIGTERM is noticed while the lock is contended.
+pub const LOCK_WAIT_SLICE_MS: u64 = 100;
+
+// ── Error suggestions (agent-facing, wire text) ──────────────────────────────
+
+/// Remedy for [`crate::errors::SshCliError::Unavailable`] when the OS keyring is down.
+pub const SUGGESTION_UNAVAILABLE_KEYRING: &str =
+    "unlock or start the OS keyring, or fall back to XDG `secrets.key` \
+     (`--secrets-key-file`); the same argv succeeds once it answers (exit 69)";
+
+/// Remedy for [`crate::errors::SshCliError::Unavailable`] when the registry lock is held.
+pub const SUGGESTION_UNAVAILABLE_CONFIG_LOCK: &str =
+    "another ssh-cli invocation holds the registry lock; repeat the same argv or \
+     raise --lock-wait-ms (exit 69)";
+
+/// Remedy for [`crate::errors::SshCliError::VpsNotFound`].
+pub const SUGGESTION_VPS_NOT_FOUND: &str =
+    "the host is not in the registry; if an earlier `vps rename` or `vps remove` may \
+     have succeeded, run `vps list` before repeating";
+
 // ── At-rest crypto sizes (ChaCha20-Poly1305) ─────────────────────────────────
 
 /// Primary-key length in bytes.
@@ -308,6 +344,17 @@ pub const SECRET_FILE_MODE_UNIX: u32 = 0o600;
 
 /// Unix permission mode for secret directories (TLS identity dirs, etc.).
 pub const SECRET_DIR_MODE_UNIX: u32 = 0o700;
+
+/// Unix permission bits that expose a path to its group and to other users.
+///
+/// A config directory whose mode intersects this mask is "exposed"; `doctor`
+/// reports it and `fs_perm::ensure_config_dir` tightens it only when safe.
+pub const GROUP_OTHER_MODE_MASK_UNIX: u32 = 0o077;
+
+/// Extension (without the dot) that marks a `--config-dir` value as the registry FILE.
+///
+/// `--config-dir sub/c.toml` names the file; its parent is the configuration directory.
+pub const CONFIG_FILE_EXTENSION: &str = "toml";
 
 // ── Concurrency caps (single source; clap + fan-out) ─────────────────────────
 
@@ -356,6 +403,41 @@ pub const SCP_DOWNLOAD_LOCAL_NOT_DIRECTORY_MSG: &str =
 pub const OPERATION_CANCELLED_MSG: &str = "operation cancelled by user";
 
 // Compile-time invariants (const/static rules).
+// ── Host-name charset and untrusted-text escaping ───────────────────────────
+
+/// Punctuation bytes allowed in a new VPS name besides ASCII letters and digits.
+///
+/// The first byte of a name must be an ASCII letter or digit, so a name can
+/// never be read as a flag (`-x`) or as a hidden entry (`.x`).
+pub const VPS_NAME_EXTRA_BYTES: &[u8] = b"._-";
+
+/// Unicode format and bidirectional code points that are invisible or reorder
+/// the text around them, as inclusive `(first, last)` pairs.
+///
+/// Together with `char::is_control` this is the one set that is rejected in a
+/// looked-up host name, refused in a file name, and escaped as `\u{..}` before
+/// text output. Members: soft hyphen (U+00AD), Arabic letter mark (U+061C),
+/// Mongolian vowel separator (U+180E), zero-width and directional marks
+/// (U+200B..U+200F), embeddings and overrides (U+202A..U+202E), word joiner and
+/// invisible operators (U+2060..U+2064), isolates and the deprecated format
+/// controls (U+2066..U+206F), the byte order mark (U+FEFF) and the tag
+/// characters (U+E0000..U+E007F) that can smuggle invisible text.
+/// U+2065 is unassigned and stays out on purpose, so the range around it is split.
+pub const UNTRUSTED_FORMAT_CHAR_RANGES: &[(char, char)] = &[
+    ('\u{00AD}', '\u{00AD}'),
+    ('\u{061C}', '\u{061C}'),
+    ('\u{180E}', '\u{180E}'),
+    ('\u{200B}', '\u{200F}'),
+    ('\u{202A}', '\u{202E}'),
+    ('\u{2060}', '\u{2064}'),
+    ('\u{2066}', '\u{206F}'),
+    ('\u{FEFF}', '\u{FEFF}'),
+    ('\u{E0000}', '\u{E007F}'),
+];
+
+const _: () = assert!(!VPS_NAME_EXTRA_BYTES.is_empty());
+const _: () = assert!(!UNTRUSTED_FORMAT_CHAR_RANGES.is_empty());
+
 const _: () = assert!(!APP_NAME.is_empty());
 const _: () = assert!(!CONFIG_FILE_NAME.is_empty());
 const _: () = assert!(!SECRETS_KEY_FILE_NAME.is_empty());
@@ -402,3 +484,7 @@ const _: () = assert!(SECRET_FILE_MODE_UNIX == 0o600);
 const _: () = assert!(!SCP_UPLOAD_FILE_ONLY_MSG.is_empty());
 const _: () = assert!(!SCP_DOWNLOAD_LOCAL_NOT_DIRECTORY_MSG.is_empty());
 const _: () = assert!(!OPERATION_CANCELLED_MSG.is_empty());
+const _: () = assert!(LOCK_WAIT_SLICE_MS > 0);
+const _: () = assert!(!SUGGESTION_UNAVAILABLE_KEYRING.is_empty());
+const _: () = assert!(!SUGGESTION_UNAVAILABLE_CONFIG_LOCK.is_empty());
+const _: () = assert!(!SUGGESTION_VPS_NOT_FOUND.is_empty());

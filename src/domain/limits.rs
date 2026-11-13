@@ -15,6 +15,18 @@ pub struct TimeoutMs(u64);
 
 impl TimeoutMs {
     /// Parses a timeout in the allowed range.
+    ///
+    /// # Errors
+    /// Returns a [`DomainError`] when `ms` is `0` or above `MAX_TIMEOUT_MS`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ssh_cli::domain::TimeoutMs;
+    ///
+    /// assert_eq!(TimeoutMs::try_new(30_000).unwrap().get(), 30_000);
+    /// assert!(TimeoutMs::try_new(0).is_err());
+    /// ```
     pub fn try_new(ms: u64) -> Result<Self, DomainError> {
         if ms == 0 || ms > MAX_TIMEOUT_MS {
             return Err(DomainError::new(
@@ -68,6 +80,21 @@ pub enum CharLimit {
 
 impl CharLimit {
     /// Parses wire/config `usize` (`0` → unlimited).
+    ///
+    /// # Errors
+    /// Returns a [`DomainError`] when `n` is above `MAX_CHAR_LIMIT`.
+    ///
+    /// # Panics
+    /// Never panics: the `expect` is reached only after the `n == 0` branch has returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ssh_cli::domain::CharLimit;
+    ///
+    /// assert_eq!(CharLimit::try_new(0).unwrap().effective(), usize::MAX);
+    /// assert_eq!(CharLimit::try_new(10).unwrap().effective(), 10);
+    /// ```
     pub fn try_new(n: usize) -> Result<Self, DomainError> {
         if n == 0 {
             return Ok(Self::Unlimited);

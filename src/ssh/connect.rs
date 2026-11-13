@@ -32,7 +32,7 @@ use crate::errors::{SshCliError, SshCliResult};
 /// - `nodelay = true` for low-latency request/response SSH.
 /// - Keepalives enabled for tunnel / long ops.
 /// - **Compression:** only `none` is offered (G-TLS-04).
-/// - **client_id:** generic product banner (G-SSH-02).
+/// - **`client_id`:** generic product banner (G-SSH-02).
 /// - **rekey / window:** explicit RFC 4253-class limits (G-SSH-08).
 #[must_use]
 pub(crate) fn build_ssh_client_config(timeout: Duration) -> Arc<russh::client::Config> {
@@ -74,7 +74,7 @@ pub(crate) async fn dial_ssh(host: &str, port: u16) -> SshCliResult<TcpStream> {
     Ok(socket)
 }
 
-/// TCP_NODELAY + SO_KEEPALIVE on an established stream (SSH or pre-TLS).
+/// `TCP_NODELAY` + `SO_KEEPALIVE` on an established stream (SSH or pre-TLS).
 pub(crate) fn apply_socket_policy(socket: &TcpStream) {
     if let Err(e) = socket.set_nodelay(true) {
         tracing::debug!(err = %e, "set_nodelay on SSH socket failed");

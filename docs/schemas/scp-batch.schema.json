@@ -34,6 +34,23 @@
       "type": "integer",
       "minimum": 1
     },
+    "agent_shape": {
+      "type": "object",
+      "description": "Present only when a global shaping flag (--select, --filter, --limit, --sort, --dedupe-by, --count-only, --truncate-content or --max-output-bytes) reduced this envelope. It reports what the reduction did to the `results` array.",
+      "required": ["input_count", "output_count", "dropped"],
+      "properties": {
+        "input_count": { "type": "integer", "minimum": 0, "description": "items in the array before shaping" },
+        "output_count": { "type": "integer", "minimum": 0, "description": "items left after shaping" },
+        "dropped": { "type": "integer", "minimum": 0, "description": "items removed by --filter, --limit or --dedupe-by" },
+        "content_truncated": { "type": "boolean", "description": "true when --truncate-content shortened at least one string" },
+        "output_truncated": { "type": "boolean", "description": "true when --max-output-bytes dropped items to fit the byte budget" }
+      }
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Present only with --count-only, which replaces the `results` array by the number of items left after the other shaping flags"
+    },
     "results": {
       "type": "array",
       "items": {

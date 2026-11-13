@@ -278,11 +278,7 @@ pub fn negotiate_langid(requested: &LanguageIdentifier) -> Option<Language> {
 #[must_use]
 pub fn resolve_config_dir(config_dir_override: Option<&Path>) -> Option<PathBuf> {
     if let Some(p) = config_dir_override {
-        if p.is_dir() || !p.exists() {
-            return Some(p.to_path_buf());
-        }
-        // File path → parent dir
-        return p.parent().map(|d| d.to_path_buf());
+        return Some(crate::vps::config_dir_for_override(p));
     }
     crate::vps::default_config_path()
         .ok()
@@ -324,21 +320,26 @@ pub fn write_persisted_lang(
             "configuration directory unavailable",
         )
     })?;
-    std::fs::create_dir_all(&dir)?;
+    crate::fs_perm::ensure_config_dir(&dir).map_err(error_into_io)?;
     let path = dir.join(LANG_PREFERENCE_FILE);
     let body = format!("{}\n", language.bcp47());
-    std::fs::write(&path, body.as_bytes())?;
-    crate::fs_perm::set_secret_file_mode(&path).map_err(|e| match e {
+    // Temp file born `0o600` + rename: no moment where `lang` exists at the umask mode.
+    crate::fs_perm::write_secret_file_atomic(&path, body.as_bytes()).map_err(error_into_io)?;
+    Ok(path)
+}
+
+/// Keeps the original `io::Error` of a crate error so callers still see its kind.
+fn error_into_io(e: crate::errors::SshCliError) -> std::io::Error {
+    match e {
         crate::errors::SshCliError::Io(io) => io,
         other => std::io::Error::other(other.to_string()),
-    })?;
-    Ok(path)
+    }
 }
 
 /// Removes the persisted language preference if present.
 ///
 /// # Errors
-/// Propagates unexpected I/O errors (ignores NotFound).
+/// Propagates unexpected I/O errors (ignores `NotFound`).
 pub fn clear_persisted_lang(config_dir_override: Option<&Path>) -> std::io::Result<()> {
     if let Some(path) = lang_preference_path(config_dir_override) {
         match std::fs::remove_file(&path) {
@@ -353,6 +354,10 @@ pub fn clear_persisted_lang(config_dir_override: Option<&Path>) -> std::io::Resu
 
 /// Clap `value_parser` for `--lang`: accepts BCP47 tags that negotiate to a
 /// supported product locale (`en`, `en-US`, `pt-BR`, `pt`, …).
+///
+/// # Errors
+/// Returns a message naming the supported locales when `s` does not negotiate to any of
+/// them.
 pub fn parse_lang_cli_arg(s: &str) -> Result<String, String> {
     match negotiate_code(s) {
         Some(lang) => Ok(lang.bcp47().to_string()),

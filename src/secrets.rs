@@ -49,12 +49,13 @@ use std::sync::Mutex;
 use zeroize::{Zeroize, Zeroizing};
 
 mod aead;
+mod init_key;
 mod keyring_store;
 
 pub use aead::SecretContext;
 use aead::{decrypt_secret, encrypt_secret};
 use keyring_store::read_keyring;
-pub use keyring_store::write_key_to_keyring;
+pub use keyring_store::{delete_key_from_keyring, write_key_to_keyring};
 
 /// Prefix for legacy encrypted blobs without associated data (read-only).
 pub const ENC_PREFIX: &str = "sshcli-enc:v1:";
@@ -149,6 +150,19 @@ pub fn set_runtime_flags(
     AUTO_KEY_CREATED.store(false, Ordering::Relaxed);
 }
 
+/// True when the keyring was requested by either surface that can request it.
+///
+/// Two flags select the store: the global `--use-keyring` and the leaf
+/// `secrets init --keyring`. Resolution already honoured the global flag, but
+/// `init_primary_key` received only the leaf one, so `--use-keyring secrets init`
+/// wrote `secrets.key` and reported `key_source: xdg_file` — a request silently
+/// answered by a different store. Reading the runtime state here keeps the two
+/// surfaces from diverging again.
+#[must_use]
+pub fn keyring_requested() -> bool {
+    lock_global(&RUNTIME_FLAGS).use_keyring
+}
+
 /// Returns true once if a key was auto-created since the last flag reset (consume).
 #[must_use]
 pub fn take_auto_key_created() -> bool {
@@ -216,12 +230,15 @@ pub fn plaintext_allowed() -> bool {
 /// [`SshCliError::XdgDirectory`] when XDG cannot be resolved and no override is set.
 pub fn secrets_config_dir() -> SshCliResult<PathBuf> {
     if let Some(d) = lock_global(&DIR_CONFIG_OVERRIDE).clone() {
-        return Ok(d);
+        return Ok(crate::vps::config_dir_for_override(&d));
     }
     crate::paths::xdg_config_dir()
 }
 
 /// Canonical path of the local primary-key file.
+///
+/// # Errors
+/// Returns the errors of [`secrets_config_dir`].
 pub fn secrets_key_path() -> SshCliResult<PathBuf> {
     Ok(secrets_config_dir()?.join(KEY_FILE_NAME))
 }
@@ -286,6 +303,16 @@ pub fn load_primary_key() -> SshCliResult<(Option<PrimaryKey>, KeySource)> {
         return Ok((Some(key?), KeySource::XdgFile));
     }
 
+    // No file and no flag: a key stored by a previous `secrets init --keyring` is still
+    // the primary key of this profile, so it must be found without repeating the flag.
+    // A store that does not answer is not an error here; it just means there is no key
+    // in the store either, and the caller falls back to "absent" as before.
+    match read_keyring() {
+        Ok(Some(key)) => return Ok((Some(key), KeySource::Keyring)),
+        Ok(None) => {}
+        Err(e) => tracing::debug!(err = %e, "keyring not reachable while resolving the key"),
+    }
+
     Ok((None, KeySource::Absent))
 }
 
@@ -322,6 +349,9 @@ pub fn ensure_key_for_write() -> SshCliResult<(Option<PrimaryKey>, KeySource)> {
 }
 
 /// Current status (without loading material into logs).
+///
+/// # Errors
+/// Returns the errors of [`secrets_key_path`] and [`load_primary_key`].
 pub fn secrets_status() -> SshCliResult<SecretsStatus> {
     let key_file_path = secrets_key_path()?;
     let (key, source) = load_primary_key()?;
@@ -379,6 +409,10 @@ pub fn serialize_secret_in_context(
 /// were themselves sealed unbound, but rejects a `v2` blob bound to a concrete
 /// host/field. Call sites that know the owner must use
 /// [`deserialize_secret_in_context`] to get the relocation check.
+///
+/// # Errors
+/// Same as [`deserialize_secret_in_context`] with an unbound context: a missing primary
+/// key, a malformed blob, or a failed AEAD verification.
 pub fn deserialize_secret(stored: &str) -> SshCliResult<String> {
     deserialize_secret_in_context(SecretContext::unbound(), stored)
 }
@@ -404,6 +438,9 @@ pub fn deserialize_secret_in_context(ctx: SecretContext<'_>, stored: &str) -> Ss
 }
 
 /// Generates [`PRIMARY_KEY_LEN_BYTES`] random bytes as [`PRIMARY_KEY_HEX_LEN`] hex chars.
+///
+/// # Errors
+/// Returns `SshCliError::Software` when the operating system CSPRNG cannot supply bytes.
 pub fn generate_hex_key() -> SshCliResult<String> {
     let mut bytes = [0u8; PRIMARY_KEY_LEN_BYTES];
     // G-ERR-R01: a CSPRNG that cannot produce bytes is a broken host, not malformed
@@ -428,24 +465,8 @@ pub fn write_key_file(path: &Path, hex64: &str, force: bool) -> SshCliResult<()>
             path.display()
         )));
     }
-    // GAP-AUD-SEC-001: backup previous key before force-overwrite.
-    if path.exists() && force {
-        let bak = path.with_file_name(format!(
-            "{}.bak",
-            path.file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or(KEY_FILE_NAME)
-        ));
-        if let Err(e) = std::fs::copy(path, &bak) {
-            tracing::warn!(
-                err = %e,
-                path = %bak.display(),
-                "failed to backup secrets key before --force"
-            );
-        }
-    }
     if let Some(parent_dir) = path.parent() {
-        std::fs::create_dir_all(parent_dir)?;
+        crate::fs_perm::ensure_config_dir(parent_dir)?;
     }
     let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
     // G-ERR-R01: a full disk, a read-only mount or a missing XDG directory is I/O
@@ -467,39 +488,8 @@ pub fn write_key_file(path: &Path, hex64: &str, force: bool) -> SshCliResult<()>
     Ok(())
 }
 
-/// Initializes primary-key in XDG file or keyring. **Never** prints the key.
-///
-/// # Errors
-/// Returns an error if the key already exists without `--force`, RNG fails, or keyring/file I/O fails.
-pub fn init_primary_key(use_keyring: bool, force: bool) -> SshCliResult<SecretsStatus> {
-    let mut hex = generate_hex_key()?;
-    if use_keyring {
-        if !force {
-            match read_keyring() {
-                Ok(Some(_)) => {
-                    hex.zeroize();
-                    return Err(SshCliError::InvalidArgument(
-                        "keyring already has a primary-key; use --force".to_string(),
-                    ));
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    hex.zeroize();
-                    return Err(e);
-                }
-            }
-        }
-        let result = write_key_to_keyring(&hex);
-        hex.zeroize();
-        result?;
-        return secrets_status();
-    }
-    let path = secrets_key_path()?;
-    let result = write_key_file(&path, &hex, force);
-    hex.zeroize();
-    result?;
-    secrets_status()
-}
+/// Re-exported so callers keep using `secrets::init_primary_key`.
+pub use init_key::init_primary_key;
 
 fn parse_hex_key(hex: &str) -> Result<PrimaryKey, String> {
     let h = hex.trim();
@@ -524,225 +514,4 @@ fn parse_hex_key(hex: &str) -> Result<PrimaryKey, String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    // Crypto types live in `secrets::aead` now; the legacy-v1 fixture below still
-    // needs to seal a blob by hand, so it imports them locally instead of forcing
-    // the production module to keep an import it no longer uses.
-    use crate::constants::AEAD_NONCE_LEN_BYTES;
-    use chacha20poly1305::aead::{Aead, KeyInit};
-    use chacha20poly1305::{ChaCha20Poly1305, Nonce};
-    use serial_test::serial;
-    use tempfile::TempDir;
-
-    fn clear_key_env() {
-        // Fail-closed path reads these keys; clear so serial tests start clean.
-        crate::test_util::env::remove_var(ENV_SECRETS_KEY);
-        crate::test_util::env::remove_var(ENV_SECRETS_KEY_FILE);
-        crate::test_util::env::remove_var(crate::constants::ENV_USE_KEYRING);
-        set_runtime_flags(false, None, false);
-        set_config_dir(None);
-    }
-
-    /// Isolates tests from real XDG (never pollute user config).
-    fn sandbox() -> TempDir {
-        clear_key_env();
-        let tmp = TempDir::new().unwrap();
-        set_config_dir(Some(tmp.path().to_path_buf()));
-        tmp
-    }
-
-    #[test]
-    #[serial]
-    fn roundtrip_with_xdg_key() {
-        let _tmp = sandbox();
-        init_primary_key(false, false).expect("init key");
-        let plain = "fake-test-password-not-real";
-        let enc = serialize_secret(plain).unwrap();
-        assert!(is_encrypted_blob(&enc));
-        assert!(!enc.contains(plain));
-        let back = deserialize_secret(&enc).unwrap();
-        assert_eq!(back, plain);
-        clear_key_env();
-    }
-
-    #[test]
-    #[serial]
-    fn opt_out_keeps_plaintext() {
-        let _tmp = sandbox();
-        set_runtime_flags(true, None, false);
-        let plain = "fake-plaintext-only-for-unit-test";
-        let out = serialize_secret(plain).unwrap();
-        assert_eq!(out, plain);
-        assert!(!is_encrypted_blob(&out));
-        clear_key_env();
-    }
-
-    #[test]
-    #[serial]
-    fn default_auto_creates_secrets_key() {
-        let tmp = sandbox();
-        let plain = "fake-auto-enc-password";
-        let enc = serialize_secret(plain).unwrap();
-        assert!(is_encrypted_blob(&enc));
-        assert!(!enc.contains(plain));
-        assert!(tmp.path().join(KEY_FILE_NAME).is_file());
-        let back = deserialize_secret(&enc).unwrap();
-        assert_eq!(back, plain);
-        clear_key_env();
-    }
-
-    #[test]
-    #[serial]
-    fn blob_without_key_fails() {
-        let tmp = sandbox();
-        init_primary_key(false, false).expect("init");
-        let enc = serialize_secret("fake-secret").unwrap();
-        // Drop key material from sandbox; allow plaintext so deserialize path
-        // still requires a key for encrypted blobs.
-        clear_key_env();
-        set_config_dir(Some(tmp.path().to_path_buf()));
-        let _ = std::fs::remove_file(tmp.path().join(KEY_FILE_NAME));
-        set_runtime_flags(true, None, false);
-        let err = deserialize_secret(&enc).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("encrypted") || msg.contains("secrets") || msg.contains("key"),
-            "msg={msg}"
-        );
-        clear_key_env();
-    }
-
-    #[test]
-    #[serial]
-    fn empty_secret_never_encrypted_blob() {
-        // GAP-SSH-EXP-001
-        let _tmp = sandbox();
-        init_primary_key(false, false).expect("init");
-        let out = serialize_secret("").unwrap();
-        assert_eq!(out, "");
-        assert!(!is_encrypted_blob(&out));
-        clear_key_env();
-    }
-
-    #[test]
-    #[serial]
-    fn v2_blob_rejects_foreign_host_and_field() {
-        // A7: an operator editing config.toml must not be able to move a blob
-        // between hosts or between fields and still have it decrypt.
-        let _tmp = sandbox();
-        init_primary_key(false, false).expect("init key");
-        let plain = "fake-bound-secret";
-        let host_a = SecretContext::new("host-a", "password");
-        let enc = serialize_secret_in_context(host_a, plain).unwrap();
-        assert!(enc.starts_with(ENC_PREFIX_V2), "v2 must be written");
-
-        assert_eq!(deserialize_secret_in_context(host_a, &enc).unwrap(), plain);
-
-        let other_host = SecretContext::new("host-b", "password");
-        assert!(
-            deserialize_secret_in_context(other_host, &enc).is_err(),
-            "blob bound to host-a must not open as host-b"
-        );
-
-        let other_field = SecretContext::new("host-a", "su_password");
-        assert!(
-            deserialize_secret_in_context(other_field, &enc).is_err(),
-            "blob bound to password must not open as su_password"
-        );
-        clear_key_env();
-    }
-
-    #[test]
-    #[serial]
-    fn unbound_blob_stays_readable_under_any_context() {
-        // Migration: call sites not yet passing host/field write unbound blobs;
-        // wiring a context later must not lock the user out of their config.
-        let _tmp = sandbox();
-        init_primary_key(false, false).expect("init key");
-        let plain = "fake-unbound-secret";
-        let enc = serialize_secret(plain).unwrap();
-        assert!(enc.starts_with(ENC_PREFIX_V2));
-        let bound = SecretContext::new("host-a", "password");
-        assert_eq!(deserialize_secret_in_context(bound, &enc).unwrap(), plain);
-        clear_key_env();
-    }
-
-    #[test]
-    #[serial]
-    fn legacy_v1_blob_still_decrypts() {
-        // Existing configs hold v1 blobs sealed without associated data.
-        let _tmp = sandbox();
-        init_primary_key(false, false).expect("init key");
-        let (key, _) = load_primary_key().unwrap();
-        let key = key.expect("key present");
-        let plain = "fake-legacy-v1-secret";
-
-        // Rebuild a v1 blob exactly as the previous version wrote it.
-        let cipher = ChaCha20Poly1305::new_from_slice(key.as_slice()).unwrap();
-        let mut nonce_bytes = [0u8; AEAD_NONCE_LEN_BYTES];
-        getrandom::fill(&mut nonce_bytes).unwrap();
-        let ct = cipher
-            .encrypt(&Nonce::from(nonce_bytes), plain.as_bytes())
-            .unwrap();
-        let mut packed = nonce_bytes.to_vec();
-        packed.extend_from_slice(&ct);
-        let blob = format!(
-            "{ENC_PREFIX}{}",
-            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &packed)
-        );
-
-        assert!(is_encrypted_blob(&blob));
-        assert_eq!(deserialize_secret(&blob).unwrap(), plain);
-        assert_eq!(
-            deserialize_secret_in_context(SecretContext::new("host-a", "password"), &blob).unwrap(),
-            plain
-        );
-        clear_key_env();
-    }
-
-    #[test]
-    fn aad_encoding_is_unambiguous() {
-        // A host literally named "a:b" must not collide with the pair (a, b).
-        assert_ne!(
-            SecretContext::new("a:b", "password").aad(),
-            SecretContext::new("a", "b:password").aad()
-        );
-        assert!(SecretContext::unbound().is_unbound());
-        assert!(!SecretContext::new("host-a", "password").is_unbound());
-    }
-
-    #[test]
-    fn parse_hex_tamanho() {
-        assert!(parse_hex_key("aa").is_err());
-        assert!(
-            parse_hex_key("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
-                .is_ok()
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn init_creates_file() {
-        clear_key_env();
-        let tmp = TempDir::new().unwrap();
-        set_config_dir(Some(tmp.path().to_path_buf()));
-        let st = init_primary_key(false, false).unwrap();
-        assert!(st.encryption_active);
-        assert_eq!(st.source, KeySource::XdgFile);
-        assert!(st.key_file_path.is_file());
-        clear_key_env();
-    }
-
-    #[test]
-    fn lock_global_recovers_from_poison_with_usable_data() {
-        let m = Mutex::new(42_u32);
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _g = m.lock().unwrap();
-            panic!("intentional poison for lock_global test");
-        }));
-        assert!(m.is_poisoned());
-        let g = lock_global(&m);
-        assert_eq!(*g, 42);
-    }
-}
+mod tests;

@@ -80,7 +80,7 @@ pub fn print_json_line<T: Serialize>(value: &T) -> io::Result<()> {
     write_json_line(&mut handle, &shaped)
 }
 
-/// Compact JSON + LF on stderr; BrokenPipe is ignored (downstream closed).
+/// Compact JSON + LF on stderr; `BrokenPipe` is ignored (downstream closed).
 ///
 /// # Errors
 /// Non-pipe stderr write failures.

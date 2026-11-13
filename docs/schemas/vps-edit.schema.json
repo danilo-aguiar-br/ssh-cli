@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-edit.schema.json",
+  "title": "vps edit JSON",
+  "description": "Payload of `ssh-cli vps edit <NAME> [flags] --json`. Every change is applied under one config lock, and the record is validated before anything is written, so a rejected edit leaves the file byte-identical. `updated` names only the fields whose stored value changed, which lets an agent tell an applied flag from one it merely mentioned; it is empty when every requested value already matched. An invocation with no field, rename or clear flag is refused with exit 64 before any envelope exists. `vps edit --name` reaches the same code path as `vps rename`, so that invocation emits `vps-renamed` and carries `active_rewritten` beside `previous_name`: one operation, one event name, and the caller never branches on a string to learn what it asked for.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ok",
+    "event",
+    "name",
+    "updated",
+    "target_resolved",
+    "target_source"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "event": {
+      "type": "string",
+      "enum": [
+        "vps-edited",
+        "vps-renamed"
+      ],
+      "description": "`vps-edited` when no rename happened; `vps-renamed` when `--name` renamed the host, which is the same event `vps rename` emits."
+    },
+    "name": {
+      "type": "string",
+      "description": "Name of the host after this invocation"
+    },
+    "previous_name": {
+      "type": "string",
+      "description": "Present exactly when `--name` renamed the host; absent on a plain field edit"
+    },
+    "updated": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "host",
+          "port",
+          "user",
+          "password",
+          "key_path",
+          "key_passphrase",
+          "use_agent",
+          "agent_socket",
+          "timeout_ms",
+          "max_command_chars",
+          "max_output_chars",
+          "sudo_password",
+          "su_password",
+          "disable_sudo",
+          "tls",
+          "tls_sni",
+          "tls_client_cert",
+          "tls_client_key",
+          "tags"
+        ]
+      },
+      "description": "Fields whose stored value changed, in application order, each at most once. Empty when every requested value already matched or when the invocation only renamed the host. Switching the primary auth method lists the new method and every field it cleared, but only the cleared fields that held a value: `--key` can list `key_path`, `password`, `use_agent`, `agent_socket` and, for a different key without a new passphrase, `key_passphrase`; `--password` can list `password`, `key_path`, `key_passphrase`, `use_agent` and `agent_socket`; `--use-agent` can list `use_agent`, `password`, `key_path` and `key_passphrase`. An invocation with no field, rename or clear flag is refused with exit 64 before any envelope exists."
+    },
+    "target_resolved": {
+      "type": "string",
+      "description": "Name the registry lookup used, which is the name the host had before this invocation: after a rename it equals `previous_name`, not `name`. Published only after the registry lookup succeeded."
+    },
+    "target_source": {
+      "type": "string",
+      "const": "argv",
+      "description": "Always `argv`: `vps edit` requires the subject on its own command line."
+    },
+    "host_resolved": {
+      "type": "string",
+      "description": "Read alias of `target_resolved`"
+    },
+    "host_source": {
+      "type": "string",
+      "const": "argv",
+      "description": "Read alias of `target_source`"
+    },
+    "active_rewritten": {
+      "type": "boolean",
+      "description": "Present only on a rename: true when the sibling active marker pointed at the old name and was rewritten to the new one."
+    }
+  }
+}

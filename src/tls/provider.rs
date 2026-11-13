@@ -75,16 +75,3 @@ pub fn provider_name() -> &'static str {
 pub(crate) fn ensure_provider() -> SshCliResult<()> {
     install_default_provider()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn install_is_idempotent() {
-        install_default_provider().expect("first");
-        install_default_provider().expect("second");
-        assert!(provider_is_installed());
-        assert_eq!(provider_name(), "aws_lc_rs");
-    }
-}

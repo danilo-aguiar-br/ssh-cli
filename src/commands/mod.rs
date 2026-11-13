@@ -10,11 +10,14 @@ use crate::cli::CliArgs;
 use anyhow::Result;
 
 /// Runs the requested subcommand (command-layer entry).
+///
+/// # Errors
+/// Returns the error of the dispatched subcommand.
 pub async fn run(args: CliArgs) -> Result<()> {
     crate::cli::dispatch_impl(args).await
 }
 
-/// Exec-family handlers (domain: [`crate::vps`] exec_ops).
+/// Exec-family handlers (domain: [`crate::vps`] `exec_ops`).
 pub mod exec {
     pub use crate::vps::{
         run_exec as run, run_su_exec as run_su, run_sudo_exec as run_sudo, ExecOptions,

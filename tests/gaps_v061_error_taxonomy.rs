@@ -18,11 +18,11 @@
 //! These assertions drive the real product API, so deleting a variant or flipping a
 //! classification turns the suite red instead of silently changing agent behaviour.
 
-use ssh_cli::errors::{exit_codes, ErrorClass, SshCliError};
+use ssh_cli::errors::{exit_codes, ErrorClass, ErrorLayer, SshCliError, UnavailableService};
 
 #[test]
 fn unavailable_service_exits_69_and_is_retryable() {
-    let e = SshCliError::unavailable("keyring");
+    let e = SshCliError::unavailable(UnavailableService::Keyring);
 
     assert_eq!(e.exit_code(), exit_codes::EX_UNAVAILABLE);
     assert_eq!(e.error_code(), "unavailable");
@@ -51,7 +51,7 @@ fn software_failure_exits_70_and_is_not_retryable() {
 #[test]
 fn unavailable_and_software_do_not_collide_with_the_old_data_error() {
     // The whole point of the split: three codes where there used to be one.
-    let unavailable = SshCliError::unavailable("keyring").exit_code();
+    let unavailable = SshCliError::unavailable(UnavailableService::Keyring).exit_code();
     let software = SshCliError::software("rng").exit_code();
     let data = SshCliError::Config("malformed".into()).exit_code();
 
@@ -66,7 +66,7 @@ fn the_two_new_variants_carry_actionable_suggestions() {
     // `suggestion()` is derived from `RetryKind`, and both variants share theirs with
     // unrelated failures. Without a variant-level override, a locked keyring would be
     // told to raise `--timeout` — advice pointing at the wrong knob entirely.
-    let keyring = SshCliError::unavailable("keyring")
+    let keyring = SshCliError::unavailable(UnavailableService::Keyring)
         .suggestion()
         .expect("unavailable must suggest a remedy");
     assert!(
@@ -85,6 +85,69 @@ fn the_two_new_variants_carry_actionable_suggestions() {
         rng.contains("not help") || rng.contains("report"),
         "software failures must tell the caller retrying is pointless, got: {rng}"
     );
+}
+
+/// B4: the registry lock used to inherit the keyring advice because `suggestion()`
+/// matched `Unavailable { .. }`. The service is now a closed enum matched per variant.
+#[test]
+fn config_lock_suggestion_names_the_lock_knob_and_not_the_keyring() {
+    let lock = SshCliError::unavailable(UnavailableService::ConfigLock)
+        .suggestion()
+        .expect("config lock must suggest a remedy");
+    assert!(
+        lock.contains("--lock-wait-ms"),
+        "the lock remedy must name the knob that fixes it, got: {lock}"
+    );
+    assert!(
+        !lock.contains("keyring"),
+        "a held registry lock has nothing to do with the keyring, got: {lock}"
+    );
+}
+
+#[test]
+fn keyring_suggestion_names_the_keyring_and_not_the_timeout() {
+    let keyring = SshCliError::unavailable(UnavailableService::Keyring)
+        .suggestion()
+        .expect("keyring must suggest a remedy");
+    assert!(keyring.contains("keyring"), "got: {keyring}");
+    assert!(!keyring.contains("--timeout"), "got: {keyring}");
+}
+
+/// The service enum must not change what agents already parse.
+#[test]
+fn unavailable_display_keeps_the_wire_slug() {
+    assert_eq!(
+        SshCliError::unavailable(UnavailableService::ConfigLock).to_string(),
+        "service unavailable: config_lock"
+    );
+    assert_eq!(
+        SshCliError::unavailable(UnavailableService::Keyring).to_string(),
+        "service unavailable: keyring"
+    );
+    assert_eq!(UnavailableService::ConfigLock.slug(), "config_lock");
+    assert_eq!(UnavailableService::Keyring.slug(), "keyring");
+}
+
+#[test]
+fn config_lock_is_an_io_layer_failure_and_keyring_stays_auth() {
+    assert_eq!(
+        SshCliError::unavailable(UnavailableService::ConfigLock).layer(),
+        ErrorLayer::Io
+    );
+    assert_eq!(
+        SshCliError::unavailable(UnavailableService::Keyring).layer(),
+        ErrorLayer::Auth
+    );
+}
+
+/// X11: repeating `vps rename A B` after a success lands on `VpsNotFound`; the hint
+/// must say the first call may have worked.
+#[test]
+fn vps_not_found_suggests_listing_before_repeating() {
+    let hint = SshCliError::VpsNotFound("a".into())
+        .suggestion()
+        .expect("vps_not_found must suggest a remedy");
+    assert!(hint.contains("vps list"), "got: {hint}");
 }
 
 #[test]
@@ -119,11 +182,11 @@ fn secrets_module_no_longer_routes_host_failures_through_config() {
         ("RNG failed", "SshCliError::software(\"rng\")"),
         (
             "keyring set failed",
-            "SshCliError::unavailable(\"keyring\")",
+            "SshCliError::unavailable(UnavailableService::Keyring)",
         ),
         (
             "keyring get failed",
-            "SshCliError::unavailable(\"keyring\")",
+            "SshCliError::unavailable(UnavailableService::Keyring)",
         ),
         ("fsync secrets.key", "SshCliError::Io"),
         ("chmod secrets.key", "SshCliError::Io"),
@@ -141,7 +204,7 @@ fn secrets_module_no_longer_routes_host_failures_through_config() {
         "RNG failure must map to exit 70"
     );
     assert!(
-        src.contains("SshCliError::unavailable(\"keyring\")"),
+        src.contains("SshCliError::unavailable(UnavailableService::Keyring)"),
         "keyring failure must map to exit 69"
     );
 }

@@ -32,8 +32,23 @@
 //!
 //! # Truncation is never silent
 //!
-//! Any run that drops or shortens data reports it under the `agent_shape` key, so an
-//! agent can tell "three hosts" apart from "three hosts shown out of ninety".
+//! Any run that drops or shortens data reports it, so an agent can tell "three hosts"
+//! apart from "three hosts shown out of ninety". The carrier depends on the payload
+//! shape, because a payload has exactly one stdout slot and the report must not change
+//! the type a consumer indexes:
+//!
+//! - An envelope object carries the counts inline under the `agent_shape` key.
+//! - A bare top-level array keeps its type and the counts go to **stderr** as one JSON
+//!   line with `"event":"agent-shape"`, which is the only document in that stream on a
+//!   successful run. `--quiet` suppresses it, like every other stderr line.
+//!
+//! # Operations that cannot apply are named, not dropped
+//!
+//! A single-record payload (`vps show`, `doctor`, `commands`) has no collection to
+//! filter, sort, deduplicate or limit. Those flags are reported under
+//! `agent_shape.ignored` instead of being accepted and silently doing nothing, and
+//! `--select` and `--truncate-content` do work on that payload, because projecting and
+//! shortening a record is exactly the reduction an agent asked for.
 
 use serde_json::{Map, Value};
 use std::sync::Mutex;
@@ -46,8 +61,10 @@ const ARRAY_KEYS: &[&str] = &[
     "results", "items", "hosts", "entries", "vps", "matches", "rows", "data", "steps",
 ];
 
-/// Key holding the shaping report added to a reduced envelope.
-const REPORT_KEY: &str = "agent_shape";
+#[path = "agent_shape_record.rs"]
+mod record;
+
+use record::{shape_single_object, REPORT_KEY};
 
 /// A single `--filter` predicate.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,7 +237,7 @@ fn compare(a: Option<&Value>, b: Option<&Value>) -> std::cmp::Ordering {
 }
 
 /// Keeps only the selected dotted paths, preserving nesting.
-fn project(element: &Value, paths: &[String]) -> Value {
+pub(crate) fn project(element: &Value, paths: &[String]) -> Value {
     let mut out = Map::new();
     for path in paths {
         // A path that does not resolve is skipped rather than emitted as `null`;
@@ -254,7 +271,7 @@ fn insert_path(target: &mut Map<String, Value>, path: &str, value: Value) {
 }
 
 /// Shortens every string longer than `max` characters, on char boundaries.
-fn truncate_strings(value: &mut Value, max: usize, changed: &mut bool) {
+pub(crate) fn truncate_strings(value: &mut Value, max: usize, changed: &mut bool) {
     match value {
         Value::String(s) => {
             // Count characters, never bytes: cutting at a byte offset would split a
@@ -289,14 +306,14 @@ fn find_array_key(map: &Map<String, Value>) -> Option<String> {
 
 /// Outcome of shaping a record collection.
 #[derive(Debug, Clone, Copy, Default)]
-struct ShapeReport {
-    input_count: usize,
-    output_count: usize,
-    content_truncated: bool,
+pub(crate) struct ShapeReport {
+    pub(crate) input_count: usize,
+    pub(crate) output_count: usize,
+    pub(crate) content_truncated: bool,
 }
 
 impl ShapeReport {
-    fn dropped(&self) -> usize {
+    pub(crate) fn dropped(&self) -> usize {
         self.input_count.saturating_sub(self.output_count)
     }
 
@@ -354,9 +371,8 @@ fn shape_items(items: &mut Vec<Value>, cfg: &ShapeConfig) -> ShapeReport {
 /// Applies the active shaping to a serialized payload, in the documented order.
 ///
 /// Handles both payload shapes this CLI emits: a bare top-level array (`vps list`,
-/// `sftp ls`) and an envelope object wrapping a named collection (the batch events).
-/// Missing the bare-array case would have left shaping inert on the most frequently
-/// used commands.
+/// `sftp ls`) and an envelope object, which is either a single record (`vps show`,
+/// `doctor`, `commands`) or a named collection (the batch events).
 ///
 /// Returns `true` when the payload was modified.
 pub fn apply(root: &mut Value, cfg: &ShapeConfig) -> bool {
@@ -376,14 +392,7 @@ pub fn apply(root: &mut Value, cfg: &ShapeConfig) -> bool {
             // type and breaking every consumer that indexes it. stdout stays a pure
             // array and the accounting goes to stderr, where diagnostics belong.
             if report.changed_anything() || byte_capped {
-                tracing::info!(
-                    input_count = report.input_count,
-                    output_count = report.output_count,
-                    dropped = report.dropped(),
-                    content_truncated = report.content_truncated,
-                    output_truncated = byte_capped,
-                    "agent-shape reduced the payload"
-                );
+                record::emit_array_report(&report, byte_capped);
             }
             true
         }
@@ -398,10 +407,10 @@ fn apply_to_envelope(root: &mut Value, cfg: &ShapeConfig) -> bool {
         return false;
     };
     let Some(key) = find_array_key(map) else {
-        // Envelopes without a collection (single-record reads, ready events) are left
-        // untouched; there is nothing to reduce and rewriting them would only risk
-        // breaking their schema.
-        return false;
+        // No collection to shape, so this is a single-record payload. Projection and
+        // content truncation still apply to it; the collection-only operations are
+        // named in `agent_shape.ignored` rather than accepted and quietly dropped.
+        return shape_single_object(map, cfg);
     };
     let Some(Value::Array(items)) = map.get_mut(&key) else {
         return false;

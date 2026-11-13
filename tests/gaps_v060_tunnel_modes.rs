@@ -509,8 +509,8 @@ fn dry_run_schema_is_indexed_and_valid() {
         .expect("operation enum");
     assert_eq!(
         ops.len(),
-        6,
-        "the schema must list exactly the six commands that implement --dry-run"
+        8,
+        "the schema must list exactly the eight commands that implement --dry-run"
     );
 
     let readme = std::fs::read_to_string(root.join("docs/schemas/README.md")).expect("README");

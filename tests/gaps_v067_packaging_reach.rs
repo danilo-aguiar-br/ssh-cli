@@ -5,7 +5,7 @@
 //!
 //! Round 0.5.5 renamed `src/cli/exec_target/` to `src/cli/target/`. That name is
 //! ordinary Rust and the compiler was happy: `cargo build`, `cargo clippy`,
-//! `cargo test --all-features` and all eleven gate scripts stayed green.
+//! `cargo test --all-features` and every gate script stayed green.
 //!
 //! The published crate did not compile.
 //!
@@ -13,7 +13,7 @@
 //! slash matches at *every* depth, so `src/cli/target/` was ignored by git.
 //! Inside a checkout `cargo package` builds its file list from git, so both files
 //! of that module were dropped from the tarball, and the verify step failed with
-//! `E0583: file not found for module `target``. The only command in the whole
+//! the message about a missing file for module `target`. The only command in the whole
 //! battery that touched the tarball was `cargo publish --dry-run`.
 //!
 //! # Why a gate rather than a fix

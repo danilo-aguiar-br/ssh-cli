@@ -177,6 +177,120 @@ fn count_only_replaces_the_payload_with_a_count() {
         .stdout(predicate::str::contains("\"count\":2"));
 }
 
+/// A reduced bare array must say what it dropped, on stderr, on a successful run.
+///
+/// The count used to go only to `tracing::info!`, and the default filter is `error`, so
+/// `vps list --limit 1` returned one host out of two with no trace that the second
+/// existed. The module documentation promised "truncation is never silent" while the
+/// default path was exactly that.
+#[test]
+#[serial]
+fn a_reduced_bare_array_reports_the_drop_on_stderr() {
+    let tmp = TempDir::new().unwrap();
+    seed(&tmp);
+    cmd(&tmp)
+        .args(["--limit", "1", "vps", "list", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("["))
+        .stderr(predicate::str::contains("\"event\":\"agent-shape\""))
+        .stderr(predicate::str::contains("\"input_count\":2"))
+        .stderr(predicate::str::contains("\"output_count\":1"))
+        .stderr(predicate::str::contains("\"dropped\":1"));
+}
+
+/// `--quiet` is the documented way to ask for a silent stream, so it must silence this.
+#[test]
+#[serial]
+fn quiet_suppresses_the_shaping_report() {
+    let tmp = TempDir::new().unwrap();
+    seed(&tmp);
+    cmd(&tmp)
+        .args(["--quiet", "--limit", "1", "vps", "list", "--json"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
+/// An unshaped run must not grow a stderr line, or every consumer breaks.
+#[test]
+#[serial]
+fn an_unshaped_bare_array_writes_nothing_to_stderr() {
+    let tmp = TempDir::new().unwrap();
+    seed(&tmp);
+    cmd(&tmp)
+        .args(["vps", "list", "--json"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
+/// A single-record read must honour `--select`, which used to be inert on it.
+#[test]
+#[serial]
+fn select_reduces_a_single_record_read() {
+    let tmp = TempDir::new().unwrap();
+    seed(&tmp);
+    let full = cmd(&tmp)
+        .args(["vps", "show", "h1", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let reduced = cmd(&tmp)
+        .args(["--select", "name", "vps", "show", "h1", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert!(
+        reduced.len() < full.len(),
+        "a single-record projection must shrink the payload: full={} reduced={}",
+        full.len(),
+        reduced.len()
+    );
+    let text = String::from_utf8(reduced).unwrap();
+    assert!(text.contains("\"name\":\"h1\""), "{text}");
+    assert!(
+        !text.contains("schema_version"),
+        "the projection must drop unselected fields: {text}"
+    );
+    assert!(
+        text.contains("\"agent_shape\""),
+        "a reduced record must carry its report: {text}"
+    );
+}
+
+/// A collection-only flag on a single record must be named, not silently discarded.
+#[test]
+#[serial]
+fn a_collection_flag_on_a_single_record_is_named_as_ignored() {
+    let tmp = TempDir::new().unwrap();
+    seed(&tmp);
+    cmd(&tmp)
+        .args([
+            "--limit", "1", "--select", "name", "vps", "show", "h1", "--json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"--limit\""));
+}
+
+/// The same contract holds with no reducing flag beside the ignored one.
+#[test]
+#[serial]
+fn a_collection_flag_alone_is_still_named_as_ignored() {
+    let tmp = TempDir::new().unwrap();
+    seed(&tmp);
+    cmd(&tmp)
+        .args(["--limit", "1", "vps", "show", "h1", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"--limit\""));
+}
+
 #[test]
 #[serial]
 fn non_loopback_bind_requires_explicit_acceptance() {

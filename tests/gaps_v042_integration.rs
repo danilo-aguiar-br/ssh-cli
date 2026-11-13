@@ -281,11 +281,47 @@ fn gap_rel_007_build_rs_precedence() {
         ch.is_file(),
         ".commit_hash must exist for crates.io pack (REL-007)"
     );
-    let hash = std::fs::read_to_string(&ch).unwrap();
+    let raw = std::fs::read_to_string(&ch).unwrap();
+    let tokens: Vec<&str> = raw.split_whitespace().collect();
     assert!(
-        !hash.trim().is_empty() && hash.trim() != "unknown",
-        ".commit_hash must be non-empty real hash"
+        tokens.len() == 2,
+        ".commit_hash must be exactly `<hash> <version>` (got {raw:?})"
     );
+    let (file_hash, file_version) = (tokens[0], tokens[1]);
+    assert!(
+        (7..=40).contains(&file_hash.len()) && file_hash.chars().all(|c| c.is_ascii_hexdigit()),
+        ".commit_hash hash must be 7-40 hex chars (got {file_hash:?})"
+    );
+    let semver_parts: Vec<&str> = file_version.split('.').collect();
+    assert!(
+        semver_parts.len() == 3
+            && semver_parts
+                .iter()
+                .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())),
+        ".commit_hash version must be semver MAJOR.MINOR.PATCH (got {file_version:?})"
+    );
+
+    // Behavior: without a checkout, the file is trusted only when it names this release.
+    // A stale file must surface as `unknown`, never as a confidently wrong hash.
+    // Skipped when the build env injected a hash, which outranks both git and the file.
+    let env_injected = std::env::var("SSH_CLI_COMMIT_HASH").is_ok_and(|v| !v.trim().is_empty());
+    if !root().join(".git").exists() && !env_injected {
+        let tmp = TempDir::new().unwrap();
+        let out = cmd(&tmp).arg("--version").output().unwrap();
+        let version_out = String::from_utf8_lossy(&out.stdout).into_owned();
+        if file_version == env!("CARGO_PKG_VERSION") {
+            assert!(
+                version_out.contains(file_hash),
+                "matching .commit_hash must be shown (got {version_out:?})"
+            );
+        } else {
+            assert!(
+                version_out.contains("unknown") && !version_out.contains(file_hash),
+                "stale .commit_hash ({file_version}) must yield `unknown`, not its hash \
+                 (got {version_out:?})"
+            );
+        }
+    }
 
     // Existing on disk is not enough. Inside a git checkout Cargo builds the package
     // file list from the index, so an untracked-and-ignored file is dropped from the
@@ -323,7 +359,12 @@ fn gap_rel_007_build_rs_precedence() {
 
 #[test]
 fn gap_env_001_e2e_script_auth_policy() {
-    let script = std::fs::read_to_string(root().join("scripts/e2e_real_ssh.sh")).unwrap();
+    // The harness is split into three modules; the contract spans all of them.
+    let script = ["e2e_real_ssh.py", "_e2e_sshd.py", "_e2e_cases.py"]
+        .iter()
+        .map(|name| std::fs::read_to_string(root().join("scripts").join(name)).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
         script.contains("ENV-001") || script.contains("fail2ban"),
         "e2e script must document fail2ban / ENV-001 policy"

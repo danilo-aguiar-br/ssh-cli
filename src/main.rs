@@ -6,7 +6,7 @@
 //! Keeps logic minimal (G-IO-11 thin main):
 //! 1. Optional `human_panic` in release
 //! 2. **Signal handlers** (SIGINT/SIGTERM) — before any worker threads
-//! 3. Build Tokio multi_thread runtime (capped workers)
+//! 3. Build Tokio `multi_thread` runtime (capped workers)
 //! 4. `block_on(ssh_cli::run())`
 //! 5. Flush stdout
 //! 6. [`ssh_cli::resolve_exit_code`] (library owns exit policy + error envelopes)
@@ -28,7 +28,9 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() {
     // G-15: human-readable panic reports in release; agent JSON path still uses Result.
-    #[cfg(not(debug_assertions))]
+    // No `cfg` gate: human-panic 2.0.8 already picks `PanicStyle::Debug` (a no-op) under
+    // `debug_assertions` (src/panic.rs:60), and the gate made cargo report the crate as
+    // an unused dependency in every debug build.
     human_panic::setup_panic!();
 
     // G-TLS: install rustls CryptoProvider (aws_lc_rs) once before any TLS dial

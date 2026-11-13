@@ -902,6 +902,98 @@ const SURFACE_055: &[(&str, &[&str])] = &[
     ),
 ];
 
+/// Documents that must teach the 0.5.6 edit/rename surface.
+///
+/// The token set is the *decision* surface, not the whole flag list: `vps rename`
+/// is the verb that closes the export/import workaround, the two long names carry
+/// the two ways to reach it, and the clear flags are what an operator needs to
+/// know exist before they conclude a field can only be overwritten, never removed.
+/// `vps-renamed` and `previous_name` are the read-back half — a rename that reports
+/// nothing leaves the caller guessing which name now resolves.
+const SURFACE_056: &[(&str, &[&str])] = &[
+    (
+        "docs/AGENTS.md",
+        &[
+            "vps rename",
+            "--clear-tags",
+            "--no-key",
+            "--no-agent-socket",
+            "--clear-sudo-password",
+            "--clear-su-password",
+            "--no-tls-sni",
+            "--no-tls-client-cert",
+            "--no-tls-client-key",
+            "vps-renamed",
+            "previous_name",
+        ],
+    ),
+    (
+        "docs/AGENTS.pt-BR.md",
+        &[
+            "vps rename",
+            "--clear-tags",
+            "--no-key",
+            "--no-agent-socket",
+            "--clear-sudo-password",
+            "--clear-su-password",
+            "--no-tls-sni",
+            "--no-tls-client-cert",
+            "--no-tls-client-key",
+            "vps-renamed",
+            "previous_name",
+        ],
+    ),
+    (
+        "docs/COOKBOOK.md",
+        &["vps rename", "--clear-tags", "vps-renamed", "previous_name"],
+    ),
+    (
+        "docs/COOKBOOK.pt-BR.md",
+        &["vps rename", "--clear-tags", "vps-renamed", "previous_name"],
+    ),
+    (
+        "docs/HOW_TO_USE.md",
+        &["vps rename", "--clear-tags", "--no-key", "previous_name"],
+    ),
+    (
+        "docs/HOW_TO_USE.pt-BR.md",
+        &["vps rename", "--clear-tags", "--no-key", "previous_name"],
+    ),
+    ("docs/MIGRATION.md", &["vps rename", "previous_name"]),
+    ("docs/MIGRATION.pt-BR.md", &["vps rename", "previous_name"]),
+    ("README.md", &["vps rename", "--clear-tags", "--no-key"]),
+    (
+        "README.pt-BR.md",
+        &["vps rename", "--clear-tags", "--no-key"],
+    ),
+    (
+        "llms-full.txt",
+        &["vps rename", "--clear-tags", "--no-agent-socket"],
+    ),
+    (
+        "skills/ssh-cli-en/SKILL.md",
+        &[
+            "vps rename",
+            "--clear-tags",
+            "--no-key",
+            "--no-agent-socket",
+            "vps-renamed",
+            "previous_name",
+        ],
+    ),
+    (
+        "skills/ssh-cli-pt/SKILL.md",
+        &[
+            "vps rename",
+            "--clear-tags",
+            "--no-key",
+            "--no-agent-socket",
+            "vps-renamed",
+            "previous_name",
+        ],
+    ),
+];
+
 /// Documents that own the fleet surface, and therefore owe every selector.
 ///
 /// `--all` and `--hosts` were documented everywhere; `--tags` was documented
@@ -1035,7 +1127,7 @@ fn permission_mask_claims_are_directional() {
 fn the_054_surface_reaches_every_user_facing_document() {
     let mut missing = Vec::new();
 
-    for (doc, tokens) in SURFACE_054.iter().chain(SURFACE_055) {
+    for (doc, tokens) in SURFACE_054.iter().chain(SURFACE_055).chain(SURFACE_056) {
         let text = std::fs::read_to_string(root().join(doc))
             .unwrap_or_else(|e| panic!("cannot read {doc}: {e}"));
         for token in *tokens {
@@ -1065,6 +1157,7 @@ const LEAF_COMMANDS: &[&str] = &[
     "vps add",
     "vps list",
     "vps remove",
+    "vps rename",
     "vps edit",
     "vps show",
     "vps path",
@@ -1126,13 +1219,19 @@ const LEAF_COMMANDS: &[&str] = &[
 /// rendered with phantom columns on crates.io — the landing page of the product.
 /// Unfolding fixed both at once, and listing the files here is what keeps them unfolded.
 const FULL_INVENTORY_DOCS: &[&str] = &[
+    "llms.txt",
+    "llms.pt-BR.txt",
     "llms-full.txt",
+    "INTEGRATIONS.md",
+    "INTEGRATIONS.pt-BR.md",
     "README.md",
     "README.pt-BR.md",
     "docs/AGENTS.md",
     "docs/AGENTS.pt-BR.md",
     "docs/HOW_TO_USE.md",
     "docs/HOW_TO_USE.pt-BR.md",
+    "docs/COOKBOOK.md",
+    "docs/COOKBOOK.pt-BR.md",
     "docs/CROSS_PLATFORM.md",
     "docs/CROSS_PLATFORM.pt-BR.md",
 ];
@@ -1162,12 +1261,40 @@ const EXPORT_CLAIM_DOCS: &[&str] = &[
     "docs/schemas/README.md",
 ];
 
+/// Single-line backtick spans of `text`, without the backticks.
+fn code_spans(text: &str) -> Vec<&str> {
+    let mut spans = Vec::new();
+    for line in text.lines() {
+        let mut parts = line.split('`');
+        parts.next();
+        while let (Some(inside), Some(_)) = (parts.next(), parts.next()) {
+            spans.push(inside);
+        }
+    }
+    spans
+}
+
+/// True when `span` holds `cmd` as whole words after the `ssh-cli` program name.
+///
+/// The inventories quote the full invocation (`ssh-cli vps add`), because a reader copies a
+/// code span and a retriever matches the literal string; a bare `vps add` does neither.
+fn names_prefixed_command(span: &str, cmd: &str) -> bool {
+    let is_word = |c: char| c.is_alphanumeric() || c == '-' || c == '_';
+    span.match_indices(cmd).any(|(start, found)| {
+        let before = &span[..start];
+        let after = span[start + found.len()..].chars().next();
+        before.split_whitespace().any(|token| token == "ssh-cli")
+            && !before.chars().next_back().is_some_and(is_word)
+            && !after.is_some_and(is_word)
+    })
+}
+
 /// Every CLI command must be documented in every document claiming a full inventory.
 #[test]
 fn every_command_appears_in_every_full_inventory_document() {
     assert_eq!(
         LEAF_COMMANDS.len(),
-        47,
+        48,
         "LEAF_COMMANDS drifted from the shipped tree; run `ssh-cli commands` and \
          reconcile, then document the new command in every file in FULL_INVENTORY_DOCS"
     );
@@ -1176,8 +1303,9 @@ fn every_command_appears_in_every_full_inventory_document() {
     for doc in FULL_INVENTORY_DOCS {
         let text = std::fs::read_to_string(root().join(doc))
             .unwrap_or_else(|e| panic!("cannot read {doc}: {e}"));
+        let spans = code_spans(&text);
         for cmd in LEAF_COMMANDS {
-            if !text.contains(cmd) {
+            if !spans.iter().any(|span| names_prefixed_command(span, cmd)) {
                 missing.push(format!("{doc}: {cmd}"));
             }
         }
@@ -1185,9 +1313,11 @@ fn every_command_appears_in_every_full_inventory_document() {
 
     assert!(
         missing.is_empty(),
-        "these documents claim a complete command inventory but omit commands:\n  {}\n\
-         Write the full path (`tls acme account create`), not brace notation \
-         (`tls acme {{account create,…}}`): a retriever matches literal strings.",
+        "these documents claim a complete command inventory but omit commands inside a \
+         code span with the `ssh-cli` prefix:\n  {}\n\
+         Write the full invocation in backticks (`ssh-cli tls acme account create`), not \
+         brace notation (`ssh-cli tls acme {{account create,…}}`), not a bare leaf and not \
+         prose: a retriever matches literal strings and a reader copies code spans.",
         missing.join("\n  ")
     );
 }
@@ -1260,9 +1390,8 @@ fn every_schema_is_indexed_in_both_languages() {
 
 /// The two skills are the files an agent loads first, so they carry a hard size cap.
 ///
-/// The cap is a standing product rule and nothing enforced it: both skills were measured
-/// at 4906 and 5008 words against a 4000-word budget, over by a fifth, and every gate in
-/// this file stayed green because none of them counted anything. That is the same defect
+/// The cap is the owner's standing product rule of at most 7000 words per skill, and nothing
+/// enforced an earlier budget until this gate counted the words. That is the same defect
 /// class this file exists to catch — a rule with no gate is indistinguishable from no
 /// rule — and it is worse here than elsewhere, because a skill that overruns its budget
 /// silently displaces the context the agent needed for the task itself.
@@ -1270,7 +1399,7 @@ fn every_schema_is_indexed_in_both_languages() {
 /// Counted the way the budget is stated, in whitespace-separated words over the whole
 /// file including frontmatter, so the number in the failure message is the number a
 /// human gets from `wc -w` and there is nothing to reconcile.
-const SKILL_WORD_BUDGET: usize = 4000;
+const SKILL_WORD_BUDGET: usize = 7000;
 
 #[test]
 fn skills_stay_within_the_word_budget() {
@@ -1374,5 +1503,529 @@ fn no_document_claims_export_defaults_to_toml() {
          The body follows the resolved output format: JSON on any non-TTY stdout, even into \
          a `.toml` filename, and TOML only with `--output-format text`. Say that instead.",
         hits.join("\n  ")
+    );
+}
+
+/// Whether `line` claims that `vps edit --name` still emits the old event.
+///
+/// Since 0.5.6 `vps edit --name` and `vps rename` both emit `vps-renamed`, and `vps-edited`
+/// is emitted only when nothing is renamed, without `previous_name`. A line that joins
+/// `vps edit`, `--name` and `vps-edited` is only correct when it also names `vps-renamed`
+/// (the sentence that states the split); the cookbook example comment that said
+/// `# same effect, event: "vps-edited"` is the shape this catches.
+fn claims_edit_name_emits_edited(line: &str) -> Option<&'static str> {
+    if line.contains("vps edit")
+        && line.contains("--name")
+        && line.contains("vps-edited")
+        && !line.contains("vps-renamed")
+    {
+        return Some("`vps edit` + `--name` + `vps-edited` without `vps-renamed`");
+    }
+    [
+        "keeps `vps-edited`",
+        "mantém `vps-edited`",
+        "gains `previous_name`",
+        "ganha `previous_name`",
+    ]
+    .into_iter()
+    .find(|phrase| line.contains(phrase))
+}
+
+/// Lines of a changelog that belong to the unreleased or 0.5.6 sections.
+///
+/// Older sections record what a past release claimed and are exempt on purpose, the same
+/// way the neighbouring export test leaves history alone. The 0.5.6 section is NOT exempt:
+/// it is the one that describes the behaviour under test.
+fn current_changelog_lines(body: &str) -> Vec<(usize, &str)> {
+    let mut in_scope = true;
+    let mut out = Vec::new();
+    for (idx, line) in body.lines().enumerate() {
+        if line.starts_with("## [") {
+            in_scope = line.starts_with("## [Unreleased]") || line.starts_with("## [0.5.6]");
+        }
+        if in_scope {
+            out.push((idx + 1, line));
+        }
+    }
+    out
+}
+
+/// No document may claim that `vps edit --name` emits `vps-edited`.
+///
+/// The event for a rename is `vps-renamed` whichever verb performed it; the cookbook said
+/// otherwise next to the very example that renames, and two other surfaces listed
+/// `vps-edited` without ever naming `vps-renamed`. The phrase matcher is exercised against
+/// embedded wrong and right sentences first, so a matcher that silently stopped matching
+/// cannot turn this gate into a pass.
+#[test]
+fn no_document_claims_edit_name_emits_vps_edited() {
+    assert!(
+        claims_edit_name_emits_edited(
+            r#"ssh-cli vps edit old --name new --json   # same effect, event: "vps-edited""#
+        )
+        .is_some(),
+        "the matcher must flag the wrong cookbook comment"
+    );
+    let wrong_prose = "`vps edit --name` keeps `vps-edited` and gains `previous_name`";
+    assert!(
+        claims_edit_name_emits_edited(wrong_prose).is_some(),
+        "the matcher must flag the wrong prose claim"
+    );
+    let right_prose = "`vps-edited` (or `vps-renamed` when `vps edit --name` renames)";
+    assert!(
+        claims_edit_name_emits_edited(right_prose).is_none(),
+        "the matcher must accept the sentence that states the split"
+    );
+
+    let mut hits = Vec::new();
+    let mut scan = |doc: &str, lines: Vec<(usize, &str)>| {
+        for (n, line) in lines {
+            if let Some(why) = claims_edit_name_emits_edited(line) {
+                hits.push(format!("{doc}:{n}: {why}"));
+            }
+        }
+    };
+    let mut plain: Vec<&str> = FULL_INVENTORY_DOCS
+        .iter()
+        .chain(SKILLS.iter())
+        .chain(EXPORT_CLAIM_DOCS.iter())
+        .copied()
+        .collect();
+    plain.extend(["INTEGRATIONS.md", "INTEGRATIONS.pt-BR.md"]);
+    plain.sort_unstable();
+    plain.dedup();
+    for doc in plain {
+        let Ok(body) = std::fs::read_to_string(root().join(doc)) else {
+            continue;
+        };
+        scan(
+            doc,
+            body.lines().enumerate().map(|(i, l)| (i + 1, l)).collect(),
+        );
+    }
+    for doc in ["CHANGELOG.md", "CHANGELOG.pt-BR.md"] {
+        let Ok(body) = std::fs::read_to_string(root().join(doc)) else {
+            continue;
+        };
+        scan(doc, current_changelog_lines(&body));
+    }
+    assert!(
+        hits.is_empty(),
+        "these lines say `vps edit --name` emits `vps-edited`:\n  {}\n\
+         It emits `vps-renamed` (with `previous_name`), the same event as `vps rename`; \
+         `vps-edited` is emitted only when nothing is renamed.",
+        hits.join("\n  ")
+    );
+}
+
+/// The eight operations that implement `--dry-run`, read from the source of truth.
+///
+/// Two independent readings must agree: the variants matched in `supports_dry_run` and the
+/// operation list quoted in the refusal message, which is what an operator sees on exit 64.
+/// The JSON Schema `operation` enum is the third, checked by the caller. Reading all three
+/// from disk means a ninth operation shipped in the code alone fails here instead of leaving
+/// the docs quietly describing a smaller surface.
+fn dry_run_operations_from_source() -> std::collections::BTreeSet<String> {
+    let src =
+        std::fs::read_to_string(root().join("src/cli/dry_run.rs")).expect("src/cli/dry_run.rs");
+
+    let start = src.find("fn supports_dry_run").expect("supports_dry_run");
+    let end = src[start..]
+        .find("/// Rejects")
+        .map_or(src.len(), |e| start + e);
+    let body = &src[start..end];
+    let mut matched = std::collections::BTreeSet::new();
+    for (at, _) in body.match_indices("Action::") {
+        let family: String = body[..at]
+            .chars()
+            .rev()
+            .take_while(|c| c.is_ascii_alphabetic())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        let variant: String = body[at + "Action::".len()..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        matched.insert(format!(
+            "{} {}",
+            family.to_lowercase(),
+            variant.to_lowercase()
+        ));
+    }
+
+    let msg_at = src.find("accepted only by").expect("refusal message");
+    let msg_end = src[msg_at..]
+        .find(".to_string()")
+        .map_or(src.len(), |e| msg_at + e);
+    let quoted: std::collections::BTreeSet<String> = src[msg_at..msg_end]
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_string)
+        .collect();
+
+    assert_eq!(
+        matched, quoted,
+        "supports_dry_run and the refusal message in src/cli/dry_run.rs disagree"
+    );
+    matched
+}
+
+/// Operations a documentation line lists as honouring `--dry-run`, or `None` when the line
+/// is not such a list.
+///
+/// A list is a line that quotes at least three of the operations in backticks, with or without
+/// the `ssh-cli` prefix the full inventories carry, drawn from at
+/// least two families (`vps`, `sftp`, `secrets`); the family rule keeps a command catalogue
+/// such as the `sftp` verb list from being read as a preview claim.
+fn dry_run_claim_ops(
+    line: &str,
+    known: &std::collections::BTreeSet<String>,
+) -> Option<std::collections::BTreeSet<String>> {
+    let found: std::collections::BTreeSet<String> = known
+        .iter()
+        .filter(|op| line.contains(&format!("`{op}`")) || line.contains(&format!("`ssh-cli {op}`")))
+        .cloned()
+        .collect();
+    let families: std::collections::BTreeSet<&str> =
+        found.iter().filter_map(|op| op.split(' ').next()).collect();
+    (found.len() >= 3 && families.len() >= 2).then_some(found)
+}
+
+/// Union of the operations a document lists across all of its `--dry-run` claim lines.
+fn dry_run_ops_in(
+    body: &str,
+    known: &std::collections::BTreeSet<String>,
+) -> std::collections::BTreeSet<String> {
+    body.lines()
+        .filter_map(|l| dry_run_claim_ops(l, known))
+        .flatten()
+        .collect()
+}
+
+/// Every document that lists the `--dry-run` operations lists all eight, in both languages.
+///
+/// 0.5.6 widened the preview from six operations to eight, and the claim lives in a dozen
+/// places. A document that still says six is not a typo: it tells an operator that
+/// `vps edit` and `vps rename` have no rehearsal, and tells a script that they will be
+/// refused with exit 64. English and pt-BR are compared pair by pair on the operation set,
+/// so one language cannot be updated without the other.
+#[test]
+fn dry_run_operation_list_is_identical_everywhere() {
+    let ops = dry_run_operations_from_source();
+    assert_eq!(
+        ops.len(),
+        8,
+        "expected eight dry-run operations, got {ops:?}"
+    );
+
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(root().join("docs/schemas/dry-run.schema.json"))
+            .expect("dry-run schema"),
+    )
+    .expect("dry-run schema is JSON");
+    let from_schema: std::collections::BTreeSet<String> = schema["properties"]["operation"]["enum"]
+        .as_array()
+        .expect("operation enum")
+        .iter()
+        .map(|v| v.as_str().expect("operation is a string").replace('-', " "))
+        .collect();
+    assert_eq!(
+        ops, from_schema,
+        "src/cli/dry_run.rs and the `operation` enum of docs/schemas/dry-run.schema.json disagree"
+    );
+
+    // The matcher must reject the six-operation list this gate exists for.
+    let stale = "`--dry-run` is accepted only by `vps remove`, `vps import`, `sftp rm`, \
+                 `sftp rmdir`, `secrets init` and `secrets reencrypt`";
+    let stale_ops = dry_run_ops_in(stale, &ops);
+    assert_eq!(stale_ops.len(), 6, "the matcher must read the stale list");
+    assert_ne!(
+        stale_ops, ops,
+        "the matcher must see the stale list as incomplete"
+    );
+    assert_eq!(
+        dry_run_ops_in(
+            "`sftp rm`, `sftp rmdir` and `sftp ls` list remote entries",
+            &ops
+        ),
+        std::collections::BTreeSet::new(),
+        "a one-family catalogue line is not a preview claim"
+    );
+
+    let pairs: &[(&str, &str)] = &[
+        ("README.md", "README.pt-BR.md"),
+        ("docs/AGENTS.md", "docs/AGENTS.pt-BR.md"),
+        ("docs/HOW_TO_USE.md", "docs/HOW_TO_USE.pt-BR.md"),
+        ("docs/MIGRATION.md", "docs/MIGRATION.pt-BR.md"),
+        (
+            "docs/RELEASE_CHECKLIST.md",
+            "docs/RELEASE_CHECKLIST.pt-BR.md",
+        ),
+        ("skills/ssh-cli-en/SKILL.md", "skills/ssh-cli-pt/SKILL.md"),
+    ];
+    let mut problems = Vec::new();
+    for (en, pt) in pairs {
+        let en_ops = dry_run_ops_in(&std::fs::read_to_string(root().join(en)).expect(en), &ops);
+        let pt_ops = dry_run_ops_in(&std::fs::read_to_string(root().join(pt)).expect(pt), &ops);
+        for (doc, found) in [(en, &en_ops), (pt, &pt_ops)] {
+            let missing: Vec<&String> = ops.difference(found).collect();
+            if !missing.is_empty() {
+                problems.push(format!(
+                    "{doc}: lists {} of 8, missing {missing:?}",
+                    found.len()
+                ));
+            }
+        }
+        if en_ops != pt_ops {
+            problems.push(format!("{en} and {pt} list different operations"));
+        }
+    }
+    let single = "llms-full.txt";
+    let single_ops = dry_run_ops_in(
+        &std::fs::read_to_string(root().join(single)).expect(single),
+        &ops,
+    );
+    let missing: Vec<&String> = ops.difference(&single_ops).collect();
+    if !missing.is_empty() {
+        problems.push(format!("{single}: missing {missing:?}"));
+    }
+    assert!(
+        problems.is_empty(),
+        "the `--dry-run` operation list drifted:\n  {}\n\
+         Source of truth: `supports_dry_run` in src/cli/dry_run.rs and the `operation` enum \
+         of docs/schemas/dry-run.schema.json.",
+        problems.join("\n  ")
+    );
+}
+
+/// Every published Markdown/text document: root files, `docs/*`, and the skill files.
+fn published_text_docs() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for dir in [root(), root().join("docs")] {
+        for entry in std::fs::read_dir(&dir).expect("read_dir").flatten() {
+            let path = entry.path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let published =
+                name.ends_with(".md") || (name.starts_with("llms") && name.ends_with(".txt"));
+            if path.is_file() && published && name != "gaps.md" {
+                out.push(path);
+            }
+        }
+    }
+    for entry in std::fs::read_dir(root().join("skills"))
+        .expect("skills")
+        .flatten()
+    {
+        let skill = entry.path().join("SKILL.md");
+        if skill.is_file() {
+            out.push(skill);
+        }
+    }
+    out.sort();
+    out
+}
+
+/// `gaps.md` is gitignored and excluded from the crate, so a published document that
+/// links it ships a dead link, and a published count of gaps goes stale the next audit.
+///
+/// Both defects were measured in 0.5.6 drafts: three `llms*.txt` linked
+/// `blob/main/gaps.md`, and seven documents still said "22 gaps" after the file
+/// reached 31.
+#[test]
+fn published_documents_neither_link_gaps_md_nor_count_gaps() {
+    let mut problems = Vec::new();
+    for path in published_text_docs() {
+        let text = std::fs::read_to_string(&path).expect("read doc");
+        let name = path
+            .strip_prefix(root())
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        for (idx, line) in text.lines().enumerate() {
+            let n = idx + 1;
+            if line.contains("](gaps.md")
+                || line.contains("](../gaps.md")
+                || line.contains("/gaps.md)")
+            {
+                problems.push(format!("{name}:{n}: links the unpublished gaps.md"));
+            }
+            let bytes = line.as_bytes();
+            for (at, _) in line.match_indices(" gaps") {
+                let digits = bytes[..at]
+                    .iter()
+                    .rev()
+                    .take_while(|b| b.is_ascii_digit())
+                    .count();
+                let after = line[at + " gaps".len()..].chars().next();
+                if digits > 0 && !after.is_some_and(|c| c.is_alphanumeric()) {
+                    problems.push(format!("{name}:{n}: states a count of gaps"));
+                }
+            }
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "published documents must not link gaps.md or state how many gaps exist:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+// A6 (auditoria 2026-10-21): every leaf advertises a runnable example.
+
+/// Returns the dotted command path of every leaf in the published command tree.
+fn leaf_commands() -> Vec<Vec<String>> {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ssh-cli"))
+        .args(["commands", "--json"])
+        .output()
+        .expect("commands --json must run");
+    assert!(
+        output.status.success(),
+        "commands --json must succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let tree: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("commands --json must emit JSON");
+
+    fn walk(node: &serde_json::Value, prefix: &mut Vec<String>, out: &mut Vec<Vec<String>>) {
+        let subs = node
+            .get("subcommands")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if subs.is_empty() {
+            if !prefix.is_empty() {
+                out.push(prefix.clone());
+            }
+            return;
+        }
+        for sub in subs {
+            if let Some(name) = sub.get("name").and_then(serde_json::Value::as_str) {
+                prefix.push(name.to_string());
+                walk(&sub, prefix, out);
+                prefix.pop();
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    walk(&tree["tree"], &mut Vec::new(), &mut out);
+    out.sort();
+    out
+}
+
+/// Runs `--help` for a command path and returns its stdout.
+fn long_help(path: &[String]) -> String {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ssh-cli"))
+        .args(path)
+        .arg("--help")
+        .output()
+        .expect("--help must run");
+    assert!(
+        output.status.success(),
+        "`{} --help` must exit 0, stderr: {}",
+        path.join(" "),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+/// Collects the `ssh-cli ...` lines under an `Examples:` heading.
+fn examples_of(help: &str) -> Vec<String> {
+    let mut examples = Vec::new();
+    let mut inside = false;
+    for line in help.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("Examples:") {
+            inside = true;
+            continue;
+        }
+        if inside {
+            if let Some(argv) = trimmed.strip_prefix("ssh-cli ") {
+                examples.push(argv.to_string());
+            } else if !trimmed.is_empty() {
+                inside = false;
+            }
+        }
+    }
+    examples
+}
+
+#[test]
+fn every_leaf_help_carries_a_runnable_examples_block() {
+    let leaves = leaf_commands();
+    assert_eq!(leaves.len(), 48, "the product publishes 48 leaves");
+
+    let mut missing = Vec::new();
+    for path in &leaves {
+        if examples_of(&long_help(path)).is_empty() {
+            missing.push(path.join(" "));
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "every leaf must show an Examples block in `--help`; missing on {} leaves:\n  {}",
+        missing.len(),
+        missing.join("\n  ")
+    );
+}
+
+/// Splits an example line into argv, honouring single and double quotes.
+///
+/// Examples are copyable shell text, so `exec prod 'uptime now'` is two arguments,
+/// not three. Splitting on whitespace alone would report a valid example as broken and
+/// push the author to write a worse one.
+fn split_example(line: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    for ch in line.chars() {
+        match quote {
+            Some(q) if ch == q => quote = None,
+            Some(_) => current.push(ch),
+            None if ch == '\'' || ch == '"' => quote = Some(ch),
+            None if ch.is_whitespace() => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            None => current.push(ch),
+        }
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+    args
+}
+
+#[test]
+fn every_published_example_parses() {
+    let mut broken = Vec::new();
+    for path in leaf_commands() {
+        for example in examples_of(&long_help(&path)) {
+            let args = split_example(&example);
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_ssh-cli"))
+                .args(&args)
+                .arg("--help")
+                .output()
+                .expect("example argv must run");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if !output.status.success() || stderr.contains("unexpected argument") {
+                broken.push(format!(
+                    "`{}`: `ssh-cli {example}` -> {}{stderr}",
+                    path.join(" "),
+                    output.status
+                ));
+            }
+        }
+    }
+
+    assert!(
+        broken.is_empty(),
+        "every example must parse against the real flag set:\n  {}",
+        broken.join("\n  ")
     );
 }

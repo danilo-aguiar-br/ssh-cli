@@ -13,10 +13,14 @@ use crate::paths::{validate_and_normalize, xdg_config_dir};
 
 /// Resolves the TLS root directory under the active config dir.
 ///
-/// Priority: explicit `config_override` parent → XDG config dir for the app.
+/// Priority: explicit `config_override` (its parent when it names the `.toml` file) →
+/// XDG config dir for the app.
+///
+/// # Errors
+/// Returns an error when no XDG configuration directory can be determined.
 pub fn resolve_tls_root(config_override: Option<&Path>) -> SshCliResult<PathBuf> {
     let base = if let Some(dir) = config_override {
-        dir.to_path_buf()
+        crate::vps::config_dir_for_override(dir)
     } else {
         xdg_config_dir()?
     };
@@ -24,11 +28,18 @@ pub fn resolve_tls_root(config_override: Option<&Path>) -> SshCliResult<PathBuf>
 }
 
 /// Same as [`resolve_tls_root`] (alias for call-site clarity).
+///
+/// # Errors
+/// Returns the errors of [`resolve_tls_root`].
 pub fn tls_root_dir(config_override: Option<&Path>) -> SshCliResult<PathBuf> {
     resolve_tls_root(config_override)
 }
 
 /// `…/tls/mtls/<name>/`
+///
+/// # Errors
+/// Returns `SshCliError::InvalidArgument` when `name` is not a valid identity name, and the
+/// errors of [`resolve_tls_root`].
 pub fn mtls_identity_dir(config_override: Option<&Path>, name: &str) -> SshCliResult<PathBuf> {
     let safe = validate_and_normalize(name)
         .map_err(|e| SshCliError::InvalidArgument(format!("invalid mTLS identity name: {e}")))?;
@@ -38,6 +49,9 @@ pub fn mtls_identity_dir(config_override: Option<&Path>, name: &str) -> SshCliRe
 }
 
 /// `…/tls/acme/account.json`
+///
+/// # Errors
+/// Returns the errors of [`resolve_tls_root`].
 pub fn acme_account_path(config_override: Option<&Path>) -> SshCliResult<PathBuf> {
     Ok(resolve_tls_root(config_override)?
         .join(TLS_ACME_DIR_NAME)
@@ -45,6 +59,10 @@ pub fn acme_account_path(config_override: Option<&Path>) -> SshCliResult<PathBuf
 }
 
 /// `…/tls/acme/<domain>/` — domain leaf is NFC-normalized validated name.
+///
+/// # Errors
+/// Returns an error when `domain` is rejected by the leaf sanitizer, and the errors of
+/// [`resolve_tls_root`].
 pub fn acme_domain_dir(config_override: Option<&Path>, domain: &str) -> SshCliResult<PathBuf> {
     // Domains may contain dots — use a conservative sanitizer (no traversal).
     let leaf = sanitize_domain_leaf(domain)?;
@@ -99,8 +117,12 @@ fn sanitize_domain_leaf(domain: &str) -> SshCliResult<String> {
 
 /// Ensures directory exists with restrictive permissions on Unix.
 pub(crate) fn ensure_dir(path: &Path) -> SshCliResult<()> {
-    std::fs::create_dir_all(path)
-        .map_err(|e| SshCliError::tls_msg(format!("create TLS dir {}: {e}", path.display())))?;
+    // New levels are born `0o700`; the leaf is then forced to `0o700` even when it
+    // already existed, because a TLS directory holds private keys.
+    if !path.is_dir() {
+        crate::fs_perm::ensure_config_dir(path)
+            .map_err(|e| SshCliError::tls_msg(format!("create TLS dir {}: {e}", path.display())))?;
+    }
     // Best-effort secret dir mode (matches prior ignore-on-error chmod).
     let _ = crate::fs_perm::set_secret_dir_mode(path);
     Ok(())

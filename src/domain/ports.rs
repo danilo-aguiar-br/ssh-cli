@@ -14,6 +14,18 @@ pub struct SshPort(NonZeroU16);
 
 impl SshPort {
     /// Parses a non-zero SSH port.
+    ///
+    /// # Errors
+    /// Returns a [`DomainError`] when `port` is `0`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ssh_cli::domain::SshPort;
+    ///
+    /// assert_eq!(SshPort::try_new(22).unwrap().get(), 22);
+    /// assert!(SshPort::try_new(0).is_err());
+    /// ```
     pub fn try_new(port: u16) -> Result<Self, DomainError> {
         NonZeroU16::new(port)
             .map(Self)
@@ -35,7 +47,9 @@ impl SshPort {
 
 impl fmt::Display for SshPort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.get())
+        // Delegate to `u16` so width, fill and alignment reach the number: `write!`
+        // dropped them, and the `{:<6}` PORT column of `vps list` came out unpadded.
+        fmt::Display::fmt(&self.get(), f)
     }
 }
 

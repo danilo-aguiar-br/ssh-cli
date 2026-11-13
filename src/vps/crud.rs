@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 //! Dispatcher for `ssh-cli vps …` subcommands.
 
+use super::active::clear_active_if_name;
 use super::config_io::{load, lock_config, resolve_config_path, validate_key_path_exists};
 use super::doctor::run_doctor_with_optional_probe;
 use super::health::run_health_check;
@@ -15,9 +16,13 @@ use crate::cli::{OutputFormat, VpsAction};
 use crate::errors::SshCliError;
 use anyhow::Result;
 use secrecy::SecretString;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Dispatcher dos subcomandos `vps`.
+///
+/// # Errors
+/// Returns an error when the configuration path cannot be resolved, the action fails (invalid
+/// input, unknown host, validation, I/O), or its output cannot be written.
 pub async fn run_vps_command(
     action: VpsAction,
     config_override: Option<PathBuf>,
@@ -55,7 +60,7 @@ pub async fn run_vps_command(
             check,
         } => {
             // GAP-SSH-VAL-001: validate na fronteira de escrita.
-            let name = crate::paths::validate_and_normalize(&name)
+            let name = crate::domain::VpsName::try_new(&name)
                 .map_err(|e| SshCliError::InvalidArgument(format!("invalid VPS name: {e}")))?;
             let name_key = name.as_str().to_owned();
             // Early, advisory duplicate check: fails before any stdin prompt. The
@@ -241,10 +246,11 @@ pub async fn run_vps_command(
             if use_json(json, format) {
                 crate::output::print_list_json(&records)?;
             } else {
-                crate::output::print_list_text(&records);
+                crate::output::print_list_text(&records)?;
             }
         }
         VpsAction::Remove { name } => {
+            crate::vps::edit::require_registry(&path, &name)?;
             // Lock spans load → mutate → save so a concurrent edit is not resurrected.
             let guard = lock_config(&path)?;
             let mut file = load(&path)?;
@@ -255,13 +261,17 @@ pub async fn run_vps_command(
             // a removal that the real run would reject with exit 66. A dry-run that
             // reports success for a host that does not exist is worse than no
             // preview, because the agent then treats the failure as a regression.
-            if crate::cli::dry_run_stop(
-                "vps-remove",
-                &[
-                    ("name", serde_json::json!(name)),
-                    ("config_path", serde_json::json!(path.display().to_string())),
-                ],
-            )? {
+            // The plan echoes the audit fields the real events carry for edit/rename.
+            let echo = crate::vps::edit::echo_object(&crate::json_wire::TargetEcho::from_parts(
+                name.clone(),
+                crate::json_wire::TargetSource::Argv,
+            ));
+            let mut plan: Vec<(&str, serde_json::Value)> = vec![
+                ("name", serde_json::json!(name)),
+                ("config_path", serde_json::json!(path.display().to_string())),
+            ];
+            plan.extend(echo.iter().map(|(k, v)| (k.as_str(), v.clone())));
+            if crate::cli::dry_run_stop("vps-remove", &plan)? {
                 return Ok(());
             }
             file.hosts.remove(&name);
@@ -276,8 +286,12 @@ pub async fn run_vps_command(
                 format == OutputFormat::Json,
             )?;
         }
+        VpsAction::Rename { name, new_name } => {
+            crate::vps::edit::run_rename(&name, &new_name, &path, format)?;
+        }
         VpsAction::Edit {
             name,
+            new_name,
             host,
             port,
             user,
@@ -303,163 +317,58 @@ pub async fn run_vps_command(
             tls_sni,
             tls_client_cert,
             tls_client_key,
+            tags,
+            clear_tags,
+            no_key,
+            no_agent_socket,
+            clear_sudo_password,
+            clear_su_password,
+            no_tls_sni,
+            no_tls_client_cert,
+            no_tls_client_key,
         } => {
-            // D13: `edit` had NO mutual-exclusion guard at all and read stdin up to
-            // three times in a row. Only the first read saw data; the rest silently
-            // stored empty secrets. Same invariant as `add`: stdin drains once.
-            let stdin_secrets = usize::from(password_stdin)
-                + usize::from(key_passphrase_stdin)
-                + usize::from(sudo_password_stdin)
-                + usize::from(su_password_stdin);
-            if stdin_secrets > 1 {
-                return Err(SshCliError::InvalidArgument(
-                    "only one --*-stdin per one-shot invocation (stdin is drained once); \
-                     run vps edit again for the remaining secrets"
-                        .into(),
-                )
-                .into());
-            }
-            // Stdin secrets are read *before* the lock: a blocking read must never hold
-            // it, or a concurrent one-shot would wait on the operator's terminal.
-            let password_stdin_value = if password_stdin {
-                Some(read_secret_stdin()?)
-            } else {
-                None
-            };
-            let key_passphrase_stdin_value = if key_passphrase_stdin {
-                Some(read_secret_stdin()?)
-            } else {
-                None
-            };
-            let sudo_stdin_value = if sudo_password_stdin {
-                Some(read_secret_stdin()?)
-            } else {
-                None
-            };
-            let su_stdin_value = if su_password_stdin {
-                Some(read_secret_stdin()?)
-            } else {
-                None
-            };
-            // Lock spans load → mutate → save (lost-update on concurrent edits).
-            let guard = lock_config(&path)?;
-            let mut file = load(&path)?;
-            let record = file
-                .hosts
-                .get_mut(&name)
-                .ok_or(SshCliError::VpsNotFound(name.clone()))?;
-            use crate::domain::{CharLimit, KeyPath, SshHost, SshPort, SshUser, TimeoutMs};
-            if let Some(h) = host {
-                record.host =
-                    SshHost::try_new(h).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
-            }
-            if let Some(p) = port {
-                record.port =
-                    SshPort::try_new(p).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
-            }
-            if let Some(u) = user {
-                record.username =
-                    SshUser::try_new(u).map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
-            }
-            if use_agent {
-                record.use_agent = true;
-                record.password = SecretString::from(String::new());
-                record.key_path = None;
-                record.key_passphrase = None;
-                if let Some(s) = agent_socket {
-                    record.agent_socket = Some(s.to_string_lossy().into_owned());
-                }
-            } else {
-                if let Some(pw) = password_stdin_value {
-                    record.password = pw;
-                    record.use_agent = false;
-                } else if let Some(pw) = password {
-                    record.password = SecretString::from(pw);
-                    record.use_agent = false;
-                }
-                if let Some(k) = key {
-                    let k = k.to_string_lossy().into_owned();
-                    validate_key_path_exists(&k)?;
-                    record.key_path = Some(
-                        KeyPath::try_new(k)
-                            .map_err(|e| SshCliError::InvalidArgument(e.to_string()))?,
-                    );
-                    record.use_agent = false;
-                }
-                if let Some(kp) = key_passphrase_stdin_value {
-                    record.key_passphrase = Some(kp);
-                } else if let Some(kp) = key_passphrase {
-                    record.key_passphrase = Some(SecretString::from(kp));
-                }
-                if let Some(s) = agent_socket {
-                    record.agent_socket = Some(s.to_string_lossy().into_owned());
-                }
-            }
-            if let Some(t) = timeout {
-                record.timeout_ms = TimeoutMs::try_new(t)
-                    .map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
-            }
-            if let Some(m) = max_command_chars.or(max_chars) {
-                record.max_command_chars = CharLimit::try_new(m)
-                    .map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
-            }
-            if let Some(m) = max_output_chars {
-                record.max_output_chars = CharLimit::try_new(m)
-                    .map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
-            }
-            if let Some(sp) = sudo_stdin_value {
-                record.sudo_password = Some(sp);
-            } else if let Some(sp) = sudo_password {
-                record.sudo_password = Some(SecretString::from(sp));
-            }
-            if let Some(sp) = su_stdin_value {
-                record.su_password = Some(sp);
-            } else if let Some(sp) = su_password {
-                record.su_password = Some(SecretString::from(sp));
-            }
-            // G-10: tri-state edit without Option<bool> — exclusive SetTrue flags.
-            if disable_sudo {
-                record.disable_sudo = true;
-            } else if enable_sudo {
-                record.disable_sudo = false;
-            }
-            if tls {
-                record.tls = true;
-            } else if no_tls {
-                record.tls = false;
-            }
-            if let Some(sni) = tls_sni {
-                record.tls_sni = Some(sni);
-            }
-            if let Some(c) = tls_client_cert {
-                record.tls_client_cert = Some(c.to_string_lossy().into_owned());
-            }
-            if let Some(k) = tls_client_key {
-                record.tls_client_key = Some(k.to_string_lossy().into_owned());
-            }
-            if record.tls {
-                let sni = record
-                    .tls_sni
-                    .as_deref()
-                    .filter(|s| !s.trim().is_empty())
-                    .unwrap_or(record.host.as_str());
-                let _ = crate::tls::TlsConnectOptions::try_new(
-                    sni,
-                    record
-                        .tls_client_cert
-                        .as_ref()
-                        .map(std::path::PathBuf::from),
-                    record.tls_client_key.as_ref().map(std::path::PathBuf::from),
-                )?;
-            }
-            record.validate().map_err(SshCliError::from)?;
-            guard.save(&path, &file)?;
-            drop(guard);
-            crate::output::emit_success(
-                "vps-edited",
-                serde_json::json!({ "name": name }),
-                &crate::i18n::t(crate::i18n::Message::VpsEdited { name: name.clone() }),
-                format == OutputFormat::Json,
+            // `max_chars` is the legacy maxChars alias and feeds the same field;
+            // collapsing it here keeps the precedence rule in one place.
+            crate::vps::edit::run_edit(
+                crate::vps::edit::EditRequest {
+                    name,
+                    new_name,
+                    host,
+                    port,
+                    user,
+                    password,
+                    password_stdin,
+                    key,
+                    key_passphrase,
+                    key_passphrase_stdin,
+                    use_agent,
+                    agent_socket,
+                    timeout,
+                    max_command_chars: max_command_chars.or(max_chars),
+                    max_output_chars,
+                    sudo_password,
+                    sudo_password_stdin,
+                    su_password,
+                    su_password_stdin,
+                    disable_sudo,
+                    enable_sudo,
+                    tls,
+                    no_tls,
+                    tls_sni,
+                    tls_client_cert,
+                    tls_client_key,
+                    tags,
+                    clear_tags,
+                    no_key,
+                    no_agent_socket,
+                    clear_sudo_password,
+                    clear_su_password,
+                    no_tls_sni,
+                    no_tls_client_cert,
+                    no_tls_client_key,
+                },
+                &path,
+                format,
             )?;
         }
         VpsAction::Show { name, json } => {
@@ -471,7 +380,7 @@ pub async fn run_vps_command(
             if use_json(json, format) {
                 crate::output::print_details_json(record)?;
             } else {
-                crate::output::print_details_text(record);
+                crate::output::print_details_text(record)?;
             }
         }
         VpsAction::Path => {
@@ -515,7 +424,7 @@ pub async fn run_vps_command(
                         }
                         let names = names
                             .into_iter()
-                            .map(crate::domain::VpsName::try_new)
+                            .map(crate::domain::VpsName::from_stored)
                             .collect::<Result<Vec<_>, _>>()
                             .map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
                         HostSelection::Named(names)
@@ -555,22 +464,6 @@ pub async fn run_vps_command(
         } => {
             run_import(&path, &file, allow_incomplete, format)?;
         }
-    }
-    Ok(())
-}
-
-/// Removes the `active` file if its content matches the removed name (STATE-001).
-fn clear_active_if_name(config_path: &Path, name: &str) -> Result<()> {
-    let active = config_path
-        .parent()
-        .map(|p| p.join(crate::constants::ACTIVE_VPS_FILE_NAME))
-        .unwrap_or_else(|| PathBuf::from(crate::constants::ACTIVE_VPS_FILE_NAME));
-    if !active.exists() {
-        return Ok(());
-    }
-    let content = std::fs::read_to_string(&active).unwrap_or_default();
-    if content.trim() == name {
-        let _ = std::fs::remove_file(&active);
     }
     Ok(())
 }

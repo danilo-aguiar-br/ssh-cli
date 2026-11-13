@@ -15,11 +15,11 @@
     },
     "vps": { "type": "string" },
     "path": { "type": "string" },
-    "to": { "type": "string" },
-    "duration_ms": { "type": "integer", "minimum": 0 },
-    "kind": { "type": "string" },
-    "size": { "type": ["integer", "null"] },
-    "mode": { "type": ["integer", "null"] },
-    "mtime": { "type": ["integer", "null"] }
+    "to": { "type": "string", "description": "Only with `rename`: the new remote path" },
+    "duration_ms": { "type": "integer", "minimum": 0, "description": "Wall time of the operation in milliseconds; always 0 for `stat`, which does not time itself" },
+    "kind": { "type": "string", "enum": ["file", "dir", "symlink", "other"], "description": "Only with `stat`: the remote file type" },
+    "size": { "type": ["integer", "null"], "description": "Only with `stat`: size in bytes, omitted when the server sent none" },
+    "mode": { "type": ["integer", "null"], "description": "Only with `stat`: permission and type bits as the server sent them, omitted when absent" },
+    "mtime": { "type": ["integer", "null"], "description": "Only with `stat`: modification time in Unix seconds, omitted when absent" }
   }
 }

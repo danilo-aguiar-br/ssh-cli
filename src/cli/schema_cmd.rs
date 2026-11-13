@@ -112,6 +112,11 @@ const SCHEMAS: &[(&str, &str, &str)] = &[
         include_str!("../../docs/schemas/vps-export.schema.json"),
     ),
     (
+        "vps-import",
+        "vps-import.schema.json",
+        include_str!("../../docs/schemas/vps-import.schema.json"),
+    ),
+    (
         "vps-list",
         "vps-list.schema.json",
         include_str!("../../docs/schemas/vps-list.schema.json"),
@@ -121,12 +126,26 @@ const SCHEMAS: &[(&str, &str, &str)] = &[
         "vps-show.schema.json",
         include_str!("../../docs/schemas/vps-show.schema.json"),
     ),
+    (
+        "vps-edit",
+        "vps-edit.schema.json",
+        include_str!("../../docs/schemas/vps-edit.schema.json"),
+    ),
+    (
+        "vps-rename",
+        "vps-rename.schema.json",
+        include_str!("../../docs/schemas/vps-rename.schema.json"),
+    ),
 ];
 
 /// Runs `ssh-cli schema [NAME]`.
 ///
 /// * No name → catalog JSON (`event: schema-catalog`)
 /// * Name → raw JSON Schema document body
+///
+/// # Errors
+/// Returns `SshCliError::InvalidArgument` when `name` is not in the catalog, and an error when
+/// stdout cannot be written.
 pub fn run_schema(name: Option<&str>, json: bool) -> SshCliResult<()> {
     match name {
         None => {

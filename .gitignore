@@ -13,12 +13,18 @@ Cargo.lock.bak
 *.rs.bk
 # Cópia local acidental do binário release (polui git describe dirty)
 /rust_out
+# Stray tool dump at the root, shell scripts (project policy: Python only), bytecode, pending snapshots
+/json
+*.sh
+__pycache__/
+*.pyc
+*.snap.new
 
 # Logs
 logs/
 *.log
 
-# Local MCP / tooling sidecars (full dir — not only *.log)
+# Local tooling sidecars (full dir — not only *.log)
 .setting.cyber/
 # Staging de edição do atomwrite — jamais empacotado (cargo package --list o pegava)
 .atomwrite/
@@ -38,7 +44,7 @@ known_hosts
 .serena/
 .claude/
 /CLAUDE.md
-docs_prd/
+docs-prd/
 docs_rules/
 projeto_ssh-cli.md
 # Local audit inventory — never publish (GitHub / crates)
@@ -82,9 +88,10 @@ Cross.toml
 *.7.z
 
 
-# `.commit_hash` DEVE permanecer RASTREADO: e o passo 2 da precedencia de
-# GAP-SSH-REL-007 em build.rs (env -> .commit_hash -> git -> unknown) e a unica fonte
+# `.commit_hash` DEVE permanecer RASTREADO: e o passo 3 da precedencia de
+# GAP-SSH-REL-007 em build.rs (env -> git -> .commit_hash -> unknown) e a unica fonte
 # de proveniencia de commit dentro do tarball do crates.io, onde nao existe checkout.
+# O formato e `<hash> <versao>` e o arquivo so vale quando a versao for igual a do pacote.
 #
 # Medido: dentro de um checkout o Cargo monta a lista do pacote a partir do INDICE do
 # git, entao o que exclui o arquivo do tarball e `git rm --cached`, nao a regra de
@@ -100,8 +107,9 @@ Cross.toml
 
 
 
+
 # BEGIN GH_SKILL_HYGIENE
-# Managed by ~/.grok/skills/crates-io-gh/scripts/pre-commit-hygiene.sh — do not hand-edit inside markers
+# Managed by the crates-io-gh skill (pre-commit-hygiene.sh) — do not hand-edit inside markers
 # Ensures agent residual, secrets, DBs, media dumps and temp dirs never enter git
 # Empty/whitespace-only patterns are rejected (never added). No *.lock patterns.
 # --- extensions ---
@@ -183,6 +191,10 @@ _agent_*/
 # --- exact directories + contents ---
 .setting.cyber/
 .setting.cyber/**
+docs-prd/
+docs-prd/**
+docs_prd/
+docs_prd/**
 docs_rules_ingest/
 docs_rules_ingest/**
 .claude/

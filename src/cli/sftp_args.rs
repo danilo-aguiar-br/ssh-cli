@@ -3,6 +3,10 @@
 #![forbid(unsafe_code)]
 //! Clap types for `ssh-cli sftp …`.
 
+use super::help_text::{
+    SFTP_DOWNLOAD_EXAMPLES, SFTP_LS_EXAMPLES, SFTP_MKDIR_EXAMPLES, SFTP_RENAME_EXAMPLES,
+    SFTP_RMDIR_EXAMPLES, SFTP_RM_EXAMPLES, SFTP_STAT_EXAMPLES, SFTP_UPLOAD_EXAMPLES,
+};
 use super::SshAuthArgs;
 use clap::{ArgAction, Subcommand};
 
@@ -10,6 +14,7 @@ use clap::{ArgAction, Subcommand};
 #[derive(Debug, Subcommand)]
 pub enum SftpAction {
     /// Uploads a local file or tree to the remote host via SFTP.
+    #[command(after_long_help = SFTP_UPLOAD_EXAMPLES)]
     Upload {
         /// Upload to every registered host (bounded concurrency).
         #[arg(long, action = ArgAction::SetTrue, conflicts_with = "hosts")]
@@ -41,6 +46,7 @@ pub enum SftpAction {
     },
 
     /// Downloads a remote file or tree to the local host via SFTP.
+    #[command(after_long_help = SFTP_DOWNLOAD_EXAMPLES)]
     Download {
         /// Download from every registered host (bounded concurrency).
         #[arg(long, action = ArgAction::SetTrue, conflicts_with = "hosts")]
@@ -72,6 +78,7 @@ pub enum SftpAction {
     },
 
     /// Lists a remote directory.
+    #[command(after_long_help = SFTP_LS_EXAMPLES)]
     Ls {
         /// VPS name.
         vps_name: String,
@@ -89,6 +96,7 @@ pub enum SftpAction {
     },
 
     /// Creates a remote directory.
+    #[command(after_long_help = SFTP_MKDIR_EXAMPLES)]
     Mkdir {
         /// VPS name.
         vps_name: String,
@@ -106,6 +114,7 @@ pub enum SftpAction {
     },
 
     /// Removes an empty remote directory.
+    #[command(after_long_help = SFTP_RMDIR_EXAMPLES)]
     Rmdir {
         /// VPS name.
         vps_name: String,
@@ -123,6 +132,7 @@ pub enum SftpAction {
     },
 
     /// Removes a remote file.
+    #[command(after_long_help = SFTP_RM_EXAMPLES)]
     Rm {
         /// VPS name.
         vps_name: String,
@@ -140,6 +150,7 @@ pub enum SftpAction {
     },
 
     /// Shows metadata for a remote path.
+    #[command(after_long_help = SFTP_STAT_EXAMPLES)]
     Stat {
         /// VPS name.
         vps_name: String,
@@ -157,6 +168,7 @@ pub enum SftpAction {
     },
 
     /// Renames a remote path.
+    #[command(after_long_help = SFTP_RENAME_EXAMPLES)]
     Rename {
         /// VPS name.
         vps_name: String,

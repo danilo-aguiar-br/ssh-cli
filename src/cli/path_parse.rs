@@ -139,7 +139,7 @@ pub(crate) fn parse_exec_target(
         }
         let names = names
             .into_iter()
-            .map(|n| VpsName::try_new(n).map_err(|e| invalid(e.to_string())))
+            .map(|n| VpsName::from_stored(n).map_err(|e| invalid(e.to_string())))
             .collect::<Result<Vec<_>, _>>()?;
         let err = selector_arity_error("--hosts");
         if target.len() != 1 {
@@ -176,7 +176,7 @@ pub(crate) fn parse_exec_target(
         }
         let command = only_command(target, err)?;
         let name = active_vps.ok_or(ExecTargetError::NoActiveVps)?;
-        let vps = VpsName::try_new(name).map_err(|e| invalid(e.to_string()))?;
+        let vps = VpsName::from_stored(name).map_err(|e| invalid(e.to_string()))?;
         return Ok(ExecTargetPlan {
             selection: HostSelection::Single(vps),
             command,
@@ -194,7 +194,7 @@ pub(crate) fn parse_exec_target(
     let missing = || invalid("expected VPS and COMMAND".to_string());
     let vps = it.next().ok_or_else(missing)?;
     let cmd = it.next().ok_or_else(missing)?;
-    let vps = VpsName::try_new(vps).map_err(|e| invalid(e.to_string()))?;
+    let vps = VpsName::from_stored(vps).map_err(|e| invalid(e.to_string()))?;
     Ok(ExecTargetPlan {
         selection: HostSelection::Single(vps),
         command: cmd,
@@ -300,7 +300,7 @@ fn transfer_host_slot(
     }
     let names = names
         .into_iter()
-        .map(|n| VpsName::try_new(n).map_err(|e| e.to_string()))
+        .map(|n| VpsName::from_stored(n).map_err(|e| e.to_string()))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Some(HostSelection::Named(names)))
 }
@@ -350,7 +350,7 @@ fn plan_from_named_slots(
                 .next()
                 .ok_or_else(|| "expected the VPS name".to_string())?;
             // G-TYPE-08/09: refine at the boundary (the lookup key stays a `String`).
-            let _ = VpsName::try_new(&vps).map_err(|e| e.to_string())?;
+            let _ = VpsName::from_stored(&vps).map_err(|e| e.to_string())?;
             Ok(ScpPathPlan::MultiFile {
                 vps,
                 sources,
@@ -441,7 +441,7 @@ pub(crate) fn parse_scp_target(
                 it.next()
                     .ok_or_else(|| "expected VPS and two paths".to_string())?,
             );
-            let vps = VpsName::try_new(vps).map_err(|e| e.to_string())?;
+            let vps = VpsName::from_stored(vps).map_err(|e| e.to_string())?;
             Ok(ScpPathPlan::Single {
                 selection: HostSelection::Single(vps),
                 path_a: a,
@@ -455,7 +455,7 @@ pub(crate) fn parse_scp_target(
                 .next()
                 .ok_or_else(|| "expected VPS and multi-file paths".to_string())?;
             // G-TYPE-08/09: refine multi-file VPS name at the boundary (lookup key still String).
-            let _ = VpsName::try_new(&vps).map_err(|e| e.to_string())?;
+            let _ = VpsName::from_stored(&vps).map_err(|e| e.to_string())?;
             let mut paths: Vec<PathBuf> = it.map(PathBuf::from).collect();
             let dest_dir = paths
                 .pop()

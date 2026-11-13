@@ -116,7 +116,7 @@ pub(crate) fn scp_mode_from_metadata(meta: &std::fs::Metadata) -> u32 {
     }
 }
 
-/// Segundos epoch a partir de SystemTime (best-effort).
+/// Segundos epoch a partir de `SystemTime` (best-effort).
 pub(crate) fn system_time_secs(t: std::time::SystemTime) -> u64 {
     t.duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())

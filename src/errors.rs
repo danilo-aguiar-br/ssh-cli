@@ -16,13 +16,18 @@
 
 use thiserror::Error;
 
+mod service;
+mod suggestion;
+
+pub use service::UnavailableService;
+
 /// Shared source box for layered errors (Send + Sync for fan-out tasks).
 pub type ErrorSource = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 /// Domain errors produced by ssh-cli operations.
 ///
 /// `#[non_exhaustive]` (G-SEC-11): external crates must use wildcard arms so
-/// new variants in minor releases do not break SemVer consumers.
+/// new variants in minor releases do not break `SemVer` consumers.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum SshCliError {
@@ -64,7 +69,7 @@ pub enum SshCliError {
     )]
     AuthenticationFailed,
 
-    /// Host key diverged from known_hosts (possible MITM).
+    /// Host key diverged from `known_hosts` (possible MITM).
     #[error(
         "host key changed for {host}:{port}: expected {expected}, got {obtained} (use --replace-host-key if legitimate)"
     )]
@@ -168,8 +173,8 @@ pub enum SshCliError {
     /// on the one failure in the list that a plain retry actually fixes.
     #[error("service unavailable: {service}")]
     Unavailable {
-        /// Stable service id (`keyring`, …).
-        service: &'static str,
+        /// Host service that did not answer; its slug is the wire id.
+        service: UnavailableService,
     },
 
     /// Internal failure with no user-fixable input (exit 70).
@@ -326,7 +331,7 @@ pub fn anyhow_is_broken_pipe(err: &anyhow::Error) -> bool {
 
 /// High-level error class for agent retry policy (Rules Rust — retry/backoff).
 ///
-/// Serialized as snake_case in the JSON error envelope (`error_class`).
+/// Serialized as `snake_case` in the JSON error envelope (`error_class`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorClass {
@@ -431,7 +436,7 @@ impl SshCliError {
 
     /// Builds an [`Self::Unavailable`] for a host service that is not answering.
     #[must_use]
-    pub fn unavailable(service: &'static str) -> Self {
+    pub fn unavailable(service: UnavailableService) -> Self {
         Self::Unavailable { service }
     }
 
@@ -620,7 +625,13 @@ impl SshCliError {
             | Self::SudoDisabled
             | Self::Crypto { .. }
             // Keyring failures are credential-material failures, not application ones.
-            | Self::Unavailable { .. } => ErrorLayer::Auth,
+            | Self::Unavailable {
+                service: UnavailableService::Keyring,
+            } => ErrorLayer::Auth,
+            // The registry lock is a local file, so contention is an I/O condition.
+            Self::Unavailable {
+                service: UnavailableService::ConfigLock,
+            } => ErrorLayer::Io,
             Self::Json(_)
             | Self::TomlDe(_)
             | Self::TomlSer(_)
@@ -647,49 +658,6 @@ impl SshCliError {
     pub fn retry_after(&self) -> Option<std::time::Duration> {
         let _ = self;
         None
-    }
-
-    /// Short agent-facing suggestion for the JSON envelope.
-    #[must_use]
-    pub fn suggestion(&self) -> Option<&'static str> {
-        // G-ERR-R01: these two share a `RetryKind` with unrelated failures, and the
-        // generic hint derived from it would be actively misleading — telling an
-        // operator to raise `--timeout` when the OS keyring is locked sends them to
-        // the wrong knob entirely. Matching the variant first keeps the advice true.
-        match self {
-            Self::Unavailable { .. } => {
-                return Some(
-                    "unlock or start the OS keyring, or fall back to XDG `secrets.key` \
-                     (`--secrets-key-file`); the same argv succeeds once it answers (exit 69)",
-                );
-            }
-            Self::Software { .. } => {
-                return Some(
-                    "internal failure with no user-fixable input; report it — retrying \
-                     unchanged will not help (exit 70)",
-                );
-            }
-            _ => {}
-        }
-        match self.retry_kind() {
-            RetryKind::TransientNetwork | RetryKind::TransientSsh => {
-                Some("retry at most twice with exponential full-jitter backoff (exit 74)")
-            }
-            RetryKind::TransientTimeout => {
-                Some("increase --timeout / --timeout-ms, then retry at most twice with backoff")
-            }
-            RetryKind::PermanentAuth => {
-                Some("change credentials (--key / --password-stdin) or host-key policy; do not blind-retry")
-            }
-            RetryKind::PermanentRemoteCommand => {
-                Some("inspect remote stderr; fix remote command — transport retry will not help")
-            }
-            RetryKind::PermanentClient => {
-                Some("fix CLI arguments, registry state, or schema; do not retry unchanged")
-            }
-            RetryKind::Cancelled => Some("do not retry after signal or broken pipe"),
-            RetryKind::NotRetryable => None,
-        }
     }
 }
 

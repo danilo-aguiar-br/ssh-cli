@@ -6,6 +6,10 @@
 use super::*;
 
 /// Runs the `sftp` subcommand.
+///
+/// # Errors
+/// Returns an error when the operation is cancelled, the target cannot be resolved, the
+/// connection or authentication fails, an argument is invalid, or an SFTP operation fails.
 pub async fn run_sftp(
     action: SftpAction,
     config_override: Option<PathBuf>,

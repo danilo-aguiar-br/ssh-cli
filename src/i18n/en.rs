@@ -44,6 +44,7 @@ pub(super) fn en(msg: &Message) -> String {
         }
         Message::ErrorUnexpected { detail } => format!("Unexpected error: {detail}"),
         Message::VpsEdited { name } => format!("VPS '{name}' edited."),
+        Message::VpsRenamed { from, to } => format!("VPS '{from}' renamed to '{to}'."),
         Message::ExportCompleted { path } => format!("exported to {path}"),
         Message::ImportCompleted => "import completed".to_string(),
         Message::PrimaryKeyReady { source, key_file } => {

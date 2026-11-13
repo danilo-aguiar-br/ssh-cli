@@ -6,8 +6,9 @@
 //! Workload: **local disk + optional secret materialization**. Sequential justified:
 //! single atomic write path; concurrent import would race flock/rename.
 
+use super::config_io::lock_config;
 use super::model;
-use super::{load, save, validate_key_path_exists, write_atomic, ConfigFile};
+use super::{load, validate_key_path_exists, write_atomic, ConfigFile};
 use crate::cli::OutputFormat;
 use crate::errors::{SshCliError, SshCliResult};
 use anyhow::Result;
@@ -97,6 +98,10 @@ pub(super) fn run_export(
 
 /// Parses import source: TOML wire or JSON `vps-export` envelope / hosts map.
 /// Parse import payload (TOML or JSON envelope). Public for fuzz targets (G-SERDE-12).
+///
+/// # Errors
+/// Returns an error when the payload is neither valid TOML nor a valid JSON envelope or
+/// hosts map.
 pub fn parse_import_payload(text: &str) -> SshCliResult<ConfigFile> {
     // Rules JSON: strip UTF-8 BOM before format detection / parse.
     let text = crate::json_wire::strip_utf8_bom(text);
@@ -104,8 +109,32 @@ pub fn parse_import_payload(text: &str) -> SshCliResult<ConfigFile> {
     if trimmed.starts_with('{') {
         parse_import_json(trimmed)
     } else {
-        crate::validation::from_toml_str(text)
+        let file: ConfigFile = crate::validation::from_toml_str(text)?;
+        reject_invalid_names(file.hosts.keys())?;
+        Ok(file)
     }
+}
+
+/// Fails once, naming every host key that is not a valid new VPS name.
+///
+/// An import is all or nothing, so the operator gets the whole list in one
+/// message instead of fixing one name per run. Names are escaped: they come
+/// from a file and may carry terminal control sequences.
+fn reject_invalid_names<'a>(keys: impl Iterator<Item = &'a String>) -> SshCliResult<()> {
+    let bad: Vec<String> = keys
+        .filter(|k| crate::domain::VpsName::try_new(k).is_err())
+        .map(|k| format!("'{}'", crate::output::sanitize::escape_untrusted(k)))
+        .collect();
+    if bad.is_empty() {
+        return Ok(());
+    }
+    Err(SshCliError::InvalidArgument(format!(
+        "invalid VPS names in import ({}): {}; a name is 1..={} ASCII letters, digits, '.', '_' \
+         or '-' and starts with a letter or digit; nothing was imported",
+        bad.len(),
+        bad.join(", "),
+        crate::validation::MAX_FIELD_LEN
+    )))
 }
 
 fn parse_import_json(text: &str) -> SshCliResult<ConfigFile> {
@@ -118,11 +147,12 @@ fn parse_import_json(text: &str) -> SshCliResult<ConfigFile> {
         max_output_chars: model::DEFAULT_MAX_OUTPUT_CHARS,
         schema_version: model::CURRENT_SCHEMA_VERSION,
     };
+    reject_invalid_names(envelope.hosts.keys())?;
     let mut hosts = BTreeMap::new();
     for (key, entry) in envelope.hosts {
-        let rec = entry
-            .into_record(&key, defaults)
-            .map_err(SshCliError::InvalidArgument)?;
+        let rec = entry.into_record(&key, defaults).map_err(|e| {
+            SshCliError::InvalidArgument(format!("invalid host '{key}' in import: {e}"))
+        })?;
         hosts.insert(key, rec);
     }
     Ok(ConfigFile {
@@ -141,15 +171,31 @@ pub(super) fn run_import(
     format: OutputFormat,
 ) -> Result<()> {
     // Cap import file size (same ceiling as config.toml — OOM hygiene).
-    let text = crate::paths::read_text_capped(file, crate::paths::MAX_CONFIG_TOML_BYTES)
-        .map_err(SshCliError::Io)?;
+    // A missing file is permanent (exit 66), not a retryable I/O error: retrying the
+    // same path cannot make it appear.
+    let text =
+        crate::paths::read_text_capped(file, crate::paths::MAX_CONFIG_TOML_BYTES).map_err(|e| {
+            match e.kind() {
+                std::io::ErrorKind::NotFound => {
+                    SshCliError::FileNotFound(file.display().to_string())
+                }
+                _ => SshCliError::Io(e),
+            }
+        })?;
     let imported = parse_import_payload(&text)?;
+    // The lock spans load → merge → save. Loading first and saving later loses
+    // an update whenever a peer commits between the two: the import wrote a map
+    // it had read before the peer's host existed, and the peer's host vanished.
+    let guard = lock_config(path)?;
     let mut current = load(path)?;
     let mut imported_count = 0usize;
     // C2: an import silently replaces same-named hosts, so the plan names them.
     // Reporting only a count would hide the one fact that decides whether the
     // import is safe to run.
     let mut planned: Vec<serde_json::Value> = Vec::new();
+    // Names that already existed and were overwritten; the success envelope
+    // reports them as `replaced` so a real run says what the dry-run planned.
+    let mut replaced_names: Vec<String> = Vec::new();
     for (k, mut v) in imported.hosts {
         // VAL-001 on import (domain VpsName = path-safe NFC name).
         let name = crate::domain::VpsName::try_new(&k).map_err(|e| {
@@ -160,9 +206,20 @@ pub(super) fn run_import(
         if let Some(ref key) = v.key_path {
             validate_key_path_exists(&key.to_string_lossy_owned())?;
         }
+        // Same TLS rules `vps edit` enforces: an import must not smuggle in an
+        // mTLS certificate without its key, which no connect could ever use.
+        // `--allow-incomplete` covers missing auth only, never a broken TLS pair.
+        super::edit::validate_tls(&v).map_err(|err| {
+            SshCliError::InvalidArgument(format!(
+                "host '{name}' has invalid TLS options in import: {err}"
+            ))
+        })?;
         match v.validate() {
             Ok(()) => {
                 let replaced = current.hosts.insert(name.as_str().to_owned(), v).is_some();
+                if replaced {
+                    replaced_names.push(name.as_str().to_owned());
+                }
                 planned.push(serde_json::json!({
                     "name": name.as_str(),
                     "replaces_existing": replaced,
@@ -174,6 +231,9 @@ pub(super) fn run_import(
                 // GAP-SSH-IMP-001: incomplete skeleton allowed.
                 tracing::warn!(host = %name, error = %err, "import incomplete allowed");
                 let replaced = current.hosts.insert(name.as_str().to_owned(), v).is_some();
+                if replaced {
+                    replaced_names.push(name.as_str().to_owned());
+                }
                 planned.push(serde_json::json!({
                     "name": name.as_str(),
                     "replaces_existing": replaced,
@@ -214,10 +274,12 @@ pub(super) fn run_import(
         return Ok(());
     }
     current.schema_version = model::CURRENT_SCHEMA_VERSION;
-    save(path, &current)?;
+    guard.save(path, &current)?;
+    drop(guard);
+    replaced_names.sort_unstable();
     crate::output::emit_success(
         "vps-import",
-        serde_json::json!({ "imported": imported_count }),
+        serde_json::json!({ "imported": imported_count, "replaced": replaced_names }),
         &crate::i18n::t(crate::i18n::Message::ImportCompleted),
         format == OutputFormat::Json,
     )?;

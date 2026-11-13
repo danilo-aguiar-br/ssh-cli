@@ -323,17 +323,14 @@ fn gap_doc_003_residual_behaviors_documentados() {
     }
 
     // JSON-001 schema contract: password type includes null (not string-only).
-    let schema =
+    let schema_text =
         std::fs::read_to_string("docs/schemas/vps-show.schema.json").expect("vps-show.schema.json");
-    let password_block = schema
-        .split("\"password\"")
-        .nth(1)
-        .expect("schema must declare the password property");
-    // First property after "password" key: type array must list string and null.
-    let window: String = password_block.chars().take(120).collect();
-    assert!(
-        window.contains("null") && window.contains("string"),
-        "vps-show.schema.json password must allow type null|string (JSON-001): {window}"
+    let schema: serde_json::Value =
+        serde_json::from_str(&schema_text).expect("vps-show.schema.json must be valid JSON");
+    assert_eq!(
+        schema["properties"]["password"]["type"],
+        serde_json::json!(["string", "null"]),
+        "vps-show.schema.json properties.password.type must be [\"string\", \"null\"] (JSON-001)"
     );
 }
 
@@ -343,10 +340,58 @@ fn gap_doc_003_residual_behaviors_documentados() {
 fn gap_deny_002_deny_toml_ignores_no_cve() {
     let deny = std::fs::read_to_string("deny.toml").expect("deny.toml");
     assert!(deny.contains("yanked = \"deny\"") || deny.contains("yanked=\"deny\""));
-    assert!(
-        deny.contains("ignore = []") || deny.contains("ignore=[]"),
-        "ignore must stay empty"
+    // DENY-002 said "ignore must stay empty". That was written when the only reason to
+    // ignore anything was silencing a CVE, so emptiness stood in for "no waiver". The
+    // keyring backend brought three `unmaintained` advisories whose crates have no safe
+    // upgrade at all, which is a different fact from a vulnerability waiver.
+    //
+    // The assertion is now the rule itself instead of a proxy for it: every ignored id
+    // is one of these three, and every one of them carries a written reason. Adding a
+    // fourth ignore — for a CVE or for anything else — fails here, and so does an
+    // ignore with no reason, which an empty-list check could never have caught.
+    const ALLOWED_IGNORES: &[&str] = &[
+        "RUSTSEC-2026-0370",
+        "RUSTSEC-2026-0371",
+        "RUSTSEC-2026-0372",
+    ];
+    let ignored: Vec<&str> = deny
+        .lines()
+        .filter_map(|l| {
+            let trimmed = l.trim_start();
+            if !trimmed.starts_with("{ id = \"RUSTSEC-") {
+                return None;
+            }
+            let start = trimmed.find("\"RUSTSEC-")? + 1;
+            let rest = &trimmed[start..];
+            let end = rest.find('"')?;
+            Some(&rest[..end])
+        })
+        .collect();
+    assert_eq!(
+        ignored.len(),
+        ALLOWED_IGNORES.len(),
+        "deny.toml must ignore exactly the declared unmaintained advisories, found {ignored:?}"
     );
+    for id in &ignored {
+        assert!(
+            ALLOWED_IGNORES.contains(id),
+            "{id} is ignored without being declared in this test; a new waiver needs an audit"
+        );
+    }
+    for line in deny.lines() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with("{ id = \"RUSTSEC-") {
+            continue;
+        }
+        assert!(
+            trimmed.contains("reason = \"")
+                && trimmed
+                    .split("reason = \"")
+                    .nth(1)
+                    .is_some_and(|r| r.len() > 20),
+            "every ignored advisory must carry a written reason: {trimmed}"
+        );
+    }
     // A3: the assertion used to pin `multiple-versions = "warn"` literally, which meant
     // *tightening* the policy broke the test while loosening it to `allow` would have
     // passed unnoticed — the check was anchored to the wrong side of the risk. It now
@@ -464,14 +509,19 @@ fn gap_sec_001b_every_dotted_sidecar_is_barred_from_the_package() {
 
 #[test]
 fn gap_sec_002_e2e_refuses_a_grok_config_inside_the_repo() {
-    let script = std::fs::read_to_string("scripts/e2e_real_ssh.sh").expect("e2e script");
+    // The harness is split into three modules; the contract spans all of them.
+    let script = ["e2e_real_ssh.py", "_e2e_sshd.py", "_e2e_cases.py"]
+        .iter()
+        .map(|name| std::fs::read_to_string(format!("scripts/{name}")).expect("e2e script"))
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
         script.contains("must not live inside the repository"),
-        "e2e_real_ssh.sh MUST refuse a grok config under the repository root"
+        "e2e_real_ssh.py MUST refuse a grok config under the repository root"
     );
     assert!(
         script.contains("GROK_CFG_ABS") && script.contains("ROOT_ABS"),
-        "e2e_real_ssh.sh MUST compare the grok config absolute path against ROOT"
+        "e2e_real_ssh.py MUST compare the grok config absolute path against ROOT"
     );
     let testing = std::fs::read_to_string("docs/TESTING.md").expect("TESTING");
     assert!(

@@ -41,7 +41,9 @@ pub fn escape_shell_single_quotes(value: &str) -> String {
 pub fn append_description(command: &str, description: Option<&str>) -> String {
     match description {
         Some(d) if !d.trim().is_empty() => {
-            let cleaned = d.replace(['\n', '\r'], " ");
+            // CRLF is one line break, not two: collapsing it first keeps a Windows
+            // caller's description from arriving with a doubled space.
+            let cleaned = d.replace("\r\n", " ").replace(['\n', '\r'], " ");
             format!("{command} # {cleaned}")
         }
         _ => command.to_string(),
@@ -285,6 +287,33 @@ mod tests {
             "ls # lista arquivos"
         );
         assert_eq!(append_description("ls", None), "ls");
+    }
+
+    /// A description carrying a line break must not become a second shell command.
+    ///
+    /// The comment is appended to a command that is executed by a remote shell, so a raw
+    /// newline would end the comment and turn everything after it into a command the
+    /// caller never asked for. Both separators are replaced, and a description that is
+    /// only whitespace must not produce a dangling ` #`.
+    #[test]
+    fn description_sanitizes_line_breaks() {
+        assert_eq!(
+            append_description("ls", Some("one\ntwo")),
+            "ls # one two",
+            "a newline must not survive into the wire command"
+        );
+        assert_eq!(
+            append_description("ls", Some("one\r\ntwo")),
+            "ls # one two",
+            "CRLF must not survive either"
+        );
+        assert_eq!(append_description("ls", Some("one\r two")), "ls # one  two");
+        assert_eq!(
+            append_description("ls", Some("   ")),
+            "ls",
+            "a blank description must add no comment at all"
+        );
+        assert_eq!(append_description("ls", Some("")), "ls");
     }
 
     #[test]

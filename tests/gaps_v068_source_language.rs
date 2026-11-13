@@ -77,7 +77,7 @@
 //! Its ratchet on stale entries came along too, in
 //! [`every_language_exemption_is_still_load_bearing`]; that half was right.
 //!
-//! # Why this does not replace `scripts/check_en_identifiers.sh`
+//! # Why this does not replace `scripts/check_en_identifiers.py`
 //!
 //! That gate runs five checks built from denylists of Portuguese words and from
 //! connective grammar (`_nao_`, `_sem_`, `_contem_`). It reads ASCII, because the

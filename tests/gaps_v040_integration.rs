@@ -190,7 +190,12 @@ fn gap_scp_021_schema_scp_transfer() {
 
 #[test]
 fn gap_e2e_script_e10_e12() {
-    let script = std::fs::read_to_string(root().join("scripts/e2e_real_ssh.sh")).unwrap();
+    // The harness is split into three modules; the contract spans all of them.
+    let script = ["e2e_real_ssh.py", "_e2e_sshd.py", "_e2e_cases.py"]
+        .iter()
+        .map(|name| std::fs::read_to_string(root().join("scripts").join(name)).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
     // The bare `E10` operand subsumed both cased variants; keep one form.
     assert!(script.contains("E10"));
     assert!(script.contains("E11"));

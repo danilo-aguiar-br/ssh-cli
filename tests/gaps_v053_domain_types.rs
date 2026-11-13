@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Policy gates for domain types 4-crates (G-DOM-01…10).
+//! Policy gates for domain types 3-crates (G-DOM-01…10).
 //!
 //! Local-only gates (no GitHub Actions product dependency).
 
@@ -48,21 +48,10 @@ fn g_dom_01_four_crates_declared_with_features() {
         "uuid with v4, v7, serde required"
     );
     assert!(
-        toml.contains("rust_decimal") && toml.contains("serde-with-str"),
-        "rust_decimal with serde-with-str required"
-    );
-    // Feature lines only (comments may mention the banned name).
-    let feature_lines: String = toml
-        .lines()
-        .filter(|l| {
-            let t = l.trim_start();
-            !t.starts_with('#') && (t.contains("features") || t.contains("rust_decimal"))
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        !feature_lines.contains("serde-float") && !feature_lines.contains("serde-with-float"),
-        "serde-float forbidden for monetary safety"
+        !toml
+            .lines()
+            .any(|l| l.trim_start().starts_with("rust_decimal")),
+        "rust_decimal was removed together with the Money module"
     );
     // url crate line (not just docs URL)
     assert!(
@@ -145,7 +134,6 @@ fn g_dom_06_domain_is_split_modules() {
         "time.rs",
         "ids.rs",
         "http_url.rs",
-        "money.rs",
     ] {
         assert!(
             domain.join(name).is_file(),
@@ -155,20 +143,16 @@ fn g_dom_06_domain_is_split_modules() {
 }
 
 #[test]
-fn g_dom_08_money_not_on_vps_record() {
-    let model = fs::read_to_string(workspace_root().join("src/vps/model.rs")).unwrap();
+fn g_dom_08_money_module_is_gone() {
     assert!(
-        !model.contains("Money") && !model.contains("rust_decimal") && !model.contains("Decimal"),
-        "Money must not be wired into VpsRecord (no product monetary surface)"
+        !workspace_root().join("src/domain/money.rs").exists(),
+        "src/domain/money.rs was removed (no monetary surface in this product)"
     );
 }
 
 #[test]
 fn g_dom_runtime_types_smoke() {
-    use rust_decimal::dec;
-    use ssh_cli::domain::{
-        AcmeOrderUrl, BatchRunId, Brl, CorrelationId, HttpsUrl, Money, Rfc3339Utc,
-    };
+    use ssh_cli::domain::{AcmeOrderUrl, BatchRunId, CorrelationId, HttpsUrl, Rfc3339Utc};
 
     let t = Rfc3339Utc::try_new("2024-06-01T12:00:00Z").unwrap();
     assert!(t.to_rfc3339().starts_with("2024-06-01T12:00:00"));
@@ -184,7 +168,4 @@ fn g_dom_runtime_types_smoke() {
     assert!(CorrelationId::try_new(c.to_string_canonical()).is_ok());
     let b = BatchRunId::new();
     assert!(BatchRunId::try_new(b.to_string_canonical()).is_ok());
-
-    let m = Money::<Brl>::try_new(dec!(1.23)).unwrap();
-    assert_eq!(m.amount(), dec!(1.23));
 }

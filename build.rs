@@ -3,7 +3,20 @@
 //!
 //! Embeds the commit hash into the `SSH_CLI_COMMIT_HASH` environment variable.
 //! GAP-SSH-REL-002: `-dirty` suffix when the working tree has local changes.
-//! GAP-SSH-REL-007: precedence env → `.commit_hash` (crates.io pack) → git → `unknown`.
+//! GAP-SSH-REL-007: precedence env → git → `.commit_hash` (crates.io pack) → `unknown`.
+//!
+//! # `.commit_hash` format
+//!
+//! One line, two space-separated tokens: `<hash> <version>` (for example
+//! `a691fc7 0.5.5`). When the second token equals `CARGO_PKG_VERSION` the hash is
+//! printed as is; the version is validated, never displayed. A file in the old
+//! single-token format counts as "version unknown" and is ignored.
+//!
+//! Why: a hash that is confidently wrong is worse than a missing one. The 0.5.6 binary
+//! once printed the 0.5.5 hash because the file did not say which release it belonged
+//! to. A file recorded for another version names the commit this tree was derived from,
+//! and the version bump proves the tree changed after it, so it is printed as
+//! `<hash>-dirty`: true about the base, explicit about the local changes.
 //!
 //! # External process policy (G-PROC)
 //!
@@ -19,8 +32,15 @@ use std::process::{Command, Stdio};
 fn main() {
     let hash = commit_hash_with_dirty();
     println!("cargo:rustc-env=SSH_CLI_COMMIT_HASH={hash}");
-    println!("cargo:rerun-if-changed=.git/HEAD");
-    println!("cargo:rerun-if-changed=.git/index");
+    // Cargo treats a missing `rerun-if-changed` path as changed, which would rebuild the
+    // crate on every build in a tree without `.git` (crates.io tarball, plain copy).
+    // Only watch the git files when they exist.
+    for git_file in [".git/HEAD", ".git/index"] {
+        if std::path::Path::new(git_file).exists() {
+            println!("cargo:rerun-if-changed={git_file}");
+        }
+    }
+    println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=.commit_hash");
     println!("cargo:rerun-if-env-changed=SSH_CLI_COMMIT_HASH");
 }
@@ -31,7 +51,7 @@ fn main() {
 /// 1. `SSH_CLI_COMMIT_HASH` env (CI/publish inject)
 /// 2. `git rev-parse` when a checkout exists
 /// 3. `.commit_hash` file in the package manifest (crates.io tarball, which has no
-///    `.git`)
+///    `.git`), only when its recorded version equals `CARGO_PKG_VERSION`
 /// 4. `unknown`
 ///
 /// # Why git outranks the file
@@ -133,14 +153,27 @@ fn git_command() -> Command {
     cmd
 }
 
+/// Hash from `.commit_hash`, or [`None`] when the file is absent or malformed.
+///
+/// Expected content is `<hash> <version>` with a 7-40 hex digit hash. When `<version>`
+/// equals `CARGO_PKG_VERSION` the hash is returned as is. Any other version means the
+/// tree moved past that commit (the version was bumped after it), so the hash comes back
+/// as `<hash>-dirty`. A single-token (legacy) file or extra tokens are ignored.
 fn read_commit_hash_file() -> Option<String> {
     let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")?;
     let path = std::path::Path::new(&manifest_dir).join(".commit_hash");
     let raw = std::fs::read_to_string(path).ok()?;
-    let t = raw.trim();
-    if t.is_empty() {
-        None
+    let pkg_version = std::env::var("CARGO_PKG_VERSION").ok()?;
+    let mut tokens = raw.split_whitespace();
+    let hash = tokens.next()?;
+    let version = tokens.next()?;
+    let is_hex_hash = (7..=40).contains(&hash.len()) && hash.chars().all(|c| c.is_ascii_hexdigit());
+    if tokens.next().is_some() || !is_hex_hash {
+        return None;
+    }
+    if version == pkg_version {
+        Some(hash.to_string())
     } else {
-        Some(t.to_string())
+        Some(format!("{hash}-dirty"))
     }
 }

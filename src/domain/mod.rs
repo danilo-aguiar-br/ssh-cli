@@ -23,7 +23,6 @@
 //! | `time` | [`crate::domain::Rfc3339Utc`], [`crate::domain::AddedAt`], [`crate::domain::CreatedAt`] |
 //! | `ids` | [`crate::domain::CorrelationId`] (v4), [`crate::domain::BatchRunId`] (v7) |
 //! | `http_url` | [`crate::domain::HttpsUrl`], [`crate::domain::AcmeOrderUrl`] |
-//! | `money` | [`crate::domain::Money`] (**library-only**; no SSH/VPS CLI surface — G-E2E-14) |
 #![forbid(unsafe_code)]
 
 mod command;
@@ -31,7 +30,6 @@ mod error;
 mod http_url;
 mod ids;
 mod limits;
-mod money;
 mod names;
 mod ports;
 mod time;
@@ -41,7 +39,6 @@ pub use error::{domain_err, secret_nonempty, DomainError};
 pub use http_url::{AcmeOrderUrl, HttpsUrl};
 pub use ids::{BatchRunId, CorrelationId};
 pub use limits::{CharLimit, TimeoutMs};
-pub use money::{Brl, Currency, Money, Usd};
 pub use names::{try_tags, HostTag, SshHost, SshUser, VpsName};
 pub use ports::{BindPort, SshPort};
 pub use time::{AddedAt, CreatedAt, Rfc3339Utc};

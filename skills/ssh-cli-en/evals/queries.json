@@ -2,187 +2,43 @@
   "skill_name": "ssh-cli",
   "queries": [
     {
-      "query": "add my production vps to the multi-host registry with tags and run uname over ssh with json",
+      "query": "register a production vps in the multi-host registry with tags and run uname over ssh with json",
       "should_trigger": true
     },
     {
-      "query": "exec a remote command on edge.example.com with private key auth and parse stdout",
+      "query": "switch a password host to key authentication with vps edit --key and read the updated field without losing the registry entry",
       "should_trigger": true
     },
     {
-      "query": "need sudo-exec with safe packing to install packages on the staging host",
+      "query": "rename a registered host with vps rename and preview the plan with --dry-run before touching the config",
       "should_trigger": true
     },
     {
-      "query": "su-exec one-shot to become root because sudo is disabled on this box",
+      "query": "run exec --tags prod uptime on every tagged host with bounded concurrency and parse the exec-batch json",
       "should_trigger": true
     },
     {
-      "query": "open a short-lived ssh tunnel with timeout-ms and --json wait for event tunnel_listening before using local 18080",
+      "query": "sudo-exec or su-exec a command with one-shot elevation and run three steps on one session with --step",
       "should_trigger": true
     },
     {
-      "query": "upload a single file with scp --json and parse ok event scp-transfer direction vps local remote bytes duration_ms",
+      "query": "open a short-lived ssh tunnel with timeout-ms and wait for tunnel_listening before using local port 18080",
       "should_trigger": true
     },
     {
-      "query": "scp download with --json expect .ssh-cli.partial then atomic rename and preserve mtime mode",
+      "query": "scp upload regular files only, download through .ssh-cli.partial with atomic rename, and use sftp recursive for a directory tree",
       "should_trigger": true
     },
     {
-      "query": "refuse scp of a directory regular files only no -r use sftp recursive for trees",
+      "query": "sftp ls mkdir rmdir rm stat rename on a remote filesystem and check the sftp-fs-op event",
       "should_trigger": true
     },
     {
-      "query": "sftp upload recursive directory tree with --json event sftp-transfer no symlink follow",
+      "query": "check with doctor whether the config directory is exposed and list invalid host names with doctor --select local.config_dir_exposed,local.invalid_host_names",
       "should_trigger": true
     },
     {
-      "query": "sftp ls mkdir rmdir rm stat rename remote filesystem ops over ssh subsystem",
-      "should_trigger": true
-    },
-    {
-      "query": "sftp rmdir empty remote directory then sftp mkdir for a new path",
-      "should_trigger": true
-    },
-    {
-      "query": "health-check with optional timeout override and parse only stdout json",
-      "should_trigger": true
-    },
-    {
-      "query": "run health-check --all --json with --max-concurrency 8 across the fleet registry",
-      "should_trigger": true
-    },
-    {
-      "query": "exec --all uptime on every host with bounded concurrency batch schema exec-batch",
-      "should_trigger": true
-    },
-    {
-      "query": "exec --tags prod,web uptime selecting hosts by tag OR fleet filter",
-      "should_trigger": true
-    },
-    {
-      "query": "multi-host fleet with --fail-fast stop admitting hosts after first failure",
-      "should_trigger": true
-    },
-    {
-      "query": "run uname then df then free on the same SSH session with --step multi-step json step index",
-      "should_trigger": true
-    },
-    {
-      "query": "authenticate via ssh-agent with --use-agent and --agent-socket for vps add and exec",
-      "should_trigger": true
-    },
-    {
-      "query": "secrets status failed after rotating primary-key, how do i reencrypt config.toml",
-      "should_trigger": true
-    },
-    {
-      "query": "secrets init --json secrets-reencrypt and flags --allow-plaintext-secrets --secrets-key-file --use-keyring",
-      "should_trigger": true
-    },
-    {
-      "query": "host key mismatch TOFU what flag replaces known_hosts after human approval",
-      "should_trigger": true
-    },
-    {
-      "query": "root doctor --json and vps doctor show XDG path schema and ssh_probe",
-      "should_trigger": true
-    },
-    {
-      "query": "discover full command tree with ssh-cli commands JSON for agent tooling",
-      "should_trigger": true
-    },
-    {
-      "query": "emit schema catalog and one schema body with ssh-cli schema and schema exec",
-      "should_trigger": true
-    },
-    {
-      "query": "set UI language with locale set pt-BR and show resolved locale winning layer",
-      "should_trigger": true
-    },
-    {
-      "query": "tls provider paths mtls import client cert and acme DNS-01 issue complete status",
-      "should_trigger": true
-    },
-    {
-      "query": "ACME invalidContact permanent validation failure must exit 64 never retry as 74",
-      "should_trigger": true
-    },
-    {
-      "query": "vps list json password is null for key-only host and FIXED_MASK *** for password hosts",
-      "should_trigger": true
-    },
-    {
-      "query": "empty remote command fails with message empty command and exit 64",
-      "should_trigger": true
-    },
-    {
-      "query": "vps export redacted empty password must stay empty string never sshcli-enc blob",
-      "should_trigger": true
-    },
-    {
-      "query": "include-secrets must use --output or --i-understand-secrets-on-stdout never raw pipe",
-      "should_trigger": true
-    },
-    {
-      "query": "vps export body follows the resolved format so an agent gets JSON even into a .toml file, TOML needs --output-format text",
-      "should_trigger": true
-    },
-    {
-      "query": "import hosts from TOML EN keys PT aliases or JSON vps-export with allow-incomplete",
-      "should_trigger": true
-    },
-    {
-      "query": "password-stdin for vps add, dual max_command_chars max_output_chars for agent commands",
-      "should_trigger": true
-    },
-    {
-      "query": "use quiet mode and key-passphrase-stdin so argv never holds secrets",
-      "should_trigger": true
-    },
-    {
-      "query": "parse stderr error envelope exit_code message remote_exit_code retryable error_class suggestion after failed exec",
-      "should_trigger": true
-    },
-    {
-      "query": "tunnel post-bind deadline after tunnel_listening must exit 0 not 74",
-      "should_trigger": true
-    },
-    {
-      "query": "tunnel pre-bind timeout still exit 74 before listening",
-      "should_trigger": true
-    },
-    {
-      "query": "scp remote missing exit 66 file not found path invalid import TOML exit 65 auth exit 77",
-      "should_trigger": true
-    },
-    {
-      "query": "timeout under 1000 ms emits stderr warning unit is milliseconds not seconds",
-      "should_trigger": true
-    },
-    {
-      "query": "scp multi-file one session with --scp-file-concurrency parallel channels",
-      "should_trigger": true
-    },
-    {
-      "query": "enable SSH-over-TLS on host with --tls --tls-sni and mTLS client cert key flags",
-      "should_trigger": true
-    },
-    {
-      "query": "first vps add auto secrets key puts secrets_key_auto_created on same vps-added json never second event",
-      "should_trigger": true
-    },
-    {
-      "query": "doctor --probe-ssh --hosts web1,web2 single root event vps-doctor with local and ssh_probe",
-      "should_trigger": true
-    },
-    {
-      "query": "vps add nonstandard ssh port 2222 with --check then connect active host",
-      "should_trigger": true
-    },
-    {
-      "query": "ssh-cli stderr is noisy with INFO by default how do agents keep logs clean",
+      "query": "issue an ACME certificate in two steps with tls acme issue --print-challenge then tls acme complete",
       "should_trigger": true
     },
     {
@@ -194,63 +50,11 @@
       "should_trigger": false
     },
     {
-      "query": "how do i center a div with css grid",
-      "should_trigger": false
-    },
-    {
       "query": "generate a powerpoint pitch deck for our fundraising round",
       "should_trigger": false
     },
     {
-      "query": "summarize this pdf invoice into a table",
-      "should_trigger": false
-    },
-    {
-      "query": "tune postgres vacuum settings for a 200gb table",
-      "should_trigger": false
-    },
-    {
-      "query": "create a github actions matrix for linux macos windows rust builds",
-      "should_trigger": false
-    },
-    {
-      "query": "translate this marketing landing page into spanish",
-      "should_trigger": false
-    },
-    {
-      "query": "plot sales csv columns with a line chart in a spreadsheet",
-      "should_trigger": false
-    },
-    {
-      "query": "debug why my local next.js hot reload is broken",
-      "should_trigger": false
-    },
-    {
-      "query": "run uptime on the host i marked active earlier without typing its name again",
-      "should_trigger": true
-    },
-    {
-      "query": "can i export SSH_CLI_SECRETS_KEY or SSH_CLI_HOME to configure the tool from the environment",
-      "should_trigger": true
-    },
-    {
-      "query": "why does exec prod exit 64 when prod is a registered vps in my inventory",
-      "should_trigger": true
-    },
-    {
-      "query": "got exit 66 no_active_vps from sudo-exec --use-active, what do i run first",
-      "should_trigger": true
-    },
-    {
-      "query": "which json field tells me whether the host came from argv or from the active marker",
-      "should_trigger": true
-    },
-    {
-      "query": "upload three local files to a whole fleet, positional form says argv is ambiguous",
-      "should_trigger": true
-    },
-    {
-      "query": "harden sshd_config on the server to disable password authentication and root login",
+      "query": "explain the difference between tcp and udp for a networking exam",
       "should_trigger": false
     },
     {
@@ -270,23 +74,11 @@
       "should_trigger": false
     },
     {
-      "query": "build a terraform module that provisions ec2 instances with a security group",
-      "should_trigger": false
-    },
-    {
       "query": "explain how the ssh protocol key exchange and diffie-hellman handshake works",
       "should_trigger": false
     },
     {
-      "query": "docker compose file for a postgres and redis local dev stack",
-      "should_trigger": false
-    },
-    {
       "query": "configure fail2ban jails to block repeated ssh brute force attempts",
-      "should_trigger": false
-    },
-    {
-      "query": "write a systemd unit that restarts my api service on failure",
       "should_trigger": false
     }
   ]

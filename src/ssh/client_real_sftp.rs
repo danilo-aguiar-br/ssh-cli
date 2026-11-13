@@ -23,6 +23,9 @@
         }
 
         /// Opens a direct-tcpip channel for SSH forwarding.
+        ///
+        /// # Errors
+        /// Returns an error when the server refuses the direct-tcpip channel.
         pub async fn open_tunnel_channel(
             &self,
             remote_host: &str,
@@ -145,12 +148,19 @@
         // ── SFTP (G-SFTP) — wire lives in `sftp_session` (SRP; do not inline) ──
 
         /// Opens one SFTP subsystem session (reuse for multi-file / multi-op).
+        ///
+        /// # Errors
+        /// Returns an error when the SFTP subsystem cannot be opened within the configured timeout.
         pub async fn open_sftp(&self) -> SshCliResult<russh_sftp::client::SftpSession> {
             crate::ssh::sftp_session::open_sftp_session(&self.session, self.cfg.timeout_ms.get())
                 .await
         }
 
         /// One-shot SFTP upload of a regular file (opens+closes subsystem).
+        ///
+        /// # Errors
+        /// Returns an error when the SFTP subsystem cannot be opened, the transfer fails, or the
+        /// configured timeout elapses.
         pub async fn sftp_upload(
             &self,
             local: &std::path::Path,
@@ -168,6 +178,10 @@
         }
 
         /// One-shot SFTP download of a regular file.
+        ///
+        /// # Errors
+        /// Returns an error when the SFTP subsystem cannot be opened, the transfer fails, or the
+        /// configured timeout elapses.
         pub async fn sftp_download(
             &self,
             remote: &str,
@@ -185,6 +199,10 @@
         }
 
         /// One-shot recursive SFTP upload tree.
+        ///
+        /// # Errors
+        /// Returns an error when the SFTP subsystem cannot be opened, a transfer fails, or the
+        /// configured timeout elapses.
         pub async fn sftp_upload_tree(
             &self,
             local_dir: &std::path::Path,
@@ -203,6 +221,10 @@
         }
 
         /// One-shot recursive SFTP download tree.
+        ///
+        /// # Errors
+        /// Returns an error when the SFTP subsystem cannot be opened, a transfer fails, or the
+        /// configured timeout elapses.
         pub async fn sftp_download_tree(
             &self,
             remote_dir: &str,

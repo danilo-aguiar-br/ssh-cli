@@ -38,6 +38,20 @@ pub enum AcmeDirectory {
 }
 
 impl AcmeDirectory {
+    /// Resolves the CLI's `--staging` flag to its directory.
+    ///
+    /// Kept here instead of open-coded at each call site: the same `if staging` appeared
+    /// twice in `commands.rs`, and a repeated conditional is a repeated chance for the two
+    /// leaves to disagree about what the flag means.
+    #[must_use]
+    pub const fn from_staging_flag(staging: bool) -> Self {
+        if staging {
+            Self::Staging
+        } else {
+            Self::Production
+        }
+    }
+
     /// Validated HTTPS directory URL (from `instant-acme` constants).
     fn url(self) -> SshCliResult<HttpsUrl> {
         let raw = match self {
@@ -101,6 +115,11 @@ pub struct DomainCertStatus {
 }
 
 /// Creates (or refuses if exists unless `force`) an ACME account under XDG.
+///
+/// # Errors
+/// Returns `SshCliError::InvalidArgument` when an account already exists and `force` is not
+/// set, and an error when the crypto provider is unavailable, the ACME server rejects the
+/// request, or the credentials cannot be stored.
 pub async fn create_account(
     config_override: Option<&Path>,
     directory: AcmeDirectory,
@@ -176,6 +195,9 @@ pub async fn create_account(
 }
 
 /// Loads account presence / path without contacting ACME.
+///
+/// # Errors
+/// Returns an error when the account path cannot be resolved.
 pub fn load_account_status(config_override: Option<&Path>) -> SshCliResult<AccountStatus> {
     let path = acme_account_path(config_override)?;
     let directory = std::fs::read_to_string(path.with_extension("meta.json"))
@@ -210,6 +232,10 @@ async fn load_account(config_override: Option<&Path>) -> SshCliResult<Account> {
 }
 
 /// Starts DNS-01 order and returns challenge details (does **not** wait for DNS).
+///
+/// # Errors
+/// Returns an error when no stored account can be loaded, the ACME server rejects the order
+/// or its authorization lookup, or the pending order cannot be stored.
 pub async fn acme_issue_print_challenge(
     config_override: Option<&Path>,
     domain: &str,
@@ -271,7 +297,11 @@ pub async fn acme_issue_print_challenge(
     Ok(pending)
 }
 
-/// Completes ACME after DNS TXT is published: resume order → set_ready → finalize.
+/// Completes ACME after DNS TXT is published: resume order → `set_ready` → finalize.
+///
+/// # Errors
+/// Returns `SshCliError::FileNotFound` when no pending order exists for `domain`, and an error
+/// when the ACME server rejects the order or the certificate cannot be stored.
 pub async fn acme_complete(
     config_override: Option<&Path>,
     domain: &str,
@@ -354,6 +384,10 @@ pub async fn acme_complete(
 }
 
 /// Status for one domain or all under ACME dir.
+///
+/// # Errors
+/// Returns an error when the ACME storage directory or the requested domain's files cannot
+/// be read.
 pub fn acme_status(
     config_override: Option<&Path>,
     domain: Option<&str>,
@@ -365,6 +399,10 @@ pub fn acme_status(
 }
 
 /// Lists all domain directories under ACME storage.
+///
+/// # Errors
+/// Returns an error when the TLS root cannot be resolved or the ACME storage directory cannot
+/// be read.
 pub fn acme_list(config_override: Option<&Path>) -> SshCliResult<Vec<DomainCertStatus>> {
     let root =
         super::paths::resolve_tls_root(config_override)?.join(crate::constants::TLS_ACME_DIR_NAME);
@@ -400,4 +438,33 @@ fn domain_status(config_override: Option<&Path>, domain: &str) -> SshCliResult<D
         cert_path: cert.is_file().then(|| cert.display().to_string()),
         key_path: key.is_file().then(|| key.display().to_string()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AcmeDirectory;
+
+    /// `--staging` must select the staging directory, and only that.
+    ///
+    /// The two leaves that accept the flag resolved it with their own `if staging`, so
+    /// this pins the single decision point the CLI now shares. Asserting the label alone
+    /// would pass on a build that returned the production URL under the staging label,
+    /// so the URL is checked too.
+    #[test]
+    fn staging_flag_selects_the_staging_directory() {
+        let staging = AcmeDirectory::from_staging_flag(true);
+        assert_eq!(staging.label(), "staging");
+        assert_eq!(
+            staging.url().expect("staging url").as_str(),
+            "https://acme-staging-v02.api.letsencrypt.org/directory"
+        );
+
+        let production = AcmeDirectory::from_staging_flag(false);
+        assert_eq!(production.label(), "production");
+        assert_eq!(
+            production.url().expect("production url").as_str(),
+            "https://acme-v02.api.letsencrypt.org/directory"
+        );
+        assert_ne!(staging, production, "the flag must change the directory");
+    }
 }

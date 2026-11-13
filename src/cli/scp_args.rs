@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 //! Clap types for `ssh-cli scp …` (regular files only).
 
+use super::help_text::{SCP_DOWNLOAD_EXAMPLES, SCP_UPLOAD_EXAMPLES};
 use super::SshAuthArgs;
 use clap::{ArgAction, Subcommand};
 
@@ -12,6 +13,7 @@ use clap::{ArgAction, Subcommand};
 #[derive(Debug, Subcommand)]
 pub enum ScpAction {
     /// Uploads a local file to the remote host (regular files only).
+    #[command(after_long_help = SCP_UPLOAD_EXAMPLES)]
     Upload {
         /// Upload to every registered host (bounded concurrency).
         #[arg(long, action = ArgAction::SetTrue, conflicts_with = "hosts")]
@@ -41,6 +43,7 @@ pub enum ScpAction {
     },
 
     /// Downloads a remote file to the local host (regular files only).
+    #[command(after_long_help = SCP_DOWNLOAD_EXAMPLES)]
     Download {
         /// Download from every registered host (bounded concurrency).
         #[arg(long, action = ArgAction::SetTrue, conflicts_with = "hosts")]

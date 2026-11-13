@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // G-UNSAFE-01 / G-SECDEV-05: pure module — no `unsafe`.
 #![forbid(unsafe_code)]
-//! SSH engine via `russh` 0.62.x.
+//! SSH engine via `russh` 0.65.x.
 //!
 //! - `client`: one-shot connection, password/key/agent auth, exec with timeout and abort
 //! - `known_hosts`: TOFU fingerprints under XDG

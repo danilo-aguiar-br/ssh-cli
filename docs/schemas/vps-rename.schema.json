@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-rename.schema.json",
+  "title": "vps rename JSON",
+  "description": "Payload of `ssh-cli vps rename <NAME> <NEW_NAME> --json` and of `vps edit <NAME> --name <NEW>`. A rename moves the registry key, the record name field and, when it points at this host, the sibling active marker. Stored credentials stay readable under the new name: the record serializes them without associated data, so opening a blob never needs the name it was stored under. The ciphertext token itself is resealed with a fresh nonce on every save, which is ordinary AEAD behavior and never touches the plaintext. Every invocation reports target_source `argv`, because this verb requires the subject on its own command line and never reads the active marker.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ok",
+    "event",
+    "name",
+    "previous_name",
+    "active_rewritten",
+    "updated",
+    "target_resolved",
+    "target_source"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "event": {
+      "type": "string",
+      "const": "vps-renamed"
+    },
+    "name": {
+      "type": "string",
+      "description": "Name the host answers to after this invocation"
+    },
+    "previous_name": {
+      "type": "string",
+      "description": "Name the host answered to before this invocation. Present so an agent never has to remember what it asked for."
+    },
+    "active_rewritten": {
+      "type": "boolean",
+      "description": "True when the sibling active marker pointed at `previous_name` and was rewritten to `name`; false when it pointed at another host or was absent, in which case it was left untouched."
+    },
+    "updated": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "host",
+          "port",
+          "user",
+          "password",
+          "key_path",
+          "key_passphrase",
+          "use_agent",
+          "agent_socket",
+          "timeout_ms",
+          "max_command_chars",
+          "max_output_chars",
+          "sudo_password",
+          "su_password",
+          "disable_sudo",
+          "tls",
+          "tls_sni",
+          "tls_client_cert",
+          "tls_client_key",
+          "tags"
+        ]
+      },
+      "description": "Fields whose stored value changed, in application order, each at most once. Empty when the invocation only renamed the host; a rename that also edited fields lists them, which only `vps edit --name` can do. Always present."
+    },
+    "target_resolved": {
+      "type": "string",
+      "description": "Name the registry lookup used, which is the name the host had before this invocation, so it always equals `previous_name` and never the new `name`. Published only after the registry lookup succeeded, so a not-found error carries no resolved target."
+    },
+    "target_source": {
+      "type": "string",
+      "const": "argv",
+      "description": "Always `argv`: the target came from the invocation itself."
+    },
+    "host_resolved": {
+      "type": "string",
+      "description": "Read alias of `target_resolved`"
+    },
+    "host_source": {
+      "type": "string",
+      "const": "argv",
+      "description": "Read alias of `target_source`"
+    }
+  }
+}

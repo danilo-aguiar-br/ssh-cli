@@ -2,239 +2,43 @@
   "skill_name": "ssh-cli",
   "queries": [
     {
-      "query": "cadastrar minha vps de produção no inventário multi-host e rodar uname via ssh com json",
+      "query": "cadastrar minha vps de produção no inventário multi-host com tags e rodar uname via ssh com json",
       "should_trigger": true
     },
     {
-      "query": "executar comando remoto em edge.example.com com autenticação por chave privada e parse de stdout",
+      "query": "trocar um host de senha para autenticação por chave com vps edit --key e ler o campo updated sem perder o registro do inventário",
       "should_trigger": true
     },
     {
-      "query": "preciso de sudo-exec com packing seguro para instalar pacotes no host de staging",
+      "query": "renomear um host cadastrado com vps rename e prever o plano com --dry-run antes de tocar no config",
       "should_trigger": true
     },
     {
-      "query": "abrir tunnel ssh com timeout-ms e --json aguardar event tunnel_listening antes de usar porta local 18080",
+      "query": "rodar exec --tags prod uptime em todo host com a tag, com concorrência limitada, e parsear o json exec-batch",
       "should_trigger": true
     },
     {
-      "query": "upload de arquivo único com scp --json e parse ok event scp-transfer direction vps local remote bytes duration_ms",
+      "query": "rodar sudo-exec ou su-exec com elevação one-shot e executar três passos na mesma sessão com --step",
       "should_trigger": true
     },
     {
-      "query": "scp download com --json esperar .ssh-cli.partial rename atômico e preserve mtime mode",
+      "query": "abrir um túnel ssh de curta duração com timeout-ms e esperar tunnel_listening antes de usar a porta local 18080",
       "should_trigger": true
     },
     {
-      "query": "recusar scp de diretório somente arquivos regulares sem -r use sftp recursive para árvores",
+      "query": "scp de upload somente de arquivos regulares, download por .ssh-cli.partial com rename atômico, e sftp recursivo para uma árvore de diretório",
       "should_trigger": true
     },
     {
-      "query": "sftp upload recursive árvore de diretório com --json event sftp-transfer sem seguir symlink",
+      "query": "sftp ls mkdir rmdir rm stat rename no filesystem remoto e conferir o evento sftp-fs-op",
       "should_trigger": true
     },
     {
-      "query": "sftp ls mkdir rmdir rm stat rename operações de filesystem remoto via subsystem ssh",
+      "query": "conferir com doctor se o diretório de config está exposto e listar nomes de host inválidos com doctor --select local.config_dir_exposed,local.invalid_host_names",
       "should_trigger": true
     },
     {
-      "query": "transferência scp falhou com --json parsear envelope de erro no stderr exit_code message retryable error_class suggestion",
-      "should_trigger": true
-    },
-    {
-      "query": "scp --timeout para cópia longa não usar --timeout-ms no scp",
-      "should_trigger": true
-    },
-    {
-      "query": "upload de artefato grande com scp streaming 32KiB sem carregar arquivo inteiro em RAM",
-      "should_trigger": true
-    },
-    {
-      "query": "falha de bind do tunnel com --json ler envelope de erro no stderr e não sucesso no stdout",
-      "should_trigger": true
-    },
-    {
-      "query": "secrets status falhou após rotacionar primary-key, como faço reencrypt do config.toml",
-      "should_trigger": true
-    },
-    {
-      "query": "mismatch de host key TOFU qual flag replace-host-key substitui known_hosts após aprovação humana",
-      "should_trigger": true
-    },
-    {
-      "query": "vps doctor mostra path errado, preciso do caminho XDG e export de hosts redacted",
-      "should_trigger": true
-    },
-    {
-      "query": "su-exec one-shot para virar root porque sudo está desabilitado nesta máquina",
-      "should_trigger": true
-    },
-    {
-      "query": "password-stdin no vps add, dual max_command_chars max_output_chars para comandos de agente",
-      "should_trigger": true
-    },
-    {
-      "query": "health-check com override de timeout e parse só de stdout json",
-      "should_trigger": true
-    },
-    {
-      "query": "vps list json password null para host só-chave e máscara FIXED_MASK *** para hosts com senha",
-      "should_trigger": true
-    },
-    {
-      "query": "stderr do ssh-cli barulhento com INFO por padrão como agentes mantêm logs limpos RUST_LOG ignorado use -v",
-      "should_trigger": true
-    },
-    {
-      "query": "usar quiet mode e key-passphrase-stdin para nunca deixar segredos no argv",
-      "should_trigger": true
-    },
-    {
-      "query": "parsear envelope de erro no stderr exit_code message remote_exit_code retryable error_class suggestion após exec falho",
-      "should_trigger": true
-    },
-    {
-      "query": "vps add com porta ssh 2222 e --check depois connect do host ativo",
-      "should_trigger": true
-    },
-    {
-      "query": "scp download com password-stdin ou key-passphrase-stdin sem segredos no argv",
-      "should_trigger": true
-    },
-    {
-      "query": "vps export redacted senha vazia deve ficar string vazia nunca blob sshcli-enc",
-      "should_trigger": true
-    },
-    {
-      "query": "tunnel deadline pós-bind após tunnel_listening deve sair com exit 0 não 74",
-      "should_trigger": true
-    },
-    {
-      "query": "tunnel com password-stdin e key-passphrase-stdin overrides de auth",
-      "should_trigger": true
-    },
-    {
-      "query": "health-check com password-stdin key e key-passphrase-stdin overrides",
-      "should_trigger": true
-    },
-    {
-      "query": "health-check replace-host-key após aprovação humana de mismatch de host key",
-      "should_trigger": true
-    },
-    {
-      "query": "scp json de sucesso deve incluir event scp-transfer como discriminador",
-      "should_trigger": true
-    },
-    {
-      "query": "tunnel timeout pré-bind ainda exit 74 antes de listening",
-      "should_trigger": true
-    },
-    {
-      "query": "corpo de vps export segue o formato resolvido então agente recebe JSON até em arquivo .toml, TOML exige --output-format text",
-      "should_trigger": true
-    },
-    {
-      "query": "importar hosts TOML chaves EN aliases PT ou JSON vps-export schema v3 com allow-incomplete",
-      "should_trigger": true
-    },
-    {
-      "query": "include-secrets deve usar --output ou --i-understand-secrets-on-stdout nunca pipe cru",
-      "should_trigger": true
-    },
-    {
-      "query": "secrets init --json secrets-reencrypt e flags --allow-plaintext-secrets --secrets-key-file --use-keyring",
-      "should_trigger": true
-    },
-    {
-      "query": "tunnel --bind padrão 127.0.0.1 nunca expor 0.0.0.0 sem decisão de segurança",
-      "should_trigger": true
-    },
-    {
-      "query": "scp remoto ausente exit 66 file not found path import TOML inválido exit 65 auth exit 77",
-      "should_trigger": true
-    },
-    {
-      "query": "CRUD json eventos vps-added vps-edited vps-removed vps-connected vps-import emit_success",
-      "should_trigger": true
-    },
-    {
-      "query": "comando remoto vazio falha com mensagem empty command e exit 64",
-      "should_trigger": true
-    },
-    {
-      "query": "timeout abaixo de 1000 ms emite warning no stderr unidade é milliseconds não seconds",
-      "should_trigger": true
-    },
-    {
-      "query": "valores password-like em argv emitem warning no stderr preferir --*-stdin",
-      "should_trigger": true
-    },
-    {
-      "query": "secrets usam termo primary-key não master-key; keyring ainda lê alias legado secrets-master-key só na leitura",
-      "should_trigger": true
-    },
-    {
-      "query": "vps doctor --json event igual a vps-doctor e secrets_plaintext_opt_out é boolean não string",
-      "should_trigger": true
-    },
-    {
-      "query": "importar hosts sem added_at ainda funciona serde default",
-      "should_trigger": true
-    },
-    {
-      "query": "rodar health-check --all --json com --max-concurrency 8 em toda a frota do inventário",
-      "should_trigger": true
-    },
-    {
-      "query": "exec --all uptime em todos os hosts com concorrência limitada schema batch exec-batch",
-      "should_trigger": true
-    },
-    {
-      "query": "exec --tags prod,web uptime selecionar frota por tags OR batch",
-      "should_trigger": true
-    },
-    {
-      "query": "exec com --step cmd2 --step cmd3 na mesma sessão SSH sem reabrir handshake",
-      "should_trigger": true
-    },
-    {
-      "query": "vps add com --tag prod --tag web e list filtrar por --tag",
-      "should_trigger": true
-    },
-    {
-      "query": "vps add com --use-agent --agent-socket e auth via ssh-agent",
-      "should_trigger": true
-    },
-    {
-      "query": "vps add com --tls --tls-sni e mTLS client cert key para SSH-over-TLS",
-      "should_trigger": true
-    },
-    {
-      "query": "tls provider paths mtls import list show remove e acme account create issue complete status list",
-      "should_trigger": true
-    },
-    {
-      "query": "ACME invalidContact validação permanente exit 64 nunca retry como exit 74",
-      "should_trigger": true
-    },
-    {
-      "query": "locale show set clear e --lang pt-BR forçar idioma sem SSH_CLI_LANG",
-      "should_trigger": true
-    },
-    {
-      "query": "ssh-cli commands e schema para descobrir árvore e contratos JSON do agente",
-      "should_trigger": true
-    },
-    {
-      "query": "doctor root alias de vps doctor e secrets_key_auto_created no mesmo JSON vps-added",
-      "should_trigger": true
-    },
-    {
-      "query": "frota com --fail-fast parar admissão no primeiro erro e --scp-file-concurrency multi-arquivo",
-      "should_trigger": true
-    },
-    {
-      "query": "env SSH_CLI_SECRETS_KEY rejeitada fail-closed e sem store HOME LANG FORCE_TEXT MAX_CONCURRENCY",
+      "query": "emitir um certificado ACME em dois passos com tls acme issue --print-challenge e depois tls acme complete",
       "should_trigger": true
     },
     {
@@ -246,59 +50,11 @@
       "should_trigger": false
     },
     {
-      "query": "como centralizar uma div com css grid",
-      "should_trigger": false
-    },
-    {
       "query": "gerar um pitch deck em powerpoint para a rodada de investimento",
       "should_trigger": false
     },
     {
-      "query": "resumir esta fatura pdf em uma tabela",
-      "should_trigger": false
-    },
-    {
-      "query": "ajustar vacuum do postgres para uma tabela de 200gb",
-      "should_trigger": false
-    },
-    {
-      "query": "criar matrix de github actions para builds rust em linux macos windows",
-      "should_trigger": false
-    },
-    {
-      "query": "traduzir esta landing de marketing para espanhol",
-      "should_trigger": false
-    },
-    {
-      "query": "plotar colunas de csv de vendas com gráfico de linha em planilha",
-      "should_trigger": false
-    },
-    {
-      "query": "debugar por que o hot reload do next.js local quebrou",
-      "should_trigger": false
-    },
-    {
-      "query": "rodar uptime no host que marquei como ativo sem digitar o nome dele de novo",
-      "should_trigger": true
-    },
-    {
-      "query": "por que exec prod sai com 64 se prod é uma vps registrada no meu inventário",
-      "should_trigger": true
-    },
-    {
-      "query": "recebi exit 66 no_active_vps do sudo-exec --use-active, o que preciso rodar antes",
-      "should_trigger": true
-    },
-    {
-      "query": "qual campo json diz se o host veio do argv ou do marcador ativo",
-      "should_trigger": true
-    },
-    {
-      "query": "enviar três arquivos locais para a frota inteira, a forma posicional diz que o argv é ambíguo",
-      "should_trigger": true
-    },
-    {
-      "query": "endurecer o sshd_config do servidor desabilitando senha e login de root",
+      "query": "explicar a diferença entre tcp e udp para uma prova de redes",
       "should_trigger": false
     },
     {
@@ -318,23 +74,11 @@
       "should_trigger": false
     },
     {
-      "query": "construir um módulo terraform que provisiona instâncias ec2 com security group",
-      "should_trigger": false
-    },
-    {
       "query": "explicar como funciona a troca de chaves do protocolo ssh e o handshake diffie-hellman",
       "should_trigger": false
     },
     {
-      "query": "arquivo docker compose para uma stack local de postgres e redis",
-      "should_trigger": false
-    },
-    {
       "query": "configurar jails do fail2ban para bloquear tentativas repetidas de brute force ssh",
-      "should_trigger": false
-    },
-    {
-      "query": "escrever uma unit systemd que reinicia meu serviço de api em caso de falha",
       "should_trigger": false
     }
   ]

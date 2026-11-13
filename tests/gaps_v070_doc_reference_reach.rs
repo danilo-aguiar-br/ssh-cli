@@ -8,7 +8,7 @@
 //!
 //! Measured when this file was written: `docs/TESTING.md` and `docs/TESTING.pt-BR.md`
 //! both catalogued `tests/gaps_v063_gate_falsification.rs`, asserting that every check
-//! of `scripts/check_en_identifiers.sh` had a standing falsifiability proof. The file
+//! of `scripts/check_en_identifiers.py` had a standing falsifiability proof. The file
 //! did not exist and never had. The forward sweep — is every suite in `tests/` listed
 //! in TESTING? — returned a clean zero, because the phantom is invisible from that
 //! side. Only the reverse sweep, document to disk, finds it.

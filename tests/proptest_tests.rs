@@ -81,7 +81,7 @@ proptest! {
     }
 }
 
-// ---------- G-DOM-07: domain type roundtrips (chrono / uuid / url / decimal) ----------
+// ---------- G-DOM-07: domain type roundtrips (chrono / uuid / url) ----------
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
@@ -126,17 +126,5 @@ proptest! {
         let j = serde_json::to_string(&id).unwrap();
         let back: BatchRunId = serde_json::from_str(&j).unwrap();
         prop_assert_eq!(id, back);
-    }
-
-    #[test]
-    fn money_brl_str_roundtrip(cents in 0i64..1_000_000) {
-        use rust_decimal::Decimal;
-        use ssh_cli::domain::{Brl, Money};
-        let d = Decimal::new(cents, 2);
-        let m = Money::<Brl>::try_new(d).unwrap();
-        let j = serde_json::to_string(&m).unwrap();
-        prop_assert!(!j.contains('.' ) || j.contains('"'), "must serialize as string: {j}");
-        let back: Money<Brl> = serde_json::from_str(&j).unwrap();
-        prop_assert_eq!(m.amount(), back.amount());
     }
 }

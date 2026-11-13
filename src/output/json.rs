@@ -13,6 +13,9 @@ use std::collections::BTreeMap;
 use std::io;
 
 /// Prints VPS list as compact JSON array on stdout.
+///
+/// # Errors
+/// Returns an I/O error when serialization fails or stdout cannot be written.
 pub fn print_list_json(records: &[VpsRecord]) -> io::Result<()> {
     let list: Vec<MaskedVpsJson> = records.iter().map(MaskedVpsJson::from).collect();
     match json_wire::print_json_line(&list) {
@@ -26,6 +29,8 @@ pub fn print_list_json(records: &[VpsRecord]) -> io::Result<()> {
 
 /// Prints a single VPS record as masked text.
 ///
+/// # Errors
+/// Returns an I/O error when serialization fails or stdout cannot be written.
 pub fn print_details_json(r: &VpsRecord) -> io::Result<()> {
     let v = MaskedVpsJson::from(r);
     match json_wire::print_json_line(&v) {
@@ -79,18 +84,13 @@ pub fn export_envelope_json(
     }
 }
 
-/// Prints stdout/stderr from an SSH command execution.
+/// Prints the result of an SSH command execution as one compact JSON line on stdout.
 ///
-/// Format:
-/// ```text
-/// --- stdout ---
-/// <stdout>
-/// --- stderr ---
-/// <stderr>
-/// --- exit code: <code> (<duration_ms>ms) ---
-/// ```
+/// The line carries the captured stdout and stderr, the exit code, the duration and the
+/// echoed `target` (host and how it was selected).
 ///
-/// Streams under one stdout lock with `writeln!` (G-MAC-02) — no cloned
+/// # Errors
+/// Returns an I/O error when serialization fails or stdout cannot be written.
 pub fn print_execution_output_json(
     output: &ExecutionOutput,
     target: &json_wire::ExecTarget,
@@ -106,6 +106,9 @@ pub fn print_execution_output_json(
 }
 
 /// Prints a health-check result as JSON.
+///
+/// # Errors
+/// Returns an I/O error when serialization fails or stdout cannot be written.
 pub fn print_health_check_json(
     name: &str,
     latency_ms: u64,

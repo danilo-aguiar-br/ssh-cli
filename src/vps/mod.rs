@@ -5,12 +5,20 @@
 //!
 //! No `.env` at runtime. Schema v3 English wire (dual-read PT legacy).
 
-/// Config path/load/save/permissions (SRP extract — G-UNSAFE-10).
+/// Active-VPS marker beside `config.toml` (sibling `active` file).
+pub mod active;
+/// `--config-dir` value to configuration directory (one rule for every module).
+mod config_dir;
+/// Config path/save/permissions (SRP extract — G-UNSAFE-10).
 mod config_io;
+/// Config load with the registry re-keyed by record name.
+mod config_load;
 /// VPS CRUD dispatcher (SRP extract — G-COMP-06).
 mod crud;
 /// Local doctor + optional SSH probe (SRP extract — G-COMP-02).
 mod doctor;
+/// `vps edit` / `vps rename` under a single config lock (SRP extract).
+pub mod edit;
 /// Remote exec / sudo / su (SRP extract — G-COMP-05).
 mod exec_ops;
 /// SSH health-check fan-out (SRP extract — G-COMP-04).
@@ -23,11 +31,16 @@ mod secrets_cmd;
 /// Multi-host selection resolution (SRP extract — G-COMP-01).
 pub mod selection;
 
+pub use active::{
+    active_path, clear_active_if_name, read_active_at, read_active_vps, write_active_vps,
+};
+pub use config_dir::config_dir_for_override;
 pub(crate) use config_io::validate_key_path_exists;
 pub use config_io::{
-    default_config_path, load, resolve_config_path, save, winning_layer, write_atomic, ConfigFile,
+    default_config_path, resolve_config_path, save, winning_layer, write_atomic, ConfigFile,
     ConfigLayer,
 };
+pub use config_load::load;
 pub use crud::run_vps_command;
 pub use exec_ops::{
     run_exec, run_exec_with_client, run_su_exec, run_sudo_exec, run_sudo_exec_with_client,
@@ -45,7 +58,6 @@ use crate::ssh::known_hosts::KnownHosts;
 use anyhow::Result;
 use model::{effective_limit, VpsRecord};
 use secrecy::SecretString;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// JSON efetivo a partir de flag local e format global (IO-001/002).
@@ -54,7 +66,7 @@ pub fn use_json(json_local: bool, format: OutputFormat) -> bool {
     json_local || format == OutputFormat::Json
 }
 
-/// Hard cap for secret payloads on stdin (agent hardening / DoS guard).
+/// Hard cap for secret payloads on stdin (agent hardening / `DoS` guard).
 ///
 /// Passwords and key passphrases must not be multi-megabyte streams.
 pub const MAX_SECRET_STDIN_BYTES: u64 = 64 * 1024;
@@ -204,34 +216,27 @@ pub(crate) fn validate_command_length(command: &str, max_command_chars: usize) -
 /// Sets the active VPS by writing its name to `<config_dir>/active` (sibling file).
 ///
 /// Workload: **local marker file**. Sequential justified: single write; no host fan-out.
+///
+/// # Errors
+/// Returns `SshCliError::InvalidArgument` when `name` is not a valid host name, and an error
+/// when the configuration cannot be loaded or the marker cannot be written.
 pub async fn run_connect(
     name: &str,
     config_override: Option<PathBuf>,
     format: OutputFormat,
 ) -> Result<()> {
+    // Same rule as `exec`: a name with control or bidi characters never becomes a target.
+    // `vps rename` still repairs such a host, because it does not select it.
+    let name = crate::domain::VpsName::from_stored(name)
+        .map_err(|e| SshCliError::InvalidArgument(e.to_string()))?;
+    let name = name.as_str();
     let path = resolve_config_path(config_override.as_deref())?;
     let file = load(&path)?;
     if !file.hosts.contains_key(name) {
         return Err(SshCliError::VpsNotFound(name.to_string()).into());
     }
 
-    let active_file = path
-        .parent()
-        .map(|p| p.join(crate::constants::ACTIVE_VPS_FILE_NAME))
-        .unwrap_or_else(|| PathBuf::from(crate::constants::ACTIVE_VPS_FILE_NAME));
-    if let Some(parent_dir) = active_file.parent() {
-        std::fs::create_dir_all(parent_dir)?;
-    }
-    // atomic write of active marker
-    let parent_dir = active_file
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let mut tmp = tempfile::NamedTempFile::new_in(&parent_dir)?;
-    tmp.write_all(name.as_bytes())?;
-    tmp.as_file().sync_data()?;
-    tmp.persist(&active_file)
-        .map_err(|e| SshCliError::Io(e.error))?;
+    write_active_vps(&path, name)?;
     crate::output::emit_success(
         "vps-connected",
         serde_json::json!({ "name": name }),
@@ -247,24 +252,14 @@ pub async fn run_connect(
 ///
 /// Borrows the config override; returns an owned [`VpsRecord`] (cloned from the
 /// on-disk map) so the caller can mutate without holding the file open.
+///
+/// # Errors
+/// Returns an error when the configuration path cannot be resolved or the file cannot be
+/// loaded.
 pub fn find_by_name(config_override: Option<&Path>, name: &str) -> SshCliResult<Option<VpsRecord>> {
     let path = resolve_config_path(config_override)?;
     let file = load(&path)?;
     Ok(file.hosts.get(name).cloned())
-}
-
-/// Reads the active VPS name.
-pub fn read_active_vps(config_override: Option<&Path>) -> SshCliResult<Option<String>> {
-    let path = resolve_config_path(config_override)?;
-    let active_file = path
-        .parent()
-        .map(|p| p.join(crate::constants::ACTIVE_VPS_FILE_NAME))
-        .unwrap_or_else(|| PathBuf::from(crate::constants::ACTIVE_VPS_FILE_NAME));
-    if !active_file.exists() {
-        return Ok(None);
-    }
-    let name = std::fs::read_to_string(&active_file)?;
-    Ok(Some(name.trim().to_string()))
 }
 
 /// Builds `ConnectionConfig` from a `VpsRecord`.

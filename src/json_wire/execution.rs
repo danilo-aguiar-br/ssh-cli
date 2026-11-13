@@ -29,9 +29,9 @@ pub struct ExecutionJson {
     pub stderr: String,
     /// Remote exit code when available.
     pub exit_code: Option<i32>,
-    /// Whether stdout was truncated by max_output_chars.
+    /// Whether stdout was truncated by `max_output_chars`.
     pub truncated_stdout: bool,
-    /// Whether stderr was truncated by max_output_chars.
+    /// Whether stderr was truncated by `max_output_chars`.
     pub truncated_stderr: bool,
     /// Wall-clock duration in milliseconds.
     pub duration_ms: u64,

@@ -686,7 +686,7 @@ pub async fn rm(sftp: &SftpSession, remote: &str) -> SshCliResult<()> {
         .map_err(|e| map_sftp_err(remote, e))
 }
 
-/// Stats a remote path (follows for metadata; reports symlink via symlink_metadata).
+/// Stats a remote path (follows for metadata; reports symlink via `symlink_metadata`).
 pub async fn stat(sftp: &SftpSession, remote: &str) -> SshCliResult<SftpStat> {
     validate_remote_path(remote)?;
     let meta = sftp

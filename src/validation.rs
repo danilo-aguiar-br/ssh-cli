@@ -69,11 +69,18 @@ pub fn validation_to_error(errs: ValidationErrors) -> SshCliError {
 }
 
 /// Convenience: run `Validate` and map errors.
+///
+/// # Errors
+/// Returns the error produced by [`validation_to_error`] when the value fails validation.
 pub fn validate_or_err<T: validator::Validate>(value: &T) -> SshCliResult<()> {
     value.validate().map_err(validation_to_error)
 }
 
 /// Custom validator: non-empty after trim.
+///
+/// # Errors
+/// Returns a [`validator::ValidationError`] with code `nonempty` when `s` is empty after
+/// trimming.
 pub fn validate_nonempty_trimmed(s: &str) -> Result<(), validator::ValidationError> {
     if s.trim().is_empty() {
         let mut e = validator::ValidationError::new("nonempty");
@@ -84,6 +91,18 @@ pub fn validate_nonempty_trimmed(s: &str) -> Result<(), validator::ValidationErr
 }
 
 /// Custom validator: SSH port must be 1..=65535 (u16 already caps 65535).
+///
+/// # Errors
+/// Returns a [`validator::ValidationError`] with code `port` when `port` is `0`.
+///
+/// # Examples
+///
+/// ```
+/// use ssh_cli::validation::validate_port_nonzero;
+///
+/// assert!(validate_port_nonzero(22).is_ok());
+/// assert!(validate_port_nonzero(0).is_err());
+/// ```
 pub fn validate_port_nonzero(port: u16) -> Result<(), validator::ValidationError> {
     if port == 0 {
         let mut e = validator::ValidationError::new("port");
@@ -96,6 +115,10 @@ pub fn validate_port_nonzero(port: u16) -> Result<(), validator::ValidationError
 }
 
 /// Validates host tags (length + cardinality).
+///
+/// # Errors
+/// Returns a [`validator::ValidationError`] with code `tags_count` when there are more than
+/// `MAX_TAGS` tags, or `tag` when a trimmed tag is empty or longer than `MAX_TAG_LEN`.
 pub fn validate_tags(tags: &[String]) -> Result<(), validator::ValidationError> {
     if tags.len() > MAX_TAGS {
         let mut e = validator::ValidationError::new("tags_count");
@@ -125,6 +148,10 @@ pub fn validate_tags(tags: &[String]) -> Result<(), validator::ValidationError> 
 }
 
 /// Deserialize TOML with path-aware errors (G-SERDE-08).
+///
+/// # Errors
+/// Returns `SshCliError::Config` when the text is not valid TOML or a field does not match
+/// `T`; the message names the offending path.
 pub fn from_toml_str<'de, T: serde::Deserialize<'de>>(s: &'de str) -> SshCliResult<T> {
     // A3: `toml` 1.x replaced the infallible `Deserializer::new` with `parse`, which
     // surfaces lexer-level failures before any field is visited. Those have no serde
@@ -139,11 +166,21 @@ pub fn from_toml_str<'de, T: serde::Deserialize<'de>>(s: &'de str) -> SshCliResu
             path = %e.path(),
             "TOML deserialize failed"
         );
-        SshCliError::Config(format!("TOML at `{}`: {}", e.path(), e.inner()))
+        // serde flattens a typed key-resolution failure (a secret blob that needs the
+        // primary key) into text. Asking the resolver again recovers its real class
+        // (usage, exit 64) instead of blaming the TOML (exit 65); a plain field mismatch
+        // resolves the key fine and keeps the path-aware message.
+        match crate::secrets::load_primary_key() {
+            Err(typed) => typed,
+            Ok(_) => SshCliError::Config(format!("TOML at `{}`: {}", e.path(), e.inner())),
+        }
     })
 }
 
 /// Deserialize JSON with path-aware errors (G-SERDE-08).
+///
+/// # Errors
+/// Returns `SshCliError::InvalidArgument` naming the JSON path of the offending field.
 pub fn from_json_str<'de, T: serde::Deserialize<'de>>(s: &'de str) -> SshCliResult<T> {
     let mut de = serde_json::Deserializer::from_str(s);
     serde_path_to_error::deserialize(&mut de).map_err(|e| {
@@ -157,6 +194,9 @@ pub fn from_json_str<'de, T: serde::Deserialize<'de>>(s: &'de str) -> SshCliResu
 }
 
 /// JSON deserialize that **warns** on unknown fields (Must-Ignore + G-SERDE-14).
+///
+/// # Errors
+/// Returns an error when the text is not valid JSON or a field does not match `T`.
 pub fn from_json_str_warn_unused<'de, T: serde::Deserialize<'de>>(s: &'de str) -> SshCliResult<T> {
     let mut unused = Vec::new();
     let mut de = serde_json::Deserializer::from_str(s);

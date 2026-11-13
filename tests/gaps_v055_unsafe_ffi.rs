@@ -199,7 +199,7 @@ fn no_allow_plaintext_env_set_var() {
     );
 }
 
-/// G-UNSAFE-13: binary registers signals before Tokio multi_thread.
+/// G-UNSAFE-13: binary registers signals before Tokio `multi_thread`.
 #[test]
 fn main_registers_signals_before_multi_thread_runtime() {
     let main = fs::read_to_string(workspace_root().join("src/main.rs")).unwrap();
@@ -215,7 +215,7 @@ fn main_registers_signals_before_multi_thread_runtime() {
     );
 }
 
-/// Test env mutation is encapsulated in test_util.
+/// Test env mutation is encapsulated in `test_util`.
 #[test]
 fn test_util_env_module_exists() {
     let p = workspace_root().join("src/test_util/env.rs");

@@ -24,6 +24,9 @@ static COLOR_CACHE: OnceLock<ColorChoice> = OnceLock::new();
 ///
 /// Must be called once after CLI argument parsing.
 /// The `no_color` parameter matches the CLI `--no-color` flag.
+///
+/// # Errors
+/// Currently always returns `Ok`; the `Result` keeps the signature stable.
 pub fn initialize(no_color: bool) -> Result<()> {
     let choice = determine_color(no_color);
     let _ = COLOR_CACHE.set(choice);

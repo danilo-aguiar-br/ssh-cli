@@ -4,6 +4,7 @@
 #![allow(unused_imports)]
 
 use super::*;
+use crate::output::sanitize::escape_untrusted;
 
 /// The target an SFTP subcommand designated in argv.
 ///
@@ -62,9 +63,37 @@ pub(crate) fn emit_transfer(
                 ms: result.duration_ms,
             }
         };
-        output::print_success(&i18n::t(msg));
+        output::try_print_success(&i18n::t(msg))?;
     }
     Ok(())
+}
+
+/// One `sftp ls` text line: `kind<TAB>size<TAB>path`.
+///
+/// The path and kind come from the remote server. Both are escaped with
+/// [`escape_untrusted`] before the line is built, so a file named
+/// `x\nfile\t999\tFORGED` shows as one entry instead of forging a second one:
+/// the TAB and newline are the delimiters of this format, which is why the
+/// whitespace-preserving variant is not used here.
+pub(crate) fn list_line(e: &SftpListEntry) -> String {
+    format!(
+        "{}\t{}\t{}",
+        escape_untrusted(&e.kind),
+        e.size.map_or_else(|| "-".into(), |s| s.to_string()),
+        escape_untrusted(&e.path)
+    )
+}
+
+/// One `sftp stat` text line; remote fields escaped as in [`list_line`].
+pub(crate) fn stat_line(st: &SftpStat) -> String {
+    format!(
+        "path={} kind={} size={} mode={:?} mtime={:?}",
+        escape_untrusted(&st.path),
+        escape_untrusted(&st.kind),
+        st.size.map_or_else(|| "-".into(), |s| s.to_string()),
+        st.mode,
+        st.mtime
+    )
 }
 
 pub(crate) fn emit_list(
@@ -82,12 +111,7 @@ pub(crate) fn emit_list(
         // checking. Piping `sftp ls` into `head` used to abort on EPIPE instead of
         // exiting 141.
         for e in entries {
-            output::write_line_fmt(format_args!(
-                "{}\t{}\t{}",
-                e.kind,
-                e.size.map(|s| s.to_string()).unwrap_or_else(|| "-".into()),
-                e.path
-            ))?;
+            output::write_line(&list_line(e))?;
         }
     }
     Ok(())
@@ -98,14 +122,7 @@ pub(crate) fn emit_stat(vps: &str, st: &SftpStat, json: bool) -> anyhow::Result<
         output::print_sftp_stat_json(vps, st)?;
     } else {
         // A4: same facade violation as `emit_list` above.
-        output::write_line_fmt(format_args!(
-            "path={} kind={} size={} mode={:?} mtime={:?}",
-            st.path,
-            st.kind,
-            st.size.map(|s| s.to_string()).unwrap_or_else(|| "-".into()),
-            st.mode,
-            st.mtime
-        ))?;
+        output::write_line(&stat_line(st))?;
     }
     Ok(())
 }
@@ -136,7 +153,58 @@ pub(crate) fn emit_fs_op(
                 ms: duration_ms,
             },
         };
-        output::print_success(&i18n::t(msg));
+        output::try_print_success(&i18n::t(msg))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Remote entry kind used by the fixtures below.
+    const KIND_FILE: &str = "file";
+
+    fn entry(path: &str) -> SftpListEntry {
+        SftpListEntry {
+            name: path.into(),
+            path: path.into(),
+            kind: KIND_FILE.into(),
+            size: Some(3),
+            mode: None,
+        }
+    }
+
+    #[test]
+    fn a_forged_remote_name_stays_on_one_line_with_three_fields() {
+        let line = list_line(&entry("x\nfile\t999\tFORGED"));
+        assert!(!line.contains('\n'), "{line:?}");
+        assert_eq!(line.matches('\t').count(), 2, "{line:?}");
+        assert!(
+            line.ends_with("x\\u{a}file\\u{9}999\\u{9}FORGED"),
+            "{line:?}"
+        );
+    }
+
+    #[test]
+    fn a_plain_entry_keeps_its_format() {
+        assert_eq!(list_line(&entry("/srv/a.txt")), "file\t3\t/srv/a.txt");
+    }
+
+    #[test]
+    fn stat_line_escapes_the_path_and_the_terminal_sequences() {
+        let st = SftpStat {
+            path: "/a\u{1b}[2J\nb".into(),
+            kind: KIND_FILE.into(),
+            size: None,
+            mode: Some(0o644),
+            mtime: None,
+        };
+        let line = stat_line(&st);
+        assert!(!line.contains('\n') && !line.contains('\u{1b}'), "{line:?}");
+        assert!(
+            line.starts_with("path=/a\\u{1b}[2J\\u{a}b kind=file size=-"),
+            "{line:?}"
+        );
+    }
 }

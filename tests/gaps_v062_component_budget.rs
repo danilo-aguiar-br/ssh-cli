@@ -78,32 +78,14 @@ const DECLARED_EXCEPTIONS: &[(&str, usize, &str)] = &[
     ),
     (
         "errors.rs",
-        754,
-        "single error taxonomy; the enum and its exit-code/class/retryable/\
-         suggestion tables must stay exhaustive in one place",
+        722,
+        "single error taxonomy; the enum and its exit-code/class/retryable/layer \
+         tables must stay exhaustive in one place (the suggestion table moved to \
+         src/errors/suggestion.rs)",
     ),
-    (
-        "secrets.rs",
-        748,
-        "at-rest encryption; splitting the key lifecycle widens the surface that \
-         touches key material",
-    ),
-    (
-        "cli/mod.rs",
-        712,
-        "clap derive definition; the argument surface is one declarative unit",
-    ),
-    (
-        "vps/model.rs",
-        699,
-        "record model plus serde migration; wire schema v3 dual-read belongs with \
-         the fields it reads",
-    ),
-    (
-        "cli/dispatch.rs",
-        620,
-        "dispatch table; one match over the whole verb surface",
-    ),
+    // `secrets.rs` (748), `cli/mod.rs` (637), `vps/model.rs` (699) and `cli/dispatch.rs` (620)
+    // were here. Their unit-test modules, the tunnel-mode resolver, the process-wide flags and the
+    // locale handler moved to sibling files, so all four now measure under `HARD_BUDGET`.
     // `json_wire/vps_export.rs` was here at 606. It is gone because the file now measures
     // 586, which is inside `HARD_BUDGET`. A file that falls back under the budget stops
     // being debt, and `the_exception_ledger_contains_no_stale_entries` fails until the
@@ -114,6 +96,11 @@ const DECLARED_EXCEPTIONS: &[(&str, usize, &str)] = &[
     // the split this ratchet asks for when a declared file grows. The ledger shrinking by
     // a whole entry is the outcome the contract is designed to produce; adding capacity
     // instead would have been the dishonest move it exists to block.
+    // `secrets.rs` crossed the budget again in 0.5.6 at 625 when the one-key-per-profile
+    // guard landed, and it came back under by moving that guard, its two helpers and the
+    // retirement of the retired source into `src/secrets/init_key.rs`. The split is real:
+    // the module owns the whole invariant of which store a profile writes to, and
+    // `secrets.rs` keeps resolution and serialization.
 ];
 
 /// Ceiling for a test module living under `src/` (`tests.rs`, `*_tests.rs`).

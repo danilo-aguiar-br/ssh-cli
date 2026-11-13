@@ -78,6 +78,10 @@ pub struct HostScpResult {
 }
 
 /// Runs the SCP subcommand (upload/download), single host, multi-file, or multi-host.
+///
+/// # Errors
+/// Returns an error when the operation is cancelled, the target cannot be resolved, the
+/// connection or authentication fails, an argument is invalid, or a transfer fails.
 pub async fn run_scp(
     action: ScpAction,
     config_override: Option<PathBuf>,
@@ -328,6 +332,9 @@ pub(crate) fn apply_scp_options(record: &mut crate::vps::model::VpsRecord, opts:
 }
 
 /// Testable SCP upload that accepts the client as a parameter.
+///
+/// # Errors
+/// Returns the transfer error of the client, or an error when the result cannot be written.
 pub async fn run_scp_upload_with_client(
     target: &crate::json_wire::ExecTarget,
     local: &std::path::Path,
@@ -347,15 +354,18 @@ pub async fn run_scp_upload_with_client(
             &result,
         )?;
     } else {
-        output::print_success(&i18n::t(Message::ScpUploadCompleted {
+        output::try_print_success(&i18n::t(Message::ScpUploadCompleted {
             bytes: result.bytes_transferred,
             ms: result.duration_ms,
-        }));
+        }))?;
     }
     Ok(())
 }
 
 /// Testable SCP download that accepts the client as a parameter.
+///
+/// # Errors
+/// Returns the transfer error of the client, or an error when the result cannot be written.
 pub async fn run_scp_download_with_client(
     target: &crate::json_wire::ExecTarget,
     remote: &std::path::Path,
@@ -375,10 +385,10 @@ pub async fn run_scp_download_with_client(
             &result,
         )?;
     } else {
-        output::print_success(&i18n::t(Message::ScpDownloadCompleted {
+        output::try_print_success(&i18n::t(Message::ScpDownloadCompleted {
             bytes: result.bytes_transferred,
             ms: result.duration_ms,
-        }));
+        }))?;
     }
     Ok(())
 }

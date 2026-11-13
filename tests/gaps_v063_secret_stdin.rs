@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! D13/D14 — secret input surface and argument-order contract.
 //!
-//! Both findings surfaced only when the official E01–E18 matrix ran against a
+//! Both findings surfaced only when the official E01–E21 matrix ran against a
 //! real sshd for the first time (D1). Three layers of green had asserted the
 //! matrix *existed* — by searching the harness script for the literal string
 //! `"E10"` — while the harness itself exited 0 without executing anything.

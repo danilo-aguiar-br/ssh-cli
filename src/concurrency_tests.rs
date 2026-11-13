@@ -190,7 +190,7 @@ async fn map_bounded_stops_admission_on_should_stop() {
     assert!(results.iter().all(|r| r.outcome.is_ok()));
 }
 
-/// G-PAR-39: force_exit aborts in-flight JoinSet tasks.
+/// G-PAR-39: `force_exit` aborts in-flight `JoinSet` tasks.
 #[tokio::test(flavor = "current_thread")]
 #[serial]
 async fn map_bounded_force_aborts_inflight() {
@@ -233,5 +233,62 @@ async fn map_bounded_force_aborts_inflight() {
     assert!(
         any_cancel || results.len() < 8,
         "force_exit should abort in-flight or stop admission early"
+    );
+}
+
+/// `--fail-fast` must be a process-wide policy, not a per-call argument.
+#[test]
+#[serial]
+fn fail_fast_flag_reaches_the_admission_policy() {
+    install_fail_fast(false);
+    assert!(!fail_fast_enabled(), "the default is partial success");
+    install_fail_fast(true);
+    assert!(
+        fail_fast_enabled(),
+        "the flag must be readable from the admission loop that decides whether to keep admitting units"
+    );
+    install_fail_fast(false);
+    assert!(!fail_fast_enabled(), "the policy must be resettable");
+}
+
+/// `--scp-file-concurrency` must be what the SCP batch window reads.
+///
+/// The flag reaching a parser is worth nothing: the transfer path reads
+/// [`scp_file_concurrency`]. A flag that installs nothing leaves every multi-file copy
+/// serial while the CLI claims otherwise. This drives the same installer `dispatch` calls
+/// and reads the same accessor the batch window calls, so both ends are proved to meet.
+#[test]
+#[serial]
+fn scp_file_concurrency_flag_reaches_the_batch_window() {
+    install_scp_file_concurrency(4);
+    assert_eq!(
+        scp_file_concurrency(),
+        4,
+        "the installer must publish the value the batch window reads"
+    );
+    // A later install must still win, because the value is a policy the caller set, and
+    // the clamp is the only thing that may change it.
+    install_scp_file_concurrency(9);
+    assert_eq!(scp_file_concurrency(), 9, "the last install is the policy");
+}
+
+/// The installer must clamp to the declared budget, never trust the caller.
+///
+/// `window.max(1)` downstream would hide a zero, so the clamp has to happen here where
+/// the value enters the process.
+#[test]
+#[serial]
+fn scp_file_concurrency_installer_clamps() {
+    install_scp_file_concurrency(0);
+    assert_eq!(
+        scp_file_concurrency(),
+        MIN_CONCURRENCY,
+        "zero would make every transfer silently serial under a flag that says otherwise"
+    );
+    install_scp_file_concurrency(HARD_CAP + 1000);
+    assert_eq!(
+        scp_file_concurrency(),
+        HARD_CAP,
+        "the hard cap must hold at the installer, not only at the parser"
     );
 }

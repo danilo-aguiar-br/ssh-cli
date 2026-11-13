@@ -505,11 +505,19 @@ fn gap_dep_002_russh_patched_no_lock() {
     while let Some(line) = lines.next() {
         if line == "name = \"russh\"" {
             if let Some(v) = lines.next() {
+                // Floor derived from the advisories, not from a list of known-good lines:
+                // RUSTSEC-2026-0495 is patched in `>=0.65.0` and RUSTSEC-2026-0492 in
+                // `>=0.63.1`. The old allowlist still accepted 0.62.x after both landed.
+                let parsed: Vec<u64> = v
+                    .trim_start_matches("version = \"")
+                    .trim_end_matches('"')
+                    .split('.')
+                    .map(|part| part.parse().unwrap_or(0))
+                    .collect();
                 assert!(
-                    v.contains("0.62.") || v.contains("0.61.") || v.contains("0.60.3"),
-                    "russh must be patched: {v}"
+                    parsed.as_slice() >= [0, 65, 0].as_slice(),
+                    "russh must be at or above the 0.65.0 security floor: {v}"
                 );
-                assert!(!v.contains("\"0.60.0\""));
                 found = true;
                 break;
             }

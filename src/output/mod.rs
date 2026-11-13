@@ -15,6 +15,7 @@
 mod batch;
 mod emit;
 mod json;
+pub mod sanitize;
 mod text;
 
 pub use batch::{
@@ -32,18 +33,18 @@ pub use batch::{
 pub(crate) use emit::report_json_serialize_error;
 pub use emit::{
     emit_success, emit_success_fmt, is_quiet, print_error, print_error_envelope, print_error_fmt,
-    print_human_banner, print_json_value, print_success, print_success_fmt, print_warning,
-    print_warning_fmt, set_json_errors, set_quiet, wants_json_errors, write_line, write_line_fmt,
-    write_line_to, write_line_to_fmt, write_lines, write_stderr_fmt, write_stderr_line,
-    write_stderr_line_to, write_stderr_line_to_fmt,
+    print_human_banner, print_json_value, print_warning, print_warning_fmt, set_json_errors,
+    set_quiet, try_print_success, try_print_success_fmt, wants_json_errors, write_line,
+    write_line_fmt, write_line_to, write_line_to_fmt, write_lines, write_stderr_fmt,
+    write_stderr_line, write_stderr_line_to, write_stderr_line_to_fmt,
 };
 pub use json::{
     export_envelope_json, export_hosts_to_json, print_details_json, print_execution_output_json,
     print_health_check_json, print_list_json, record_to_masked_json,
 };
 pub use text::{
-    print_details_text, print_doctor_text, print_execution_output, print_health_check,
-    print_list_text,
+    print_details_text, print_doctor_dir_text, print_doctor_text, print_execution_output,
+    print_health_check, print_list_text,
 };
 
 #[cfg(test)]

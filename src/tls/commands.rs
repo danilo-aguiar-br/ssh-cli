@@ -10,6 +10,10 @@ use crate::output;
 use anyhow::Result;
 
 /// Dispatches `tls` subcommands.
+///
+/// # Errors
+/// Returns an error when the selected `tls` action fails or its result cannot be written to
+/// stdout.
 pub async fn run_tls_command(
     action: TlsAction,
     config_override: Option<PathBuf>,
@@ -113,11 +117,7 @@ pub async fn run_tls_command(
                     contact,
                     force,
                 } => {
-                    let dir = if staging {
-                        super::AcmeDirectory::Staging
-                    } else {
-                        super::AcmeDirectory::Production
-                    };
+                    let dir = super::AcmeDirectory::from_staging_flag(staging);
                     let st = super::create_account(cfg, dir, &contact, force).await?;
                     let payload = serde_json::to_value(&st)
                         .map_err(|e| SshCliError::tls_msg(format!("json: {e}")))?;
@@ -152,11 +152,7 @@ pub async fn run_tls_command(
                     )
                     .into());
                 }
-                let dir = if staging {
-                    super::AcmeDirectory::Staging
-                } else {
-                    super::AcmeDirectory::Production
-                };
+                let dir = super::AcmeDirectory::from_staging_flag(staging);
                 let pending = super::acme_issue_print_challenge(cfg, &domain, dir).await?;
                 let payload = serde_json::to_value(&pending)
                     .map_err(|e| SshCliError::tls_msg(format!("json: {e}")))?;

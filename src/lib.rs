@@ -18,7 +18,7 @@
 //! | `vps`           | CRUD and persistence of VPS records (XDG + TOML + 0o600)      |
 //! | `secrets`       | Primary key and default at-rest encryption (ChaCha20-Poly1305)|
 //! | `ssh`           | Real one-shot SSH client via `russh` (password/key, TOFU)     |
-//! | `tls`           | rustls (aws_lc_rs): SSH-over-TLS, mTLS, ACME (feature `tls`)  |
+//! | `tls`           | rustls (`aws_lc_rs)`: SSH-over-TLS, mTLS, ACME (feature `tls`)  |
 //! | `i18n`          | Bilingual UI (`Message` enum + exhaustive EN/pt-BR match)     |
 //! | `json_wire`     | Typed agent JSON DTOs + compact emit (RFC 8259, not NDJSON)   |
 //! | `locale`        | BCP47 detect/negotiate (`sys-locale` + `unic-langid` + langneg)|
@@ -29,7 +29,7 @@
 //! | `signals`       | One-shot SIGINT/SIGTERM flags + cooperative `should_stop`     |
 //! | `tracing_setup` | Process-local `tracing` install (stderr; no OTEL / no files)  |
 //! | `validation`    | Parse→serde→validator pipeline for config/import (no OTEL)    |
-//! | `domain`        | Newtypes: VpsName, Rfc3339Utc, BatchRunId, HttpsUrl, Money…  |
+//! | `domain`        | Newtypes: `VpsName`, `Rfc3339Utc`, `BatchRunId`, `HttpsUrl`…          |
 //! | `terminal`      | TTY detection and color choice via `termcolor`                |
 //!
 //! ## Features
@@ -37,7 +37,7 @@
 //! | Feature            | Default | Effect                                                              |
 //! |--------------------|---------|---------------------------------------------------------------------|
 //! | `ssh-real`         | yes     | Real SSH via `russh` + `aws-lc-rs` (compression `none` only; G-TLS) |
-//! | `tls`              | yes     | rustls ≥0.23.18 + aws_lc_rs: SSH-over-TLS, mTLS, ACME              |
+//! | `tls`              | yes     | rustls ≥0.23.18 + `aws_lc_rs`: SSH-over-TLS, mTLS, ACME              |
 //! | `musl-allocator`   | no      | Uses `mimalloc` as `#[global_allocator]` (binary only; musl/Alpine) |
 //! | `i18n-full`        | no      | Reserved: top-20 economic locales (no extra strings yet)            |
 //! | `i18n-cjk`         | no      | Reserved: zh-Hans / zh-Hant / ja / ko                               |
@@ -219,13 +219,13 @@ use anyhow::Result;
 ///
 /// - **Boot:** Windows console UTF-8 (65001) + `ENABLE_VIRTUAL_TERMINAL_PROCESSING`;
 ///   Linux sandbox warn (Flatpak/Snap); runtime classify WSL/container/CI/Termux.
-/// - **Paths:** `PathBuf` only; Windows reserved names; component ≤255; MAX_PATH
+/// - **Paths:** `PathBuf` only; Windows reserved names; component ≤255; `MAX_PATH`
 ///   guard without `\\?\`; Unicode NFC normalization for comparisons.
 /// - **Permissions:** Unix `0o600` behind `#[cfg(unix)]` only (no ACL leakage).
 /// - **Config home:** `directories::ProjectDirs` + optional `--config-dir` (no `SSH_CLI_HOME` store).
-/// - **Completions:** clap_complete shells (Bash, Elvish, Fish, PowerShell, Zsh).
+/// - **Completions:** `clap_complete` shells (Bash, Elvish, Fish, PowerShell, Zsh).
 /// - **Out of scope:** browser discovery, WASM/WASI, Job Objects, seccomp default,
-///   macOS notarization inside the binary (release process — see CROSS_PLATFORM).
+///   macOS notarization inside the binary (release process — see `CROSS_PLATFORM`).
 ///
 /// # i18n policy (Rules Rust — multi-idioma / locale do SO)
 ///
@@ -256,12 +256,12 @@ use anyhow::Result;
 ///   permit drop; `JoinSet` for dynamic fan-out; never unbounded `spawn` loops.
 /// - **Budget:** `min(cpus×4, free_ram×50%/16MiB)` clamped `1..=64`; override
 ///   `--max-concurrency` (auto formula pre-parse; no env store).
-/// - **Runtime:** multi_thread workers from [`concurrency::worker_threads`];
+/// - **Runtime:** `multi_thread` workers from [`concurrency::worker_threads`];
 ///   `max_blocking_threads` capped; no nested runtimes; no Rayon.
 /// - **Tunnel:** one local bind + one SSH session per one-shot (G-PAR-30); multi-host
-///   tunnels = N invocations. Accepts still use JoinSet + Semaphore.
-/// - **N/A for this product:** loom lock models, parking_lot deadlock detector,
-///   systemd-run MemoryMax child scopes, OTEL available_permits metrics, hierarchical
+///   tunnels = N invocations. Accepts still use `JoinSet` + Semaphore.
+/// - **N/A for this product:** loom lock models, `parking_lot` deadlock detector,
+///   systemd-run `MemoryMax` child scopes, OTEL `available_permits` metrics, hierarchical
 ///   `CancellationToken` trees (one-shot uses atomic signal flags).
 ///
 /// # Latency policy (Rules Rust — latency reduction)
@@ -320,6 +320,9 @@ use anyhow::Result;
 ///   [`json_wire::write_json_line`] — pass `Cursor`/`Vec` in tests.
 /// - **Exit mapping:** [`resolve_exit_code`] keeps `main` thin (flush + runtime
 ///   shutdown + `process::exit` only).
+///
+/// # Errors
+/// Returns the error of the dispatched subcommand.
 pub async fn run() -> Result<()> {
     // Phase 1: signals BEFORE any work (rules: first). Binary `main` already
     // registers before Tokio multi_thread (G-UNSAFE-13); this call is idempotent.
@@ -359,6 +362,7 @@ pub async fn run_with_args(args: cli::CliArgs) -> Result<()> {
     install_agent_shape(&args)?;
     cli::set_no_input(args.no_input);
     cli::set_dry_run(args.dry_run);
+    cli::set_lock_wait_ms(args.lock_wait_ms);
     // Phase 5: execute
     commands::run(args).await
 }

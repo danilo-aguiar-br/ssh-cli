@@ -37,6 +37,10 @@ const _: () = assert!(WINDOWS_MAX_PATH > WINDOWS_MAX_COMPONENT);
 
 /// Validates a file name (no path separators).
 ///
+/// File-system check only: [`crate::domain::VpsName::try_new`] applies its
+/// stricter ASCII charset first, then calls this for the traversal and
+/// Windows-reserved rules.
+///
 /// Rejects:
 /// - Empty strings
 /// - Names with `..` components (path traversal)
@@ -122,9 +126,12 @@ pub fn normalize_nfc(name: &str) -> String {
     name.nfc().collect()
 }
 
-/// Validates and normalizes a file name in one operation.
+/// Validates and NFC-normalizes a file name in one operation.
 ///
-/// Returns the NFC-normalized name if all validations pass.
+/// The semantic file-name check ([`validate_name`] plus NFC). It also refuses
+/// control, formatting and bidi characters, so a directory name never prints
+/// as a terminal sequence; accents and CJK stay valid. The host-name charset
+/// is [`crate::domain::VpsName::try_new`]; mTLS identity names go through here.
 ///
 /// # Examples
 ///
@@ -132,17 +139,30 @@ pub fn normalize_nfc(name: &str) -> String {
 /// use ssh_cli::paths::validate_and_normalize;
 ///
 /// let name = validate_and_normalize("lab-01").unwrap();
-/// assert_eq!(name.as_str(), "lab-01");
+/// assert_eq!(name, "lab-01");
 /// assert!(validate_and_normalize("../etc").is_err());
+/// assert!(validate_and_normalize("a\u{1b}b").is_err());
+/// assert!(validate_and_normalize("produção").is_ok());
 /// ```
 ///
 /// # Errors
-/// Returns [`SshCliError::Domain`] / [`SshCliError::InvalidArgument`] if
-/// [`validate_name`] / [`crate::domain::VpsName::try_new`] fails.
-pub fn validate_and_normalize(name: &str) -> SshCliResult<crate::domain::VpsName> {
-    // G-TYPE-08: return refined type (proof not discarded as bare String).
-    // DomainError maps via From → SshCliError::Domain (G-ERR-02).
-    Ok(crate::domain::VpsName::try_new(name)?)
+/// [`SshCliError::InvalidArgument`] if [`validate_name`] fails on the NFC form,
+/// on a control, format or bidi character, or past [`crate::validation::MAX_FIELD_LEN`].
+pub fn validate_and_normalize(name: &str) -> SshCliResult<String> {
+    let nfc = normalize_nfc(name);
+    if nfc.chars().any(crate::output::sanitize::is_untrusted_char) {
+        return Err(path_err(
+            "file name must not contain control or invisible formatting characters",
+        ));
+    }
+    validate_name(&nfc)?;
+    if nfc.len() > crate::validation::MAX_FIELD_LEN {
+        return Err(path_err(format!(
+            "file name must be 1..={} chars",
+            crate::validation::MAX_FIELD_LEN
+        )));
+    }
+    Ok(nfc)
 }
 
 /// Validates that a path has no traversal components.
@@ -493,6 +513,20 @@ mod tests {
         let once = normalize_nfc(input);
         let twice = normalize_nfc(&once);
         assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn validate_and_normalize_refuses_control_and_bidi_but_keeps_unicode() {
+        for bad in [
+            "a\u{1b}b",
+            "a\u{7}b",
+            "a\u{7f}b",
+            "a\u{200b}b",
+            "a\u{202e}b",
+        ] {
+            assert!(validate_and_normalize(bad).is_err(), "{bad:?}");
+        }
+        assert_eq!(validate_and_normalize("produção").unwrap(), "produção");
     }
 
     #[test]

@@ -23,10 +23,7 @@ pub(super) fn collect_doctor_local(config_override: Option<&Path>) -> Result<ser
     let exists = path.exists();
     let file = load(&path)?;
     let kh = KnownHosts::path_beside_config(&path);
-    let active = path
-        .parent()
-        .map(|p| p.join(crate::constants::ACTIVE_VPS_FILE_NAME))
-        .unwrap_or_else(|| std::path::PathBuf::from(crate::constants::ACTIVE_VPS_FILE_NAME));
+    let active = crate::vps::active_path(&path);
     let perms = if exists {
         #[cfg(unix)]
         {
@@ -44,6 +41,22 @@ pub(super) fn collect_doctor_local(config_override: Option<&Path>) -> Result<ser
         "missing".to_string()
     };
 
+    // The directory is judged by its own mode, apart from `permissions` (config.toml):
+    // 0600 files inside a 0755 directory still leak names and file sizes.
+    let config_dir = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let config_dir_mode = crate::fs_perm::path_mode_bits(config_dir);
+    // Registry keys that fail the strict charset (legacy `config.toml`); escaped so a
+    // hostile name cannot drive the terminal.
+    let invalid_host_names: Vec<String> = file
+        .hosts
+        .keys()
+        .filter(|name| crate::domain::VpsName::try_new(name).is_err())
+        .map(|name| crate::output::sanitize::escape_untrusted(name).into_owned())
+        .collect();
+
     let seg = crate::secrets::secrets_status()?;
     let runtime = crate::platform::detect_runtime();
     // Soft guard: warn when config path would break on Windows MAX_PATH (or is
@@ -51,11 +64,13 @@ pub(super) fn collect_doctor_local(config_override: Option<&Path>) -> Result<ser
     if let Err(e) = crate::paths::validate_local_path_length(&path) {
         tracing::warn!(error = %e, path = %path.display(), "config path length warning");
     }
-    Ok(serde_json::json!({
+    let mut local = serde_json::json!({
         "layer": layer.name,
         "config_path": path.display().to_string(),
         "exists": exists,
         "permissions": perms,
+        "config_dir_exposed": config_dir_mode.is_some_and(crate::fs_perm::mode_is_exposed),
+        "invalid_host_names": invalid_host_names,
         "schema_version": file.schema_version,
         "hosts": file.hosts.len(),
         "known_hosts": kh.display().to_string(),
@@ -80,7 +95,15 @@ pub(super) fn collect_doctor_local(config_override: Option<&Path>) -> Result<ser
             "is_termux": runtime.is_termux,
             "sandbox": runtime.sandbox,
         },
-    }))
+    });
+    // Omitted (not null) where the platform has no POSIX mode bits or the dir is missing.
+    if let (Some(mode), Some(fields)) = (config_dir_mode, local.as_object_mut()) {
+        fields.insert(
+            "config_dir_permissions".to_owned(),
+            serde_json::Value::String(format!("{mode:04o}")),
+        );
+    }
+    Ok(local)
 }
 
 /// Doctor local report + optional bounded SSH probe in **one** stdout root (G-PAR-42).
@@ -203,7 +226,8 @@ pub(super) async fn run_doctor_with_optional_probe(
         secrets_key_source,
         key_file_s,
         plaintext_opt_out,
-    );
+    )?;
+    crate::output::print_doctor_dir_text(&local)?;
     if let Some(rt) = local.get("runtime") {
         crate::output::write_stderr_fmt(format_args!(
             "runtime: os={} arch={} wsl={} container={} ci={} termux={} sandbox={}",

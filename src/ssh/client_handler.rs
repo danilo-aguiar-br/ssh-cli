@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // G-SSH-01 / G-SSH-09 / G-SSH-14: pure module — no `unsafe`.
 #![forbid(unsafe_code)]
-//! russh [`client::Handler`] with TOFU known_hosts and typed host-key errors.
+//! russh [`client::Handler`] with TOFU `known_hosts` and typed host-key errors.
 //!
 //! The handler is moved into `connect_stream`; product errors that cannot be
 //! expressed as `russh::Error` are stashed in [`HostKeyOutcome`] for the connect
@@ -17,7 +17,7 @@ use crate::ssh::connection::ConnectionConfig;
 /// Shared slot for host-key / TOFU failures observed inside the russh handler.
 ///
 /// After `connect_stream` returns `Err`, the connect path must `take()` this
-/// value so agents receive typed [`SshCliError::HostKeyChanged`] (exit EX_NOPERM)
+/// value so agents receive typed [`SshCliError::HostKeyChanged`] (exit `EX_NOPERM`)
 /// instead of a generic handshake failure.
 pub type HostKeyOutcome = Arc<Mutex<Option<SshCliError>>>;
 
@@ -50,7 +50,7 @@ pub type ForwardedSink = tokio::sync::mpsc::Sender<russh::Channel<russh::client:
 /// Receiving half of [`ForwardedSink`], held by the client.
 pub type ForwardedSource = tokio::sync::mpsc::Receiver<russh::Channel<russh::client::Msg>>;
 
-/// russh handler with TOFU known_hosts (or test-only always-trust when path is absent).
+/// russh handler with TOFU `known_hosts` (or test-only always-trust when path is absent).
 pub struct ClientHandler {
     host: String,
     port: u16,
@@ -80,9 +80,19 @@ impl russh::client::Handler for ClientHandler {
 
     async fn check_server_key(
         &mut self,
-        server_key: &russh::keys::ssh_key::PublicKey,
+        server_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
-        let fingerprint = format!("{}", server_key.fingerprint(russh::keys::HashAlg::Sha256));
+        // russh 0.65 hands the client either a plain host key or an OpenSSH host
+        // certificate. The certificate arm is unreachable today: `Preferred::DEFAULT`
+        // offers no `host_key_certificates`, so the server never presents one. It is
+        // still matched exhaustively, by borrow and without a clone, and its embedded
+        // key goes through the same TOFU check as a plain key. No CA is trusted here,
+        // so a certificate earns exactly the trust its key would earn on its own.
+        let key = match server_key {
+            russh::keys::PublicKeyOrCertificate::PublicKey { key, .. } => key.key_data(),
+            russh::keys::PublicKeyOrCertificate::Certificate(cert) => cert.public_key(),
+        };
+        let fingerprint = format!("{}", key.fingerprint(russh::keys::HashAlg::Sha256));
 
         // `take`: host-key check runs once per connection; move path, no clone.
         let Some(path) = self.known_hosts_path.take() else {

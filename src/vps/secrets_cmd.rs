@@ -5,6 +5,7 @@
 
 use super::config_io::{load, resolve_config_path, save};
 use crate::cli::{OutputFormat, SecretsAction};
+use crate::constants::APP_NAME;
 use crate::errors::SshCliError;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -14,6 +15,10 @@ use std::path::{Path, PathBuf};
 ///
 /// Workload: **local crypto + disk** (not multi-host SSH). Sequential justified:
 /// single key file / single config rewrite; Mutex in secrets layer.
+///
+/// # Errors
+/// Returns an error when the selected `secrets` action fails or its result cannot be written
+/// to stdout.
 pub async fn run_secrets_command(
     action: SecretsAction,
     config_override: Option<PathBuf>,
@@ -40,12 +45,12 @@ pub async fn run_secrets_command(
                 } else {
                     "plaintext"
                 };
-                crate::output::print_success_fmt(format_args!(
+                crate::output::try_print_success_fmt(format_args!(
                     "at-rest: {at_rest} | source: {} | key_file: {} | plaintext_opt_out: {}",
                     seg.source.as_str(),
                     seg.key_file_path.display(),
                     seg.plaintext_opt_out
-                ));
+                ))?;
             }
             Ok(())
         }
@@ -83,7 +88,13 @@ pub async fn run_secrets_command(
                 return Ok(());
             }
 
-            let seg = crate::secrets::init_primary_key(keyring, force)?;
+            // Both flags reach the store: the leaf `--keyring` and the global
+            // `--use-keyring`. Passing only the leaf one meant `--use-keyring
+            // secrets init` wrote the key file while the caller asked for the store.
+            let seg = crate::secrets::init_primary_key(
+                keyring || crate::secrets::keyring_requested(),
+                force,
+            )?;
             let mut reencrypted_hosts = 0usize;
 
             if let Some(file) = hosts_to_reencrypt {
@@ -91,7 +102,8 @@ pub async fn run_secrets_command(
                 save(&path, &file).map_err(|e| {
                     SshCliError::Config(format!(
                         "primary key was rotated but re-encrypting config failed: {e}; \
-                         restore secrets.key.bak if present and re-run `secrets reencrypt`"
+                         run `{APP_NAME} secrets reencrypt` with the previous key supplied by \
+                         `--secrets-key-file` to recover the inventory"
                     ))
                 })?;
             }

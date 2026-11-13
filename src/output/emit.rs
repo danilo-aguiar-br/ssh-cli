@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 //! Quiet/JSON-error flags and LF writers for agent + human paths.
 
+use super::sanitize::escape_untrusted_keep_whitespace;
 use crate::json_wire::{self, ErrorEnvelope, SuccessEnvelope};
 use std::fmt;
 use std::io::{self, Write};
@@ -96,17 +97,52 @@ pub fn write_line_to_fmt(out: &mut impl Write, args: fmt::Arguments<'_>) -> io::
     Ok(())
 }
 
+/// `fmt::Write` adapter that escapes control and bidi characters on the way
+/// into an [`io::Write`] sink, keeping `\n` and `\t`. No intermediate `String`.
+struct EscapingSink<'a, W: Write> {
+    inner: &'a mut W,
+    error: Option<io::Error>,
+}
+
+impl<W: Write> fmt::Write for EscapingSink<'_, W> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let escaped = escape_untrusted_keep_whitespace(s);
+        self.inner.write_all(escaped.as_bytes()).map_err(|e| {
+            self.error = Some(e);
+            fmt::Error
+        })
+    }
+}
+
+/// [`write_line_to_fmt`] with every character of the output escaped.
+fn write_line_to_escaped_fmt(out: &mut impl Write, args: fmt::Arguments<'_>) -> io::Result<()> {
+    let mut sink = EscapingSink {
+        inner: out,
+        error: None,
+    };
+    if fmt::write(&mut sink, args).is_err() {
+        return Err(sink
+            .error
+            .take()
+            .unwrap_or_else(|| io::Error::other("formatter error")));
+    }
+    write_line_to(sink.inner, "")
+}
+
 /// Writes a line to stdout with pure LF (never CRLF), then flushes.
 ///
+/// Control and bidi characters are escaped as `\u{..}` (see
+/// [`escape_untrusted_keep_whitespace`]); `\n` and `\t` pass through.
+///
 /// Uses `write_all` + explicit flush (rules: never rely on Drop alone).
-/// BrokenPipe is propagated so callers / `main` can exit **141**.
+/// `BrokenPipe` is propagated so callers / `main` can exit **141**.
 ///
 /// # Errors
 /// Returns an error if stdout I/O fails (including `BrokenPipe`).
 pub fn write_line(content: &str) -> io::Result<()> {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
-    write_line_to(&mut handle, content)
+    write_line_to(&mut handle, &escape_untrusted_keep_whitespace(content))
 }
 
 /// Writes a formatted line to stdout without an intermediate `String` (G-MAC-01).
@@ -116,7 +152,7 @@ pub fn write_line(content: &str) -> io::Result<()> {
 pub fn write_line_fmt(args: fmt::Arguments<'_>) -> io::Result<()> {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
-    write_line_to_fmt(&mut handle, args)
+    write_line_to_escaped_fmt(&mut handle, args)
 }
 
 /// Writes many short lines under a single stdout lock (list/doctor/text dumps).
@@ -138,7 +174,10 @@ pub fn write_lines(lines: impl IntoIterator<Item = impl AsRef<str>>) -> io::Resu
     Ok(())
 }
 
-/// Best-effort human line on stdout; ignores BrokenPipe (consumer hung up).
+/// Best-effort banner line on stdout; every write error is dropped on purpose.
+///
+/// Only [`print_human_banner`] uses it: a banner is TTY-only decoration and must
+/// never change the exit code. Success output goes through [`try_print_success`].
 pub(crate) fn write_line_human(content: &str) {
     match write_line(content) {
         Ok(()) => {}
@@ -149,7 +188,7 @@ pub(crate) fn write_line_human(content: &str) {
 
 /// Writes a diagnostic line to an arbitrary [`Write`] (G-IO-11 DI primitive).
 ///
-/// Unlike [`write_line_to`], **BrokenPipe is treated as success** (downstream
+/// Unlike [`write_line_to`], **`BrokenPipe` is treated as success** (downstream
 /// closed) so human/error paths never panic the process on a closed pipe.
 ///
 /// # Examples
@@ -173,7 +212,7 @@ pub fn write_stderr_line_to(err: &mut impl Write, content: &str) -> io::Result<(
     }
 }
 
-/// Formatted stderr line via `write_fmt` (G-MAC-01); BrokenPipe → Ok.
+/// Formatted stderr line via `write_fmt` (G-MAC-01); `BrokenPipe` → Ok.
 ///
 /// # Errors
 /// Non-pipe I/O failures from the underlying writer.
@@ -188,7 +227,7 @@ pub fn write_stderr_line_to_fmt(err: &mut impl Write, args: fmt::Arguments<'_>) 
 /// Writes a line to stderr with flush (warnings / human errors).
 ///
 /// # Errors
-/// Returns I/O errors except BrokenPipe (treated as Ok — downstream closed).
+/// Returns I/O errors except `BrokenPipe` (treated as Ok — downstream closed).
 pub fn write_stderr_line(content: &str) -> io::Result<()> {
     let stderr = io::stderr();
     let mut handle = stderr.lock();
@@ -198,7 +237,7 @@ pub fn write_stderr_line(content: &str) -> io::Result<()> {
 /// Writes a formatted line to stderr without an intermediate `String` (G-MAC-01).
 ///
 /// # Errors
-/// Returns I/O errors except BrokenPipe (treated as Ok — downstream closed).
+/// Returns I/O errors except `BrokenPipe` (treated as Ok — downstream closed).
 pub fn write_stderr_fmt(args: fmt::Arguments<'_>) -> io::Result<()> {
     let stderr = io::stderr();
     let mut handle = stderr.lock();
@@ -210,24 +249,29 @@ pub(crate) fn report_json_serialize_error(err: &impl fmt::Display) {
     let _ = write_stderr_fmt(format_args!("failed to serialize JSON: {err}"));
 }
 
-/// Prints a human success message (suppressed with `--quiet`).
-pub fn print_success(message: &str) {
+/// Human success line (suppressed with `--quiet`) that **propagates** stdout failures.
+///
+/// A closed pipe or a full disk is an error, never a silent exit 0: the error
+/// reaches `resolve_exit_code`, which maps `BrokenPipe` to 141.
+///
+/// # Errors
+/// Any stdout write failure, including `BrokenPipe`.
+pub fn try_print_success(message: &str) -> io::Result<()> {
     if is_quiet() {
-        return;
+        return Ok(());
     }
-    write_line_human(message);
+    write_line(message)
 }
 
-/// Human success via `format_args!` — no intermediate `String` (G-MAC-01).
-pub fn print_success_fmt(args: fmt::Arguments<'_>) {
+/// [`try_print_success`] with `format_args!` — no intermediate `String` (G-MAC-01).
+///
+/// # Errors
+/// Any stdout write failure, including `BrokenPipe`.
+pub fn try_print_success_fmt(args: fmt::Arguments<'_>) -> io::Result<()> {
     if is_quiet() {
-        return;
+        return Ok(());
     }
-    match write_line_fmt(args) {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => {}
-        Err(_) => {}
-    }
+    write_line_fmt(args)
 }
 
 /// Agent-first success emitter (GAP-AUD-003/008).
@@ -237,7 +281,8 @@ pub fn print_success_fmt(args: fmt::Arguments<'_>) {
 /// Otherwise prints the human `message` (respecting `--quiet`).
 ///
 /// # Errors
-/// Returns I/O errors from writing stdout (including BrokenPipe for JSON path).
+/// Returns I/O errors from writing stdout, on the JSON and the text path alike
+/// (including `BrokenPipe`, which ends the process with exit 141).
 pub fn emit_success(
     event: &str,
     fields: serde_json::Value,
@@ -248,7 +293,7 @@ pub fn emit_success(
         let envelope = SuccessEnvelope::from_value(event, fields);
         json_wire::print_json_line(&envelope)?;
     } else {
-        print_success(human);
+        try_print_success(human)?;
     }
     Ok(())
 }
@@ -259,7 +304,8 @@ pub fn emit_success(
 /// the formatted string (avoids allocating when `json` is true *and* when false).
 ///
 /// # Errors
-/// Returns I/O errors from writing stdout (including BrokenPipe for JSON path).
+/// Returns I/O errors from writing stdout, on the JSON and the text path alike
+/// (including `BrokenPipe`, which ends the process with exit 141).
 pub fn emit_success_fmt(
     event: &str,
     fields: serde_json::Value,
@@ -270,7 +316,7 @@ pub fn emit_success_fmt(
         let envelope = SuccessEnvelope::from_value(event, fields);
         json_wire::print_json_line(&envelope)?;
     } else {
-        print_success_fmt(human);
+        try_print_success_fmt(human)?;
     }
     Ok(())
 }
@@ -289,26 +335,33 @@ pub fn print_human_banner(message: &str) {
     write_line_human(message);
 }
 
-/// Prints an error message on stderr (human-facing).
+/// Prints an error message on stderr (human-facing), control and bidi
+/// characters escaped; `\n` and `\t` kept.
 ///
 /// # Errors
 /// Propagates non-pipe stderr write failures.
 pub fn print_error(message: &str) -> io::Result<()> {
-    write_stderr_line(message)
+    write_stderr_line(&escape_untrusted_keep_whitespace(message))
 }
 
 /// Stderr error via `format_args!` — no intermediate `String` (G-MAC-01).
+/// Same escaping as [`print_error`].
 ///
 /// # Errors
 /// Propagates non-pipe stderr write failures.
 pub fn print_error_fmt(args: fmt::Arguments<'_>) -> io::Result<()> {
-    write_stderr_fmt(args)
+    let stderr = io::stderr();
+    let mut handle = stderr.lock();
+    match write_line_to_escaped_fmt(&mut handle, args) {
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        other => other,
+    }
 }
 
 /// Prints a warning on stderr (agent-visible, never stdout).
 pub fn print_warning(message: &str) {
     // G-MAC-01: `format_args!` + `write_fmt` — no temporary `String`.
-    let _ = write_stderr_fmt(format_args!("warning: {message}"));
+    let _ = print_error_fmt(format_args!("warning: {message}"));
 }
 
 /// Warning with dynamic body via `format_args!` (G-MAC-01 residual close).
@@ -316,10 +369,13 @@ pub fn print_warning(message: &str) {
 /// `fmt::Arguments` implements [`std::fmt::Display`], so the `"warning: "` prefix composes
 /// without a second allocation.
 pub fn print_warning_fmt(args: fmt::Arguments<'_>) {
-    let _ = write_stderr_fmt(format_args!("warning: {args}"));
+    let _ = print_error_fmt(format_args!("warning: {args}"));
 }
 
 /// Emits a JSON error envelope on stderr (GAP-SSH-IO-003 / G-RETRY / G-ERR-08).
+///
+/// # Errors
+/// Returns an I/O error when the envelope cannot be written to stderr.
 pub fn print_error_envelope(
     exit_code: i32,
     error_code: &str,
@@ -367,7 +423,7 @@ pub fn print_error_envelope(
 /// remains for dynamic documents (`meta command-tree`, doctor ad-hoc maps).
 ///
 /// # Errors
-/// Serialization or stdout I/O (including BrokenPipe → exit 141).
+/// Serialization or stdout I/O (including `BrokenPipe` → exit 141).
 pub fn print_json_value(v: &serde_json::Value) -> io::Result<()> {
     json_wire::print_json_line(v)
 }

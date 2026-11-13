@@ -7,6 +7,10 @@ use super::*;
 /// Runs a command with `sudo` (packed via `sh -c`).
 ///
 /// Workload: **I/O-bound** SSH. Multi-host uses [`crate::concurrency::map_bounded`].
+///
+/// # Errors
+/// Returns an error when the run is cancelled, a host cannot be resolved, the connection or
+/// authentication fails, the output cannot be written, or the command exits non-zero.
 pub async fn run_sudo_exec(
     selection: HostSelection,
     command: &str,
@@ -58,6 +62,10 @@ pub async fn run_sudo_exec(
 }
 
 /// Testable version of sudo-exec.
+///
+/// # Errors
+/// Returns `SshCliError::CommandFailed` when the command exits non-zero, and an error when
+/// the output cannot be written.
 pub async fn run_sudo_exec_with_client(
     vps: &VpsRecord,
     command: &str,
@@ -100,6 +108,10 @@ pub async fn run_sudo_exec_with_client_steps(
 /// Runs a command via `su -` one-shot (consumes `su_password`).
 ///
 /// Workload: **I/O-bound** SSH. Multi-host uses [`crate::concurrency::map_bounded`].
+///
+/// # Errors
+/// Returns an error when the run is cancelled, a host cannot be resolved, the connection or
+/// authentication fails, the output cannot be written, or the command exits non-zero.
 pub async fn run_su_exec(
     selection: HostSelection,
     command: &str,

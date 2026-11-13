@@ -271,16 +271,114 @@ fn report_declares_input_output_and_dropped() {
 }
 
 #[test]
-fn envelope_without_collection_is_left_untouched() {
-    // Single-record reads and ready events have nothing to reduce; rewriting them
-    // would only risk breaking their published schema.
+fn envelope_without_collection_names_the_collection_operation_it_cannot_apply() {
+    // Single-record reads and ready events have no collection to filter, sort,
+    // deduplicate or limit, so every field keeps its value. The flag itself is not
+    // dropped: the published contract says it is named under `agent_shape.ignored`,
+    // and before this test the early return made `doctor --limit 2` byte identical to
+    // an unshaped run, so the name the contract promised never appeared.
     let mut v = json!({"ok": true, "event": "tunnel_listening", "local_port": 8080});
-    let before = v.clone();
     let cfg = ShapeConfig {
         limit: Some(1),
         ..Default::default()
     };
-    assert!(!apply(&mut v, &cfg));
+    assert!(apply(&mut v, &cfg));
+    assert_eq!(v["ok"], json!(true));
+    assert_eq!(v["event"], json!("tunnel_listening"));
+    assert_eq!(v["local_port"], json!(8080));
+    assert_eq!(v["agent_shape"]["ignored"], json!(["--limit"]));
+}
+
+#[test]
+fn a_run_with_no_shaping_flag_leaves_the_record_untouched() {
+    // The other half of the contract: naming a flag must not make an unshaped run
+    // grow a report, or every consumer of `vps show` would see a new key.
+    let mut v = json!({"ok": true, "event": "tunnel_listening", "local_port": 8080});
+    let before = v.clone();
+    assert!(!apply(&mut v, &ShapeConfig::default()));
+    assert_eq!(v, before);
+}
+
+#[test]
+fn single_record_select_projects_and_reports_the_selection() {
+    let mut v = json!({"name": "prod", "host": "10.0.0.1", "port": 22, "schema_version": 3});
+    let cfg = ShapeConfig {
+        select: vec!["name".to_string(), "host".to_string()],
+        ..Default::default()
+    };
+    assert!(apply(&mut v, &cfg));
+    assert_eq!(v["name"], json!("prod"));
+    assert_eq!(v["host"], json!("10.0.0.1"));
+    assert!(
+        v.get("port").is_none() && v.get("schema_version").is_none(),
+        "an unselected field must not survive the projection: {v}"
+    );
+    assert_eq!(v["agent_shape"]["selected"], json!(["name", "host"]));
+}
+
+#[test]
+fn single_record_select_keeps_the_report_even_when_it_is_not_selected() {
+    // An agent that asks for one field must still learn that its selection was the
+    // reason the payload shrank. Dropping the report here is how the reduction became
+    // silent in the first place.
+    let mut v = json!({"name": "prod", "host": "10.0.0.1"});
+    let cfg = ShapeConfig {
+        select: vec!["name".to_string()],
+        ..Default::default()
+    };
+    assert!(apply(&mut v, &cfg));
+    assert_eq!(v["agent_shape"]["selected"], json!(["name"]));
+}
+
+#[test]
+fn single_record_truncate_content_shortens_strings_on_char_boundaries() {
+    let mut v = json!({"about": "áéíóú".repeat(4), "port": 22});
+    let cfg = ShapeConfig {
+        truncate_content: Some(5),
+        ..Default::default()
+    };
+    assert!(apply(&mut v, &cfg));
+    assert_eq!(v["about"], json!("áéíóú"));
+    assert_eq!(v["agent_shape"]["content_truncated"], json!(true));
+    assert_eq!(v["port"], json!(22), "non-string values are untouched");
+}
+
+#[test]
+fn single_record_names_every_collection_operation_it_cannot_apply() {
+    let mut v = json!({"ok": true});
+    let cfg = ShapeConfig {
+        select: vec!["ok".to_string()],
+        filters: vec![Filter {
+            path: "ok".to_string(),
+            op: FilterOp::Equals,
+            value: "true".to_string(),
+        }],
+        limit: Some(1),
+        sort: Some("ok".to_string()),
+        dedupe_by: Some("ok".to_string()),
+        count_only: true,
+        truncate_content: None,
+        max_output_bytes: Some(64),
+    };
+    assert!(apply(&mut v, &cfg));
+    assert_eq!(
+        v["agent_shape"]["ignored"],
+        json!([
+            "--filter",
+            "--limit",
+            "--sort",
+            "--dedupe-by",
+            "--count-only",
+            "--max-output-bytes"
+        ])
+    );
+}
+
+#[test]
+fn single_record_without_shaping_stays_byte_identical() {
+    let mut v = json!({"ok": true, "event": "tunnel_listening"});
+    let before = v.clone();
+    assert!(!apply(&mut v, &ShapeConfig::default()));
     assert_eq!(v, before);
 }
 

@@ -2,9 +2,86 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-list.schema.json",
   "title": "vps list JSON",
-  "description": "Payload of `ssh-cli vps list --json`: an array whose items `$ref` vps-show.schema.json, so any gap there propagates here. Carries no `event` discriminator.",
+  "description": "Payload of `ssh-cli vps list --json`: an array whose items are either the full record published by vps-show.schema.json or, when `--select` was passed, a reduced record that keeps only the projected top-level keys. Both shapes are stated with `anyOf` instead of one loose object, so a reduced run cannot also drop the keys the full shape requires. The reduction report of a bare array goes to stderr as `{\"event\":\"agent-shape\"}` and never becomes an item field, which is why the reduced shape carries no `agent_shape`. Carries no `event` discriminator.",
   "type": "array",
   "items": {
-    "$ref": "vps-show.schema.json"
+    "anyOf": [
+      {
+        "$ref": "vps-show.schema.json"
+      },
+      {
+        "type": "object",
+        "description": "Reduced item produced by `--select`: only the projected keys are present, and a key that does not resolve is omitted rather than emitted as null.",
+        "additionalProperties": false,
+        "properties": {
+          "tags": {
+            "$ref": "vps-show.schema.json#/properties/tags"
+          },
+          "tls": {
+            "$ref": "vps-show.schema.json#/properties/tls"
+          },
+          "tls_sni": {
+            "$ref": "vps-show.schema.json#/properties/tls_sni"
+          },
+          "tls_client_cert": {
+            "$ref": "vps-show.schema.json#/properties/tls_client_cert"
+          },
+          "tls_client_key": {
+            "$ref": "vps-show.schema.json#/properties/tls_client_key"
+          },
+          "use_agent": {
+            "$ref": "vps-show.schema.json#/properties/use_agent"
+          },
+          "agent_socket": {
+            "$ref": "vps-show.schema.json#/properties/agent_socket"
+          },
+          "name": {
+            "$ref": "vps-show.schema.json#/properties/name"
+          },
+          "host": {
+            "$ref": "vps-show.schema.json#/properties/host"
+          },
+          "port": {
+            "$ref": "vps-show.schema.json#/properties/port"
+          },
+          "user": {
+            "$ref": "vps-show.schema.json#/properties/user"
+          },
+          "password": {
+            "$ref": "vps-show.schema.json#/properties/password"
+          },
+          "key_path": {
+            "$ref": "vps-show.schema.json#/properties/key_path"
+          },
+          "key_passphrase": {
+            "$ref": "vps-show.schema.json#/properties/key_passphrase"
+          },
+          "sudo_password": {
+            "$ref": "vps-show.schema.json#/properties/sudo_password"
+          },
+          "su_password": {
+            "$ref": "vps-show.schema.json#/properties/su_password"
+          },
+          "timeout_ms": {
+            "$ref": "vps-show.schema.json#/properties/timeout_ms"
+          },
+          "max_command_chars": {
+            "$ref": "vps-show.schema.json#/properties/max_command_chars"
+          },
+          "max_output_chars": {
+            "$ref": "vps-show.schema.json#/properties/max_output_chars"
+          },
+          "disable_sudo": {
+            "$ref": "vps-show.schema.json#/properties/disable_sudo"
+          },
+          "schema_version": {
+            "$ref": "vps-show.schema.json#/properties/schema_version"
+          },
+          "added_at": {
+            "$ref": "vps-show.schema.json#/properties/added_at"
+          }
+        }
+      }
+    ]
   }
 }

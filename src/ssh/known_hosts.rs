@@ -60,15 +60,21 @@ impl HostsFileLock {
             PathBuf::from(os)
         };
         if let Some(parent_dir) = lock_path.parent() {
-            std::fs::create_dir_all(parent_dir)?;
+            crate::fs_perm::ensure_config_dir(parent_dir)?;
         }
-        let file = std::fs::OpenOptions::new()
+        let mut lock_options = std::fs::OpenOptions::new();
+        lock_options
             .create(true)
             .truncate(false)
             .read(true)
-            .write(true)
-            .open(&lock_path)
-            .map_err(SshCliError::Io)?;
+            .write(true);
+        // Born `0o600` on Unix: no umask-mode window before the chmod below.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            lock_options.mode(crate::constants::SECRET_FILE_MODE_UNIX);
+        }
+        let file = lock_options.open(&lock_path).map_err(SshCliError::Io)?;
         // Best-effort secret mode on lock file.
         let _ = crate::fs_perm::set_secret_file_mode(&lock_path);
         fs2::FileExt::lock_exclusive(&file).map_err(SshCliError::Io)?;
@@ -90,6 +96,9 @@ impl KnownHosts {
     }
 
     /// Loads the file (empty if missing). Does **not** take the flock.
+    ///
+    /// # Errors
+    /// Returns an error when the file exists but cannot be read within the size cap.
     pub fn load(path: PathBuf) -> SshCliResult<Self> {
         let mut entries = BTreeMap::new();
         if path.exists() {
@@ -127,6 +136,10 @@ impl KnownHosts {
     ///
     /// Reloads disk state under the lock so concurrent multi-host first-connect
     /// writers merge instead of last-write-wins.
+    ///
+    /// # Errors
+    /// Returns an error when the file lock cannot be acquired or the file cannot be reloaded or
+    /// written.
     pub fn store(&mut self, host: &str, port: u16, fingerprint: &str) -> SshCliResult<()> {
         let _lock = HostsFileLock::acquire(&self.path)?;
         self.reload_from_disk_unlocked()?;
@@ -143,7 +156,7 @@ impl KnownHosts {
 
     fn persist_unlocked(&self) -> SshCliResult<()> {
         if let Some(parent_dir) = self.path.parent() {
-            std::fs::create_dir_all(parent_dir)?;
+            crate::fs_perm::ensure_config_dir(parent_dir)?;
         }
         // The final size is known before the first push: one line per entry plus the
         // header. Growing from empty reallocates and memcpies the whole buffer roughly
@@ -252,6 +265,22 @@ mod tests {
         let mut kh = KnownHosts::load(path).unwrap();
         assert!(verify_tofu(&mut kh, "h", 22, "fp1", false).unwrap());
         assert!(verify_tofu(&mut kh, "h", 22, "fp1", false).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tofu_creates_a_missing_parent_directory_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("fresh").join("cfg");
+        let mut kh = KnownHosts::load(dir.join("known_hosts")).unwrap();
+        assert!(verify_tofu(&mut kh, "h", 22, "fp1", false).unwrap());
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&dir), crate::constants::SECRET_DIR_MODE_UNIX);
+        assert_eq!(
+            mode(dir.parent().unwrap()),
+            crate::constants::SECRET_DIR_MODE_UNIX
+        );
     }
 
     #[test]

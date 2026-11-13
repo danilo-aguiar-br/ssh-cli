@@ -8,6 +8,10 @@ use super::*;
 ///
 /// Workload: **I/O-bound** SSH. Multi-host (`All` / `Named`) uses
 /// [`crate::concurrency::map_bounded`]. Batch JSON when [`HostSelection::is_batch`].
+///
+/// # Errors
+/// Returns an error when the run is cancelled, a host cannot be resolved, the connection or
+/// authentication fails, the output cannot be written, or the command exits non-zero.
 pub async fn run_exec(
     selection: HostSelection,
     command: &str,
@@ -58,7 +62,11 @@ pub async fn run_exec(
     run_exec_with_client_steps(&vps, &cmd, &opts.steps, client, format, json, &target).await
 }
 
-/// Testable version of run_exec.
+/// Testable version of `run_exec`.
+///
+/// # Errors
+/// Returns `SshCliError::CommandFailed` when the command exits non-zero, and an error when
+/// the output cannot be written.
 pub async fn run_exec_with_client(
     vps: &VpsRecord,
     command: &str,
@@ -195,7 +203,7 @@ pub(crate) async fn run_prepared_steps(
                         "--- step {i}: {} ---",
                         step.label
                     ))?;
-                    crate::output::print_execution_output(&output);
+                    crate::output::print_execution_output(&output)?;
                 } else {
                     last_output = Some(output);
                 }
@@ -213,7 +221,7 @@ pub(crate) async fn run_prepared_steps(
         if as_json {
             crate::output::print_execution_output_json(&output, target)?;
         } else {
-            crate::output::print_execution_output(&output);
+            crate::output::print_execution_output(&output)?;
         }
     }
     if let Some((code, stderr)) = failed {

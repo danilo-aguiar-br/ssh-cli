@@ -31,6 +31,19 @@ impl Rfc3339Utc {
     }
 
     /// Parses an external RFC 3339 string into UTC.
+    ///
+    /// # Errors
+    /// Returns a [`DomainError`] when the input is empty, longer than 64 bytes, or not a valid
+    /// RFC 3339 timestamp.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ssh_cli::domain::Rfc3339Utc;
+    ///
+    /// assert!(Rfc3339Utc::try_new("2026-01-01T00:00:00Z").is_ok());
+    /// assert!(Rfc3339Utc::try_new("yesterday").is_err());
+    /// ```
     pub fn try_new(raw: impl AsRef<str>) -> Result<Self, DomainError> {
         let s = raw.as_ref().trim();
         if s.is_empty() {

@@ -26,6 +26,7 @@ mod emit;
 mod exec_target;
 mod execution;
 mod vps_export;
+mod vps_import;
 
 pub use emit::{
     print_json_line, print_json_line_stderr, strip_utf8_bom, write_json_line, ErrorEnvelope,
@@ -37,6 +38,5 @@ pub use execution::{
     ScpBatchJson, ScpHostJson, ScpTransferJson, SftpBatchJson, SftpFsOpJson, SftpListEntryJson,
     SftpListJson, SftpTransferJson, TunnelCloseReason, TunnelClosedJson, TunnelListeningJson,
 };
-pub use vps_export::{
-    ExportHostJson, ImportDefaults, ImportEnvelope, ImportHostEntry, MaskedVpsJson, VpsExportJson,
-};
+pub use vps_export::{ExportHostJson, MaskedVpsJson, VpsExportJson};
+pub use vps_import::{ImportDefaults, ImportEnvelope, ImportHostEntry};

@@ -16,6 +16,18 @@ pub struct RemoteCommand(String);
 
 impl RemoteCommand {
     /// Parses a remote command at the system boundary.
+    ///
+    /// # Errors
+    /// Returns a [`DomainError`] when the command is empty after trimming or contains a NUL byte.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ssh_cli::domain::RemoteCommand;
+    ///
+    /// assert!(RemoteCommand::try_new("uptime").is_ok());
+    /// assert!(RemoteCommand::try_new("   ").is_err());
+    /// ```
     pub fn try_new(raw: impl AsRef<str>) -> Result<Self, DomainError> {
         let s = raw.as_ref();
         if s.trim().is_empty() {
@@ -43,6 +55,9 @@ impl RemoteCommand {
     }
 
     /// Validates against a [`CharLimit`] (command length).
+    ///
+    /// # Errors
+    /// Returns `SshCliError::CommandTooLong` when the command exceeds the effective limit.
     pub fn check_length(&self, max: CharLimit) -> SshCliResult<()> {
         let lim = max.effective();
         let len = self.0.chars().count();
@@ -82,6 +97,9 @@ pub struct KeyPath(PathBuf);
 
 impl KeyPath {
     /// Parses a non-empty key path.
+    ///
+    /// # Errors
+    /// Returns a [`DomainError`] when the path is empty after trimming.
     pub fn try_new(raw: impl AsRef<Path>) -> Result<Self, DomainError> {
         let p = raw.as_ref();
         let s = p.to_string_lossy();
@@ -92,6 +110,9 @@ impl KeyPath {
     }
 
     /// From optional string (None / empty → None).
+    ///
+    /// # Errors
+    /// Returns a [`DomainError`] when a non-empty value is rejected by `try_new`.
     pub fn try_from_optional(raw: Option<impl AsRef<str>>) -> Result<Option<Self>, DomainError> {
         match raw {
             None => Ok(None),

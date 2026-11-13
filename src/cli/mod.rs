@@ -12,11 +12,17 @@
 //! ZERO `.env` at runtime. ZERO telemetry. One-shot cycle: start → dispatch → exit.
 
 mod commands;
+mod discovery;
+mod dry_run;
+mod help_text;
+mod locale_cmd;
 mod path_parse;
+mod process_flags;
 mod schema_cmd;
 mod scp_args;
 mod sftp_args;
 mod targeting;
+mod tunnel_mode;
 mod vps_action;
 
 pub use commands::{
@@ -27,6 +33,7 @@ pub(crate) use path_parse::{parse_hosts_list, parse_scp_target, ScpPathPlan, Tra
 pub use schema_cmd::run_schema;
 pub use scp_args::ScpAction;
 pub use sftp_args::SftpAction;
+pub use tunnel_mode::resolve_tunnel_mode;
 pub use vps_action::VpsAction;
 
 use anyhow::Result;
@@ -98,12 +105,7 @@ impl SshAuthArgs {
     about = "One-shot multi-host XDG Rust CLI for LLMs to operate servers over SSH.",
     long_about = "ssh-cli: lightweight one-shot binary (spawn→run→exit). Multi-host XDG storage without .env. \
 Password or key auth. No telemetry.",
-    after_help = "Examples:\n  \
-ssh-cli vps add --name prod --host h.example --user deploy --key ~/.ssh/id_ed25519\n  \
-printf '%s' \"$PASS\" | ssh-cli exec prod 'hostname' --json --password-stdin\n  \
-ssh-cli scp upload prod ./a.bin /tmp/a.bin --json\n  \
-ssh-cli tunnel prod 8080 127.0.0.1 80 --timeout-ms 60000 --json\n  \
-ssh-cli vps export -o /tmp/hosts.toml",
+    after_help = help_text::ROOT_AFTER_HELP,
     propagate_version = true,
     arg_required_else_help = true,
     subcommand_required = true,
@@ -227,11 +229,24 @@ pub struct CliArgs {
     #[arg(long, global = true, action = ArgAction::SetTrue)]
     pub dry_run: bool,
 
+    /// How long a writer may wait for the config lock before failing with exit 69.
+    ///
+    /// Default: 5000 ms (`CONFIG_LOCK_WAIT_MS`); max 300000. The wait uses
+    /// full-jitter backoff and aborts earlier on a signal, so Ctrl-C during
+    /// contention still exits 130 rather than being reported as unavailable.
+    #[arg(
+        long = "lock-wait-ms",
+        global = true,
+        value_name = "MS",
+        value_parser = clap::value_parser!(u64).range(1..=crate::constants::CONFIG_LOCK_WAIT_MAX_MS)
+    )]
+    pub lock_wait_ms: Option<u64>,
+
     /// Disables sudo-exec/su-exec for this invocation (alias --disableSudo).
     #[arg(long, global = true, alias = "disableSudo", action = ArgAction::SetTrue)]
     pub disable_sudo: bool,
 
-    /// Replaces a diverging host key in TOFU known_hosts.
+    /// Replaces a diverging host key in TOFU `known_hosts`.
     #[arg(long, global = true, action = ArgAction::SetTrue)]
     pub replace_host_key: bool,
 
@@ -257,7 +272,7 @@ pub struct CliArgs {
     #[arg(long, global = true, value_name = "MS")]
     pub timeout: Option<u64>,
 
-    /// Cap concurrent multi-host SSH sessions / tunnel forwards (1..=MAX_CONCURRENCY).
+    /// Cap concurrent multi-host SSH sessions / tunnel forwards (1..=`MAX_CONCURRENCY`).
     ///
     /// Default: auto from CPUs × I/O oversubscribe vs free RAM (see `concurrency`).
     /// Applies to `--all` fan-out and tunnel accepts (no env store; G-UNSAFE-14).
@@ -351,7 +366,7 @@ pub fn initialize_logs(args: &CliArgs) {
 /// [`crate::errors::SshCliError::Io`] so `main` exits **141**.
 ///
 /// # Errors
-/// Stdout write failures (including BrokenPipe).
+/// Stdout write failures (including `BrokenPipe`).
 pub fn generate_completions(shell: Shell) -> Result<()> {
     use clap::CommandFactory;
     use std::io::Write;
@@ -363,37 +378,12 @@ pub fn generate_completions(shell: Shell) -> Result<()> {
     Ok(())
 }
 
-/// Builds a JSON command tree from the clap `Command` graph (G-IO-10).
-#[must_use]
-pub fn command_tree_json() -> serde_json::Value {
-    use clap::CommandFactory;
-    fn walk(cmd: &clap::Command) -> serde_json::Value {
-        let name = cmd.get_name().to_string();
-        let about = cmd.get_about().map(|s| s.to_string());
-        let mut children = Vec::new();
-        for sub in cmd.get_subcommands() {
-            if sub.is_hide_set() {
-                continue;
-            }
-            children.push(walk(sub));
-        }
-        serde_json::json!({
-            "name": name,
-            "about": about,
-            "subcommands": children,
-        })
-    }
-    let root = CliArgs::command();
-    serde_json::json!({
-        "ok": true,
-        "event": "commands",
-        "bin": root.get_name(),
-        "version": env!("CARGO_PKG_VERSION"),
-        "tree": walk(&root),
-    })
-}
+pub use discovery::command_tree_json;
 
-/// Renders a man page for `ssh-cli` (G-12 / clap_mangen).
+/// Renders a man page for `ssh-cli` (G-12 / `clap_mangen`).
+///
+/// # Errors
+/// Returns an I/O error when the man page cannot be rendered into the buffer.
 pub fn render_manpage() -> Result<Vec<u8>, std::io::Error> {
     use clap::CommandFactory;
     use std::io::Write;
@@ -430,176 +420,11 @@ pub(crate) fn read_stdin_if(
     }
 }
 
-/// Process-wide `--no-input` switch.
-static NO_INPUT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub use process_flags::{is_no_input, lock_wait_ms, set_lock_wait_ms, set_no_input};
 
-/// Installs the `--no-input` policy for this one-shot process.
-pub fn set_no_input(value: bool) {
-    NO_INPUT.store(value, std::sync::atomic::Ordering::Relaxed);
-}
-
-/// Whether stdin reads must fail instead of blocking.
-#[must_use]
-pub fn is_no_input() -> bool {
-    NO_INPUT.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Resolves the tunnel mode from the mutually exclusive mode flags.
-///
-/// Pure: no registry, no socket, no clock. The positional arguments mean
-/// different things per mode — `remote_host` is a destination for a local
-/// forward and a *server bind address* under `--reverse` — so getting this wrong
-/// points the tunnel somewhere the caller never asked for. Keeping the decision
-/// in one testable function is what lets every combination be covered without a
-/// server.
-///
-/// # Errors
-/// [`crate::errors::SshCliError::InvalidArgument`] (exit 64) when a mode is given
-/// arguments it cannot use, or is missing arguments it requires.
-pub fn resolve_tunnel_mode(
-    socks5: bool,
-    remote_socket: Option<String>,
-    reverse: bool,
-    remote_host: Option<String>,
-    remote_port: Option<u16>,
-) -> Result<crate::tunnel::TunnelMode, crate::errors::SshCliError> {
-    use crate::errors::SshCliError::InvalidArgument;
-    use crate::tunnel::TunnelMode;
-
-    let positional_given = remote_host.is_some() || remote_port.is_some();
-
-    if socks5 {
-        if positional_given {
-            return Err(InvalidArgument(
-                "--socks5 chooses a destination per connection; remove REMOTE_HOST and REMOTE_PORT"
-                    .to_string(),
-            ));
-        }
-        return Ok(TunnelMode::Socks5);
-    }
-
-    if let Some(socket_path) = remote_socket {
-        if positional_given {
-            return Err(InvalidArgument(
-                "--remote-socket replaces the destination; remove REMOTE_HOST and REMOTE_PORT"
-                    .to_string(),
-            ));
-        }
-        return Ok(TunnelMode::StreamLocal { socket_path });
-    }
-
-    let (Some(host), Some(port)) = (remote_host, remote_port) else {
-        return Err(InvalidArgument(
-            "tunnel requires REMOTE_HOST and REMOTE_PORT unless --socks5 or --remote-socket \
-             is used"
-                .to_string(),
-        ));
-    };
-
-    if reverse {
-        // Port 0 is meaningful here and only here: the server allocates and reports
-        // back, exactly like a local ephemeral bind.
-        return Ok(TunnelMode::Reverse {
-            remote_bind: host,
-            remote_port: port,
-        });
-    }
-
-    if port == 0 {
-        return Err(InvalidArgument(
-            "REMOTE_PORT 0 is only valid with --reverse, where the server allocates the port"
-                .to_string(),
-        ));
-    }
-    Ok(TunnelMode::Local {
-        remote_host: host,
-        remote_port: port,
-    })
-}
-
-/// Process-wide `--dry-run` switch.
-static DRY_RUN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// Installs the `--dry-run` policy for this one-shot process.
-pub fn set_dry_run(value: bool) {
-    DRY_RUN.store(value, std::sync::atomic::Ordering::Relaxed);
-}
-
-/// Whether destructive operations must emit a plan instead of executing.
-#[must_use]
-pub fn is_dry_run() -> bool {
-    DRY_RUN.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Whether this command implements `--dry-run`.
-///
-/// C2 covers the operations that destroy state without a prior read: registry
-/// removal and import, remote unlink and rmdir, and the two `secrets` writes
-/// that can invalidate every stored credential at once. Transfers and `exec`
-/// are deliberately absent — their effect is the remote command itself, which
-/// this CLI cannot preview without running it.
-#[must_use]
-pub fn supports_dry_run(command: &Command) -> bool {
-    use crate::cli::{SecretsAction, SftpAction, VpsAction};
-    match command {
-        Command::Vps { action } => {
-            matches!(action, VpsAction::Remove { .. } | VpsAction::Import { .. })
-        }
-        Command::Sftp { action, .. } => {
-            matches!(action, SftpAction::Rm { .. } | SftpAction::Rmdir { .. })
-        }
-        Command::Secrets { action } => matches!(
-            action,
-            SecretsAction::Init { .. } | SecretsAction::Reencrypt { .. }
-        ),
-        _ => false,
-    }
-}
-
-/// Rejects `--dry-run` on a command that cannot honour it.
-///
-/// # Errors
-/// [`crate::errors::SshCliError::InvalidArgument`] (exit 64) when the flag was
-/// passed to an unsupported command.
-pub fn guard_dry_run_supported(command: &Command) -> Result<(), crate::errors::SshCliError> {
-    if !is_dry_run() || supports_dry_run(command) {
-        return Ok(());
-    }
-    Err(crate::errors::SshCliError::InvalidArgument(
-        "--dry-run is not implemented for this command; it is accepted only by \
-         `vps remove`, `vps import`, `sftp rm`, `sftp rmdir`, `secrets init` and \
-         `secrets reencrypt`"
-            .to_string(),
-    ))
-}
-
-/// Emits the plan for a destructive operation and reports whether to stop.
-///
-/// Returns `true` when the caller must return without mutating anything. The
-/// plan always reaches stdout as JSON, even in text mode: the point of a
-/// preview is that a machine can diff it against what it intended, and prose
-/// cannot be diffed.
-///
-/// # Errors
-/// stdout write failures (including `BrokenPipe`).
-pub fn dry_run_stop(
-    operation: &str,
-    fields: &[(&str, serde_json::Value)],
-) -> Result<bool, crate::errors::SshCliError> {
-    if !is_dry_run() {
-        return Ok(false);
-    }
-    let mut map = std::collections::BTreeMap::new();
-    map.insert("operation".to_string(), serde_json::json!(operation));
-    map.insert("dry_run".to_string(), serde_json::json!(true));
-    map.insert("executed".to_string(), serde_json::json!(false));
-    for (k, v) in fields {
-        map.insert((*k).to_string(), v.clone());
-    }
-    crate::json_wire::print_json_line(&crate::json_wire::SuccessEnvelope::new("dry-run", map))
-        .map_err(crate::errors::SshCliError::Io)?;
-    Ok(true)
-}
+pub use dry_run::{
+    dry_run_stop, guard_dry_run_supported, is_dry_run, set_dry_run, supports_dry_run,
+};
 
 /// Warns only when a secret value is present on argv (not stdin flags).
 ///
@@ -691,8 +516,8 @@ pub fn resolve_format(explicit: Option<OutputFormat>) -> OutputFormat {
 
 /// Resolves format from global `--json` + `--output-format` (G-AUD-01).
 ///
-/// `# Errors`
-/// `--json` together with `--output-format text`.
+/// # Errors
+/// Currently always returns `Ok`: `--json` wins over `--output-format`.
 pub fn resolve_format_from_cli(
     json: bool,
     explicit: Option<OutputFormat>,

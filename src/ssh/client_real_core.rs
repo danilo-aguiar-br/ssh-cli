@@ -142,6 +142,10 @@
         }
 
         /// Runs a remote shell command and captures stdout/stderr in parallel.
+        ///
+        /// # Errors
+        /// Returns an error when the channel cannot be opened, the command cannot be sent, the
+        /// transport fails while reading the output, or the configured timeout elapses.
         pub async fn run_command(
             &mut self,
             command: &str,

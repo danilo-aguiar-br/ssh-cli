@@ -6,7 +6,7 @@ use super::path_parse::parse_exec_target;
 use super::*;
 use clap::{CommandFactory, Parser};
 
-/// Clap invariant: catch developer-definition bugs (rules: CommandFactory::debug_assert).
+/// Clap invariant: catch developer-definition bugs (rules: `CommandFactory::debug_assert`).
 #[test]
 fn cli_command_debug_assert() {
     CliArgs::command().debug_assert();
@@ -486,3 +486,7 @@ fn parser_all_hosts_conflict() {
     let err = CliArgs::try_parse_from(["ssh-cli", "exec", "--all", "--hosts", "a", "uptime"]);
     assert!(err.is_err());
 }
+
+/// `vps rename` and `vps edit` argument-surface tests, split out at the
+/// component budget. Kept under this module so the `tests` tree stays one entry.
+mod edit_tests;

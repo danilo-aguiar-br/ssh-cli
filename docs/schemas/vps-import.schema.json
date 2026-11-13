@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-import.schema.json",
+  "title": "vps import JSON",
+  "description": "Success payload of `ssh-cli vps import --file <FILE> --json`. An import silently overwrites a host of the same name, so `replaced` names every host that existed before and was overwritten: the same fact the `--dry-run` plan reports per host as `replaces_existing`. The `--dry-run` plan itself is `dry-run.schema.json`, not this document.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ok",
+    "event",
+    "imported",
+    "replaced"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "event": {
+      "type": "string",
+      "const": "vps-import"
+    },
+    "imported": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many hosts were written, new and overwritten together"
+    },
+    "replaced": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Names of pre-existing hosts that were replaced, sorted, always present, empty when none."
+    }
+  }
+}

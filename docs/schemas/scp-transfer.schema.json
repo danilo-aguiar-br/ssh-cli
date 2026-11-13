@@ -20,7 +20,7 @@
   "properties": {
     "target_resolved": {
       "type": "string",
-      "description": "Canonical name of the host the transfer reached (Explicit Target Designation). Mirrors `vps`; bind new consumers here. `host_resolved` is the 0.5.5 read alias, written from the same value."
+      "description": "Canonical name of the host the transfer reached (Explicit Target Designation). Mirrors `vps`. Bind new consumers here."
     },
     "target_source": {
       "type": "string",

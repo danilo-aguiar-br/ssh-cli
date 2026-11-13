@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // G-SECDEV-05: pure module — no `unsafe` permitted (crate root allows only OS FFI / test env).
 #![forbid(unsafe_code)]
-//! Real SSH client over `russh` 0.62.5.
+//! Real SSH client over `russh` 0.65.1.
 //!
 //! One-shot connection: TCP + handshake + auth (password and/or key) + exec with
 //! timeout, output truncation, and best-effort remote abort.
@@ -148,6 +148,11 @@ impl<T> TunnelChannel for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 /// SSH client trait allowing a real (russh) or mock implementation for tests.
 ///
 /// Abstracts SSH connection operations so unit tests can run without a real network.
+// `async_trait` expands each method into a `fn` returning a pinned boxed
+// `Future` and marks it `#[must_use]`; clippy 1.99 reads that expansion as a
+// doubled attribute on a type that is already `must_use`. The attribute is not
+// ours to remove — it lives in the macro — so the lint is silenced at the trait.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait SshClientTrait: Send + Sync + 'static {
     /// Connects to an SSH server and authenticates with the provided credentials.

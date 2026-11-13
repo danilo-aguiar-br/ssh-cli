@@ -36,7 +36,7 @@
         "signal",
         "accept_error"
       ],
-      "description": "Why the tunnel stopped: `deadline` = --timeout-ms elapsed after a successful bind; `signal` = SIGINT/SIGTERM; `accept_error` = the accept loop hit a fatal error and stopped early"
+      "description": "Why the tunnel stopped: `deadline` = --timeout-ms elapsed after a successful bind; `signal` = SIGINT/SIGTERM, after which the process exits 130 or 143 following this event; `accept_error` = the accept loop hit a fatal error and stopped early"
     },
     "mode": {
       "type": "string",

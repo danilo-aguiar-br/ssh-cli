@@ -20,8 +20,27 @@ version = 2
 # para 0.62.5: manter transporte SSH vulnerável é postura indefensável em auditoria,
 # e este gate deu VERDE sobre ele com o advisory-db sincronizado no mesmo dia.
 # Lição: `cargo deny check advisories` verde não prova ausência de CVE conhecido.
+#
+# A1b (auditoria 2026-10-21): RUSTSEC-2026-0381/0382/0383 (CVE-2026-111943) atingem
+# `emSign ECC Root CA - G3`, cuja chave privada das intermediárias eMudhra é pública
+# (Mozilla Bug 2083449). O pin mínimo agora vive no `Cargo.toml`
+# (`webpki-roots = "1.0.10"`) e no lock (`rustls-webpki 0.103.16`,
+# `webpki-root-certs 1.0.10`). O pin mínimo no manifesto existe para que um
+# `cargo update` genérico não devolva a árvore para a versão comprometida sem barulho.
 yanked = "deny"
-ignore = []
+# B2 (auditoria de 2026-10-21): a `keyring` 4.2.0 traz o store nativo do Linux por
+# `zbus-secret-service-keyring-store` 1.0.1, que fixa `secret-service` 5 e `zbus` 5.
+# O RUSTSEC-2026-0370/0371/0372 declara `zvariant`, `zbus_names` e `zvariant_derive`
+# sem manutenção: as derives foram absorvidas pelo `zbus` 6. Não existe versão do store
+# que use `zbus` 6, e o `secret-service` 5.2.0 ainda pede `zbus = "5"`, então a troca não
+# é escolha deste projeto. O ignore é por ID, com motivo, e NÃO por classe: qualquer
+# crate sem manutenção que entrar depois continua reprovando o gate.
+# Revisitar quando `zbus-secret-service-keyring-store` passar a `zbus` 6.
+ignore = [
+    { id = "RUSTSEC-2026-0370", reason = "zvariant 5.15.1 vem do store do keyring 4, que fixa zbus 5; sem store publicado sobre zbus 6" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names 4.3.5 vem do store do keyring 4, que fixa zbus 5; sem store publicado sobre zbus 6" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5.15.1 vem do zvariant 5 do store do keyring 4; as derives só existem no zbus 6" },
+]
 
 [licenses]
 version = 2
@@ -76,11 +95,14 @@ deny = [
 # They are listed one by one instead of silenced wholesale so a NEW duplicate — the
 # kind we can actually fix — turns the gate red.
 
-# russh 0.62 still uses the pre-1.0 `generic-array` internally.
 skip = [
     # crypto-bigint / elliptic-curve resolve the newest RNG shim; aws-lc-rs the older.
     { crate = "getrandom@0.4.3", reason = "transitive: crypto-bigint via elliptic-curve" },
     { crate = "hashbrown@0.14.5", reason = "transitive: older indexmap consumers" },
+    # russh 0.65 dropped its `internal-russh-num-bigint` fork for num-bigint 0.5; the
+    # keyring Secret Service store still reaches num-bigint 0.4 through `num`, and
+    # secret-service 5.2.0 / zbus-secret-service-keyring-store 1.0.1 are the newest.
+    { crate = "num-bigint@0.4.8", reason = "transitive: secret-service 5.2 via keyring 4 store; russh 0.65 uses 0.5" },
     # ml-kem (post-quantum KEX in russh) pins the previous sha3 line.
     { crate = "sha3@0.11.0", reason = "transitive: ml-kem 0.3 via russh" },
     { crate = "syn@2.0.119", reason = "transitive: proc-macro deps not yet on syn 3" },

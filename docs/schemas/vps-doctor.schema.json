@@ -2,103 +2,258 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-doctor.schema.json",
   "title": "vps doctor JSON (single root envelope, G-PAR-42)",
-  "description": "Payload of `ssh-cli doctor --json` and `ssh-cli vps doctor --json`. `ssh_probe` is always present, null when no probe ran; its shape is a local sub-schema, not health-check-batch.",
+  "description": "Payload of `ssh-cli doctor --json` and `ssh-cli vps doctor --json`. `ssh_probe` is always present, null when no probe ran; its shape is a local sub-schema, not health-check-batch. Each run emits one of two shapes: the full envelope when no shaping flag was passed, or an envelope carrying `agent_shape` when `--select`, `--truncate-content` or a collection-only flag was passed. `--select` also drops the fields outside the selection, while the other flags keep every field, so the two variants are matched with `anyOf` rather than `oneOf`.",
   "type": "object",
   "additionalProperties": true,
-  "required": ["event", "ok", "local", "ssh_probe"],
-  "properties": {
-    "event": {
-      "type": "string",
-      "const": "vps-doctor"
-    },
-    "ok": {
-      "type": "boolean",
-      "description": "false when ssh_probe reported any host failure"
-    },
-    "local": {
-      "type": "object",
-      "description": "XDG/schema/secrets local diagnostics",
-      "additionalProperties": true,
+  "anyOf": [
+    {
+      "description": "Full envelope: no shaping flag was passed.",
       "required": [
-        "layer",
-        "config_path",
-        "exists",
-        "permissions",
-        "schema_version",
-        "hosts",
-        "known_hosts",
-        "active_file",
-        "active_vps",
-        "telemetry"
+        "event",
+        "ok",
+        "local",
+        "ssh_probe"
       ],
       "properties": {
-        "layer": { "type": "string" },
-        "config_path": { "type": "string" },
-        "exists": { "type": "boolean" },
-        "permissions": { "type": "string" },
-        "schema_version": { "type": "integer" },
-        "hosts": { "type": "integer" },
-        "known_hosts": { "type": "string" },
-        "active_file": { "type": "string" },
-        "active_vps": {
-          "type": ["string", "null"],
-          "description": "host recorded by `connect`; null when no marker is set"
-        },
-        "secrets_at_rest": {
+        "event": {
           "type": "string",
-          "description": "encrypted or plaintext"
+          "const": "vps-doctor"
         },
-        "secrets_key_source": {
-          "type": "string",
-          "description": "none | env | file | keyring | xdg_file"
+        "ok": {
+          "type": "boolean",
+          "description": "false when ssh_probe reported any host failure"
         },
-        "secrets_key_file": { "type": "string" },
-        "secrets_plaintext_opt_out": { "type": "boolean" },
-        "telemetry": { "type": "boolean", "const": false },
-        "runtime": {
+        "local": {
           "type": "object",
-          "additionalProperties": false,
-          "required": ["os", "arch", "is_wsl", "is_container", "is_ci", "is_termux", "sandbox"],
+          "description": "XDG/schema/secrets local diagnostics",
+          "additionalProperties": true,
+          "required": [
+            "layer",
+            "config_path",
+            "exists",
+            "permissions",
+            "config_dir_exposed",
+            "invalid_host_names",
+            "schema_version",
+            "hosts",
+            "known_hosts",
+            "active_file",
+            "active_vps",
+            "secrets_at_rest",
+            "secrets_key_source",
+            "secrets_key_file",
+            "secrets_plaintext_opt_out",
+            "telemetry",
+            "runtime"
+          ],
           "properties": {
-            "os": { "type": "string" },
-            "arch": { "type": "string" },
-            "is_wsl": { "type": "boolean" },
-            "is_container": { "type": "boolean" },
-            "is_ci": { "type": "boolean" },
-            "is_termux": { "type": "boolean" },
-            "sandbox": { "type": ["string", "null"] }
-          }
-        }
-      }
-    },
-    "ssh_probe": {
-      "description": "null when --probe-ssh omitted; else health-check-batch-like object (G-PAR-29/38)",
-      "oneOf": [
-        { "type": "null" },
-        {
-          "type": "object",
-          "required": ["event", "max_concurrency", "results"],
-          "properties": {
-            "event": { "type": "string", "const": "health-check-batch" },
-            "max_concurrency": { "type": "integer" },
-            "hosts": { "type": "integer" },
-            "failures": { "type": "integer" },
-            "results": {
+            "layer": {
+              "type": "string"
+            },
+            "config_path": {
+              "type": "string"
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "permissions": {
+              "type": "string",
+              "description": "octal mode of `config.toml` without a leading zero, such as `600`; `missing` when the file does not exist and `n/a` off Unix"
+            },
+            "config_dir_permissions": {
+              "type": "string",
+              "pattern": "^[0-7]{4}$",
+              "description": "octal mode of the config directory, such as `0700`; absent off Unix and when the directory does not exist; `permissions` still describes `config.toml` only"
+            },
+            "config_dir_exposed": {
+              "type": "boolean",
+              "description": "true when group or other can read or enter the config directory (for example `0755`); the CLI never runs chmod on an existing directory that is not the default XDG one, so this flag is how the exposure is reported; always present"
+            },
+            "invalid_host_names": {
               "type": "array",
               "items": {
-                "type": "object",
-                "required": ["name", "status"],
-                "properties": {
-                  "name": { "type": "string" },
-                  "status": { "type": "string" },
-                  "latency_ms": { "type": ["integer", "null"] },
-                  "error": { "type": ["string", "null"] }
+                "type": "string"
+              },
+              "description": "registry keys in `config.toml` that fail the strict host-name charset (ASCII letters, digits, dot, hyphen, underscore; alphanumeric first); control and bidi characters appear escaped, such as `\\u{1b}`; empty when every name is valid; always present"
+            },
+            "schema_version": {
+              "type": "integer"
+            },
+            "hosts": {
+              "type": "integer"
+            },
+            "known_hosts": {
+              "type": "string"
+            },
+            "active_file": {
+              "type": "string"
+            },
+            "active_vps": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "host recorded by `connect`; null when no marker is set"
+            },
+            "secrets_at_rest": {
+              "type": "string",
+              "description": "encrypted or plaintext"
+            },
+            "secrets_key_source": {
+              "type": "string",
+              "description": "none | file | keyring | xdg_file (`env` is reserved and never reported, because a key from the environment is rejected)"
+            },
+            "secrets_key_file": {
+              "type": "string"
+            },
+            "secrets_plaintext_opt_out": {
+              "type": "boolean"
+            },
+            "telemetry": {
+              "type": "boolean",
+              "const": false
+            },
+            "runtime": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "os",
+                "arch",
+                "is_wsl",
+                "is_container",
+                "is_ci",
+                "is_termux",
+                "sandbox"
+              ],
+              "properties": {
+                "os": {
+                  "type": "string"
+                },
+                "arch": {
+                  "type": "string"
+                },
+                "is_wsl": {
+                  "type": "boolean"
+                },
+                "is_container": {
+                  "type": "boolean"
+                },
+                "is_ci": {
+                  "type": "boolean"
+                },
+                "is_termux": {
+                  "type": "boolean"
+                },
+                "sandbox": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               }
             }
           }
+        },
+        "ssh_probe": {
+          "description": "null when --probe-ssh omitted; else health-check-batch-like object (G-PAR-29/38)",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "event",
+                "max_concurrency",
+                "results"
+              ],
+              "properties": {
+                "event": {
+                  "type": "string",
+                  "const": "health-check-batch"
+                },
+                "max_concurrency": {
+                  "type": "integer"
+                },
+                "hosts": {
+                  "type": "integer"
+                },
+                "failures": {
+                  "type": "integer"
+                },
+                "results": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "status"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "latency_ms": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "error": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
         }
-      ]
+      }
+    },
+    {
+      "description": "Reduced envelope: `--select`, `--truncate-content` or at least one collection-only flag was passed. `--select` projects the record down to the requested dotted paths; the other two keep it whole and only add `agent_shape`.",
+      "required": [
+        "agent_shape"
+      ],
+      "properties": {
+        "agent_shape": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Present only on a reduced run; also the discriminator of that shape. At least one of `selected`, `content_truncated` and `ignored` appears, because a report with nothing in it would not be published at all.",
+          "properties": {
+            "selected": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Dotted paths the caller asked for."
+            },
+            "content_truncated": {
+              "type": "boolean",
+              "description": "True when --truncate-content shortened a string."
+            },
+            "ignored": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Collection operations passed on a single record, which cannot apply."
+            }
+          }
+        },
+        "local": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Only the requested dotted paths survive the projection, so no field of it is required here."
+        }
+      }
     }
-  }
+  ]
 }

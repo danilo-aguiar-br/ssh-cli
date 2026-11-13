@@ -49,6 +49,10 @@ impl CorrelationId {
     }
 
     /// Parses a hyphenated UUID string (must be v4 when version is present).
+    ///
+    /// # Errors
+    /// Returns a [`DomainError`] when the input is not a UUID, is a sentinel value, or carries a
+    /// version other than 4.
     pub fn try_new(raw: impl AsRef<str>) -> Result<Self, DomainError> {
         let u = Uuid::parse_str(raw.as_ref().trim())
             .map_err(|e| DomainError::new("correlation_id", e.to_string()))?;
@@ -110,6 +114,10 @@ impl BatchRunId {
     }
 
     /// Parses a hyphenated UUID string (must be v7).
+    ///
+    /// # Errors
+    /// Returns a [`DomainError`] when the input is not a UUID, is a sentinel value, or carries a
+    /// version other than 7.
     pub fn try_new(raw: impl AsRef<str>) -> Result<Self, DomainError> {
         let u = Uuid::parse_str(raw.as_ref().trim())
             .map_err(|e| DomainError::new("batch_run_id", e.to_string()))?;

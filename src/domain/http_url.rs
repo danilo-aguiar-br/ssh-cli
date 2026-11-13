@@ -21,6 +21,19 @@ pub struct AcmeOrderUrl(HttpsUrl);
 
 impl HttpsUrl {
     /// Parses and validates an absolute HTTPS URL.
+    ///
+    /// # Errors
+    /// Returns a [`DomainError`] when the input is empty, is not a valid URL, or is not an
+    /// acceptable absolute HTTPS URL.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ssh_cli::domain::HttpsUrl;
+    ///
+    /// assert!(HttpsUrl::try_new("https://example.com/path").is_ok());
+    /// assert!(HttpsUrl::try_new("http://example.com").is_err());
+    /// ```
     pub fn try_new(raw: impl AsRef<str>) -> Result<Self, DomainError> {
         let s = raw.as_ref().trim();
         if s.is_empty() {
@@ -128,6 +141,9 @@ impl TryFrom<&str> for HttpsUrl {
 
 impl AcmeOrderUrl {
     /// Parses an ACME order URL (HTTPS).
+    ///
+    /// # Errors
+    /// Returns a [`DomainError`] when the input is not a valid HTTPS URL.
     pub fn try_new(raw: impl AsRef<str>) -> Result<Self, DomainError> {
         HttpsUrl::try_new(raw)
             .map(Self)

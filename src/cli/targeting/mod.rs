@@ -18,10 +18,9 @@
 //! slash matches at *every* depth, not just the root. `src/cli/target/` was
 //! therefore ignored by git, and `cargo package` — which lists files through git
 //! inside a git repository — dropped both of its files from the tarball. The crate
-//! built, all tests passed and all eleven gates were green; only
-//! `cargo publish --dry-run` failed, with `E0583: file not found for module
-//! `target``, because the published crate was the first artefact that did not
-//! contain the module.
+//! built, all tests passed and every gate was green; only
+//! `cargo publish --dry-run` failed, with `E0583: file not found for module target`,
+//! because the published crate was the first artefact that did not contain the module.
 //!
 //! The ignore rule has since been anchored to `/target/`, which is what it always
 //! meant. The rename stands anyway: a source directory whose name collides with
@@ -162,7 +161,7 @@ pub(crate) fn resolve_health_target(
 
     let invalid = |s: &str| -> anyhow::Error { SshCliError::InvalidArgument(s.to_string()).into() };
     let refine = |n: String| -> Result<VpsName> {
-        VpsName::try_new(n).map_err(|e| SshCliError::InvalidArgument(e.to_string()).into())
+        VpsName::from_stored(n).map_err(|e| SshCliError::InvalidArgument(e.to_string()).into())
     };
 
     if args.all {

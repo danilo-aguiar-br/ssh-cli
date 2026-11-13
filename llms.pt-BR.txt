@@ -1,89 +1,278 @@
 # ssh-cli
 
-> CLI SSH multi-host one-shot para agentes de IA com storage XDG e sem daemon Node
 
-> **0.5.5** — release de segurança de designação de alvo. Corrige GAP-SSH-EXEC-ARGC-001: `exec`/`sudo-exec`/`su-exec` decidiam o host alvo pela *contagem* de posicionais, então `exec <HOST> --step <CMD>` executava o nome do host como binário remoto no host que `connect` selecionara por último. BREAKING: um único posicional agora é erro de uso; alcance o marcador ativo com a nova `--use-active <COMANDO>`. O envelope single-host ganhou `target_resolved` e `target_source` — vincule consumidores novos a esses; `host_resolved`/`host_source` são os aliases de leitura da 0.5.5 — mais `active_fallback`, e o `doctor` passa a reportar `local.active_vps`.
->
-> **0.5.4** — release de segurança e agent-native. Corrige DoS remoto pré-auth no banner SSH (A1), impede que bits setuid enviados pelo servidor caiam no arquivo baixado (A3), fecha a janela de leitura pública em chaves privadas ACME/mTLS (A2) e adiciona flags de redução de payload (`--select`, `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content`, `--max-output-bytes`) aplicadas antes da serialização. BREAKING: falha parcial multi-host agora sai com exit **1** (era 65); `--bind` fora do loopback exige `--i-accept-network-exposure`. Novo evento `tunnel_closed`.
+> Interface de linha de comando (CLI) SSH multi-host one-shot para agentes de IA com storage X Desktop Group (XDG) e sem daemon Node
 
+ssh-cli é um binário Rust memory-safe que permite a agentes de modelo de linguagem grande (LLM) operarem servidores remotos por SSH via stdin e stdout. Cada chamada nasce, executa uma operação e morre: não mantém daemon, não envia telemetria, guarda um registro multi-host no XDG com segredos cifrados em repouso e expõe 48 comandos folha com 25 schemas JSON na versão 0.5.6.
 
-- Nota histórica: **0.4.1** fechou AUD-POST (export empty honesty, tunnel deadline, auth parity, scp-transfer event); **0.4.2** fechou TUN-003 / IO-010; **0.5.0** foi o rename EN/API + reencrypt de secrets force-init; **0.5.2** fechou G-E2E residual + wire v3 dual-read; **0.5.3** fechou G1–G19 (integridade SFTP, verbosidade graduada crate-scoped, cardinalidade de cancel em batch; ver [CHANGELOG 0.5.3](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.pt-BR.md#053---2026-07-30)); a linha de produto atual é **0.5.5**, que fechou GAP-SSH-EXEC-ARGC-001 (designação explícita de alvo, CWE-441) e GAP-SSH-EXEC-ENVELOPE-002 (`target_resolved` / `target_source` / `active_fallback` nos envelopes de sucesso e de erro; `host_resolved` e `host_source` são aliases de leitura da 0.5.5), sobre o trabalho da 0.5.4 (A1–A3, G-TUN-R01/R02/R03, G-ERR-R02).
+- Leia este documento em [Inglês (en)](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/llms.txt)
+- Índice expandido com toda flag e todo schema: [llms-full.txt](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/llms-full.txt)
 
-ssh-cli é um binário Rust memory-safe que permite LLMs operarem servidores remotos via stdin/stdout. Substitui processos long-lived Node SSH daemons persistentes por invocações nascer-executar-morrer, inventário multi-host XDG, auth por senha ou chave, packing seguro de sudo, su-exec, tunnels limitados, known_hosts TOFU, limites dual de comando/saída e **cifragem at-rest de segredos por padrão** (ChaCha20-Poly1305 + `secrets.key`). **Transporte é SSH-2** (`russh` + **aws-lc-rs**), não TLS/HTTPS — sem `rustls`/`native-tls`/OpenSSL de produto; compressão SSH só `none`. Telemetria é proibida. Prefira `cargo install ssh-cli --locked`. Linha de produto atual: **0.5.5** (47 comandos folha; `tunnel` serve quatro modos — local, `--reverse`, `--socks5`, `--remote-socket`; oito flags de redução de payload aplicadas antes da serialização; `--dry-run` e `--no-input` globais; falha parcial multi-host sai com exit **1**; prefira **0.5.3+** para SFTP; russh 0.62.5; wire schema v3; `-v`/`-vv`/`-vvv` crate-scoped; ver CHANGELOG 0.5.5).
-
-- Read this document in [English](llms.txt).
-- Índice expandido: [llms-full.txt](llms-full.txt)
 
 ## Documentação principal
-### Fontes canônicas em português para ingestão por LLM
-- [README](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/README.pt-BR.md): install, comandos, env, FAQ
-- [HOW_TO_USE](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/HOW_TO_USE.pt-BR.md): primeiro comando em 60 segundos
-- [COOKBOOK](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/COOKBOOK.pt-BR.md): receitas executáveis
-- [AGENTS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/AGENTS.pt-BR.md): economia do agente e contrato JSON
-- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.pt-BR.md): upgrade de 0.3.3 para **0.5.5**
-- [INTEGRATIONS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/INTEGRATIONS.pt-BR.md): catálogo de agentes e IDEs
-- [CHANGELOG](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.pt-BR.md): histórico de releases (**0.5.5** = designação explícita de alvo + proveniência de alvo em todo envelope; **0.5.4** = segurança A1–A3 + modos de tunnel + redução de payload; **0.5.3** = G1–G19)
+- [README](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/README.pt-BR.md): instalação, tabela de comandos, exit codes e FAQ de problemas
+- [HOW_TO_USE](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/HOW_TO_USE.pt-BR.md): primeiro comando em 60 segundos e o roteiro dos comandos principais
+- [COOKBOOK](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/COOKBOOK.pt-BR.md): receitas executáveis para hosts e operações remotas
+- [AGENTS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/AGENTS.pt-BR.md): economia do agente, inventário de comandos e contrato JSON
+- [MIGRATION](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/MIGRATION.pt-BR.md): caminho de upgrade da 0.3.3 para a 0.5.6
+- [INTEGRATIONS](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/INTEGRATIONS.pt-BR.md): catálogo de agentes e shell com aliases de flags e novas flags por versão
+- [CHANGELOG](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CHANGELOG.pt-BR.md): histórico de releases
+- [SECURITY](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/SECURITY.pt-BR.md): divulgação de vulnerabilidades e segredos em repouso
 - [CONTRIBUTING](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CONTRIBUTING.pt-BR.md): fluxo de contribuição
-- [SECURITY](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/SECURITY.pt-BR.md): divulgação de vulnerabilidades e segredos at-rest
 - [CODE_OF_CONDUCT](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/CODE_OF_CONDUCT.pt-BR.md): padrões da comunidade
-- [schemas index](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/schemas/README.md): contratos JSON
-- [skill pt](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/skills/ssh-cli-pt/SKILL.md): pacote de skill imperativo
+- [schemas index](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/schemas/README.md): contratos JSON legíveis por máquina, um schema por evento
+- [skill pt](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/skills/ssh-cli-pt/SKILL.md): pacote de skill imperativo para agentes em português
 
-## Comandos principais
-### Subcomandos por ciclo de vida (`ssh-cli commands`)
-- `vps add|list|show|edit|remove|path|doctor|export|import` gerencia inventário multi-host XDG
-- `schema [NAME]` emite catálogo/schema JSON embarcado (G-E2E-02); `doctor` é alias root de `vps doctor` (G-E2E-03); `commands` emite árvore de comandos
-- `connect` grava marcador de host ativo
-- `exec` roda comando remoto one-shot; **frota:** `exec --all '<CMD>' --json` (sessões concorrentes com bound); `exec --json` emite **um único** objeto NDJSON (G8)
-- `sudo-exec` eleva com packing seguro `sh -c`; **frota:** `sudo-exec --all …`
-- `su-exec` eleva com `su -` one-shot; **frota:** `su-exec --all …`
-- `scp upload|download` transfere **somente arquivos regulares** (sem `-r`; wire SCP do crates.io **0.3.9** estava quebrado — use **0.5.3+**); flags `--timeout`, `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`, `--json` → contrato `docs/schemas/scp-transfer.schema.json` com `event: "scp-transfer"` obrigatório; download usa `.ssh-cli.partial`, `sync_data` e rename (G9); preservação de mtime/mode best-effort, reportada em `mtime_preserved` / `durable`; upload em stream 32 KiB; remoto ausente → `file not found: <path>` exit **66**; **frota:** `scp upload|download --all …` → schema `scp-batch`
-- **SFTP (prefira 0.5.3+):** `sftp upload|download [--recursive]` + `ls|mkdir|rmdir|rm|stat|rename` (subsistema v3; sem seguir symlink em árvores; JSON `sftp-transfer` / `sftp-list` / `sftp-fs-op` / `sftp-batch`). G1–G19 fechados: upload não trunca mais a 0 bytes; SETSTAT atime+mtime; metadata fail-closed; `SFTP_PERM_MASK` 0o7777 no upload e, desde a 0.5.4 (A3), `SFTP_PERM_MASK_UNTRUSTED` 0o0777 no download, então setuid/setgid/sticky enviados pelo servidor nunca chegam ao arquivo local
-- `tunnel` abre encaminhamento limitado com `--timeout-ms` obrigatório; `--bind` opcional (default `127.0.0.1`); `--json` opcional emite `tunnel_listening` após bind; deadline pós-bind sai **0** (não 74); auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`; accepts limitados por `--max-concurrency`
-- Os modos de `tunnel` são mutuamente exclusivos: forward local padrão, `--socks5` (RFC 1928 `CONNECT` sem autenticação), `--remote-socket <PATH>` (socket Unix remoto) e `--reverse` (o servidor escuta e entrega de volta em `<local_port>`); `remote_host`/`remote_port` são omitidos nos dois primeiros e nomeiam o bind do **servidor** sob `--reverse`, onde `0` deixa o servidor alocar; os dois eventos de tunnel carregam `mode`
-- `health-check [--timeout]` sonda conectividade e latência; auth: `--password-stdin`, `--key`, `--key-passphrase` / `--key-passphrase-stdin`; **frota:** `health-check --all --json` → `health-check-batch`
-- o corpo de `vps export` segue o **formato de saída resolvido**: JSON em qualquer stdout non-TTY, inclusive num arquivo `.toml`; TOML exige `--output-format text`; redacted limpa segredos; secret vazio serializa como `""` e nunca blob `sshcli-enc:`; `--include-secrets` em pipe/non-TTY exige `-o`/`--output` ou `--i-understand-secrets-on-stdout`
-- `vps import` aceita TOML (chaves EN + aliases PT) **ou** envelopes JSON `vps-export`; skeletons redacted precisam de `--allow-incomplete`; TOML inválido → exit **65**
-- `secrets status|init|reencrypt` gerencia master-key e cifragem at-rest (nunca imprime a chave); `--json` → schemas `secrets-init` / `secrets-reencrypt`; a 1ª gravação de segredo embute `secrets_key_auto_created: true` no mesmo JSON `vps-added` (um documento); flags `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`
-- `completions` emite scripts de completion
-- `locale show|set|clear` gerencia preferência de locale da UI sob XDG (não é env de produto)
-- `tls provider|paths|mtls {list,import,show,remove}|acme {account {create,show}, issue, complete, status, list}` material opcional de SSH-over-TLS sob XDG `tls/`
 
-## Defaults e limites
-- Porta SSH default é 22
-- Timeout default é 60000 ms
-- max_command_chars default é 1000
-- max_output_chars default é 100000
-- Schema version de hosts novos é **3** (dual-read serialize EN + aliases PT legados)
-- Filtro de tracing default é **error**; `RUST_LOG` ambiente é **ignorado**; verbosidade graduada: `-v` info / `-vv` debug / `-vvv` trace (`ArgAction::Count`), sempre crate-scoped `warn,ssh_cli=*` (G2/G14 — nunca debug global bare; sem dump de senha do russh mesmo em `-vvv`)
-- Campos de senha vazios são JSON `null` em hosts só-chave (`vps list` / `show`); segredos não vazios mascaram como `"***"`
-- Export redacted: secrets vazios como `""` (nunca `sshcli-enc:`); import de skeleton cross-machine permanece honesto
-- `health-check` aceita `--timeout <ms>` e flags de auth agent-safe
-- Segredos at-rest: **cifrados por padrão** (auto `secrets.key`); prefira flags CLI `--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring` ao env; opt-out só em testes; sem store de produto em `.env` — só XDG + flags CLI; `SSH_CLI_SECRETS_*` fail-closed se presentes
-- **Modus operandi multi-host:** prefira `exec|sudo-exec|su-exec|scp|sftp|health-check --all` **ou** `--hosts a,b` (um processo, SSH concorrente com bound) a N spawns single-host; schemas batch `health-check-batch` / `exec-batch` / `scp-batch` / `sftp-batch` incluem `max_concurrency`; no cancel, o resto é preenchido como cancelled para `results.len() == input.len()` (G5/G17)
-- Global `--max-concurrency N` (1..=64) limita fan-out e forwards de tunnel (auto = CPUs×4 vs RAM livre/2 / 16 MiB)
-- `vps doctor --probe-ssh [--hosts a,b] --json` = um root `event: vps-doctor` (`local` + `ssh_probe`); `tunnel` é single-host por contrato
-- SCP multi-arquivo (single-host): `scp upload VPS f1 f2 … REMOTE_DIR` com bound por arquivo. Frota multi-arquivo usa os slots nomeados `--all --src f1 --src f2 --dest REMOTE_DIR`; seletor com três ou mais posicionais é exit 64 (Explicit Target Designation)
-- Telemetria é sempre false
-- Install: sempre prefira `--locked`; linha de produto **0.5.3+**
+## Início rápido
+- `cargo install ssh-cli --locked`: instala a ssh-cli 0.5.6, que exige Rust 1.89 ou mais novo
+- `printf '%s' "$PASS" | ssh-cli vps add --name prod --host h.example --user deploy --password-stdin --json`: registra um host uma vez, sem senha no argv
+- `ssh-cli exec prod 'hostname' --json`: roda um comando remoto e imprime um objeto JSON
+- `ssh-cli doctor --json`: preflight de caminhos, cifragem em repouso e modo do diretório de configuração
+- `ssh-cli commands --json`: árvore completa de comandos com todo argumento de cada comando
+- `ssh-cli schema`: catálogo dos 25 schemas JSON embarcados, e `ssh-cli schema <NAME>` imprime um
 
-## Regras de segurança para agentes
-- Prefira `--password-stdin` / `--key` a senhas em argv
-- Nunca logue senhas de host, master-key ou segredos decifrados
-- Nunca use `RUST_LOG` ambiente para debug de produto — use `-v`/`-vv`/`-vvv` (allowlist crate-scoped)
-- Em falha de auth tente `--key`, `--password-stdin`, `--key-passphrase-stdin` (auth rejeitada → exit **77**)
-- Revise erros TOFU de host-key antes de `--replace-host-key`
-- Faça parse só do stdout; stderr default fica silencioso no nível de tracing error
-- Prefira **0.5.3+** para integridade SFTP (G1 fechou o bug de truncamento)
+
+## Regras para agentes
+### Autenticação
+- Passe segredos com `--password-stdin`, `--key`, `--key-passphrase-stdin` ou `--use-agent`, nunca como valor de argv
+- `vps edit --key`, `--password` ou `--password-stdin`, e `--use-agent` trocam o método guardado em uma chamada e limpam os campos opostos
+- `updated` no evento `vps-edited` nomeia o método novo e só os campos limpos que tinham valor
+- Duas flags de autenticação primária na mesma chamada saem 2, e passphrase sem nenhuma chave sai 64 e deixa o registro intacto
+- Um caminho de `--key` diferente descarta a passphrase antiga, salvo se a chamada trouxer uma nova, e `--agent-socket` sozinho implica `--use-agent`
+- `--no-key` sai 64 quando a chave era a única autenticação, e `--no-agent-socket` sai 64 no Unix quando deixaria o agente sem endpoint
+- Depois de uma rejeição de autenticação (exit 77) tente outro método, e revise um erro TOFU de chave de host antes de usar `--replace-host-key`
+
+### Nomes de host
+- `vps add`, `vps rename`, `vps edit --name` e `vps import` aceitam só de 1 a 255 letras ASCII, dígitos, ponto, hífen e sublinhado, começando por letra ou dígito
+- Qualquer outro nome sai 64, e um nome como `bad name`, `x;y` ou com byte ESC nunca chega ao registro
+- `vps import` confere todos os itens antes, lista todos os nomes inválidos de uma vez, não grava nada e dá o mesmo erro sob `--dry-run`
+- Nomes já guardados com espaço ou acento continuam carregando, listando, mostrando e resolvendo
+- Um nome guardado com caracteres de controle ou bidi também carrega, o `doctor` o lista escapado em `local.invalid_host_names`, e `vps rename '<legacy name>' <new>` o repara
+- Buscas que viram alvo (`exec`, `health-check`, `--hosts` e `connect`) recusam caracteres de controle e bidi com exit 64, e o `connect` não grava marcador
+- `tls mtls import --name` recusa caracteres de controle, formatação e bidi com exit 64 e não cria diretório, enquanto `serviço-1` segue válido
+- `vps rename` sai 64 com `vps_duplicate` quando o destino existe, e sai 64 quando o nome novo é igual ao atual
+- O registro é chaveado pelo nome NFC do registro, e duas tabelas que normalizam para o mesmo nome saem 65 com `config has two hosts named ...`
+
+### Segurança do terminal
+- O modo texto escreve caracteres de controle, formatação e bidi como escapes tipo `\u{1b}` em mensagens, erros, `list`, `show`, `health-check`, `doctor` e saídas em lote
+- `sftp ls` e `sftp stat` também escapam `\n` e `\t` dentro de nomes remotos, então um nome hostil não forja linhas extras
+- A saída JSON mantém o valor guardado sem mudança porque é para máquina
+- O stdout e o stderr remotos do `exec` ficam crus por desenho, então nunca os imprima num terminal sem filtro seu
+
+### Doctor e diretório de configuração
+- `ssh-cli doctor --json` reporta `local.config_dir_permissions`, `local.config_dir_exposed`, `local.invalid_host_names` e `local.active_vps`
+- `--select` e `--truncate-content` reduzem um objeto único, enquanto `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only` e `--max-output-bytes` seguem inertes ali e são nomeadas em `agent_shape.ignored`
+- Leia um campo com `ssh-cli doctor --json --select local.config_dir_exposed`
+- Um nível de diretório de configuração criado pela CLI nasce com modo 0700, e `config.toml`, `known_hosts.lock` e `lang` nascem 0600
+- Um diretório existente só é apertado a 0700 quando é o diretório XDG padrão, não é symlink e pertence ao usuário atual
+- Qualquer outro diretório existente mantém o modo, então `config_dir_exposed: true` significa que o operador deve rodar `chmod 700` nele
+- `--config-dir <path>.toml` faz do pai o diretório de configuração do registro, de `secrets.key`, `known_hosts`, `active`, `lang` e dos arquivos TLS
+- `vps export -o new/deep/e.json` cria os diretórios que faltam com 0700 e nunca altera um existente
+
+### Prévia com dry-run
+- `--dry-run` é aceito só por `vps remove`, `vps import`, `vps edit`, `vps rename`, `sftp rm`, `sftp rmdir`, `secrets init` e `secrets reencrypt`
+- Em qualquer outro lugar o `--dry-run` sai 64 em vez de ser aceito e ignorado
+- O plano é um evento `dry-run` com `operation`, `executed: false`, `target_resolved`, `target_source` (`argv`), `host_resolved` e `host_source`, como em `docs/schemas/dry-run.schema.json`
+- `vps edit`, `vps rename` e `vps remove`, reais ou em dry-run, saem 66 diante de registro ou host ausente e não criam diretório nem arquivo de lock
+- As duas prévias de `vps edit` e `vps rename` rodam toda validação da execução real e param antes da gravação
+
+### Alvos
+- Sempre nomeie o alvo: `exec <VPS> <COMMAND>`, ou um seletor (`--all`, `--hosts` ou `--tags`) com um posicional
+- Um posicional isolado em `exec`, `sudo-exec` ou `su-exec` sai 64, porque senão o nome do host rodaria como binário remoto
+- `connect <NAME>` grava o marcador ativo, e só `--use-active` com `<COMMAND>` o alcança, com exit 66 quando não há marcador
+- Releia o alvo em `target_resolved` e `target_source` (`argv`, `active_marker` ou `selector`) e em `active_fallback`
+- `host_resolved` e `host_source` são os aliases de leitura da 0.5.5 dos dois campos canônicos
+
+### Saída e erros
+- O JSON de sucesso vai ao stdout, e com `--json` ou stdout non-TTY uma falha escreve o envelope no stderr
+- Uma falha antes de qualquer trabalho remoto deixa o stdout vazio, enquanto um comando remoto que rodou e falhou mantém o JSON do `exec` no stdout
+- Um comando remoto que falha sai com 1: o JSON do `exec` no stdout traz o `exit_code` remoto, e o envelope `command_failed` no stderr carrega `remote_exit_code`
+- Uma falha parcial da frota imprime o JSON do lote no stdout mais um envelope `partial_failure` no stderr, também com exit 1
+- Erros de uso saem em texto puro no stderr, sem envelope JSON: o exit 2 do parser de argumentos e o exit 64 de um `--filter` malformado
+- Só erros de execução trazem o envelope JSON, então faça parse do stderr de um exit diferente de zero como JSON apenas quando o exit não for 2 nem um 64 de uso
+- O envelope de falha tem `exit_code`, `error_code`, `message`, `error_class`, `retryable` e `suggestion`, como em `docs/schemas/error-envelope.schema.json`
+- Leia o exit code primeiro, depois o stream que combina com ele, e nunca faça parse de linhas de tracing no stderr
+- Retente só quando `retryable` for true, o que cobre IO, timeouts e o lock de config ocupado, e nunca retente erros de auth, de uso ou de dados
+- Os corpos de erro ficam em inglês por desenho, para o agente receber texto estável
+- O tracing padrão é `error`, o `RUST_LOG` do ambiente é ignorado, e `-v`, `-vv` e `-vvv` o elevam, sempre restrito a este crate
+
+### Redução de payload
+- `--select` (alias `--fields`), `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only`, `--truncate-content` e `--max-output-bytes` são globais e rodam antes da serialização
+- As flags de coleção reduzem o array de topo do `vps list`, o array `results` dos envelopes em lote e o array `entries` do `sftp ls`
+- Um objeto único, como `exec` em um host, `vps show` e `doctor`, é reduzido por `--select` e `--truncate-content`, então `ssh-cli doctor --json --select local.config_dir_exposed` devolve um campo
+- As flags de coleção `--filter`, `--limit`, `--sort`, `--dedupe-by`, `--count-only` e `--max-output-bytes` não se aplicam a um registro, então são nomeadas em `agent_shape.ignored`
+- `--select` nomeia os campos de cada registro, então num envelope em lote use `--select name,stdout` e não `--select results`
+- Um envelope reduzido ganha `agent_shape` com `input_count`, `output_count` e `dropped`, e um objeto único reduzido ganha `selected`, `content_truncated` e `ignored`
+- Um array puro reduzido, como o `vps list`, não tem lugar para `agent_shape`, então o relatório dele chega ao stderr como uma linha JSON com `"event":"agent-shape"` e `--quiet` a suprime
+- `--filter` aceita `key=value`, `key!=value` ou `key~substring`, repetível com AND, e um predicado malformado é rejeitado no parse
+- `--no-input` recusa ler o stdin, então combine-o com valor por flag em vez de `--password-stdin`
+
+### Import e export
+- `vps export` imprime JSON em qualquer stdout non-TTY, até num arquivo `.toml`, e TOML só com `--output-format text`
+- Um export redigido tem segredos vazios e nunca um blob `sshcli-enc:` de vazio, então importá-lo exige `--allow-incomplete`
+- `--include-secrets` para um pipe exige `-o <PATH>` ou `--i-understand-secrets-on-stdout`, e sai 64 em caso contrário
+- `vps import --file <PATH>` aceita TOML com chaves EN como `username` mais as chaves PT legadas, ou um envelope JSON `vps-export`, e TOML inválido sai 65
+- O evento `vps-import` traz `imported` e a lista `replaced`, ordenada e sempre presente
+- Nunca use export, edição e import para renomear um host, porque `vps rename` mantém toda credencial e o desvio descartava a autenticação por agente
+- Um host legado cujo nome falha no charset estrito exporta normalmente, mas só restaura depois que `vps rename` lhe dá um nome estrito
+
+### Frota
+- Prefira um processo com `--all`, `--hosts a,b` ou `--tags` a N spawns de host único
+- `--tags` existe em `exec`, `sudo-exec` e `su-exec`, enquanto `scp`, `sftp` e `health-check` aceitam `--all` e `--hosts`
+- Envelopes em lote (`exec-batch`, `scp-batch`, `sftp-batch`, `health-check-batch`) trazem `max_concurrency`, e no cancel o resto é preenchido como cancelado para `results.len() == input.len()`
+- `health-check --all` devolve `results[].status` (`ok` ou `error`) mais `error`, então liste as falhas com `--filter status!=ok`, enquanto os resultados do `exec-batch` trazem `ok`
+- Falha parcial multi-host sai com exit 1, e `--fail-fast` para de admitir unidades novas depois da primeira falha
+- `vps doctor --probe-ssh [--hosts a,b] --json` emite um documento `vps-doctor` com `local` e `ssh_probe`
+
+### Transferências e tunnels
+- `scp upload|download` move só arquivos regulares, sem `-r`, e `--json` emite `scp-transfer` como em `docs/schemas/scp-transfer.schema.json`
+- A preservação de mtime e modo é best effort, então leia `mtime_preserved` e `durable` para o resultado real
+- Um arquivo remoto ausente sai 66 com `file not found: <path>`, e o download grava `.ssh-cli.partial`, roda `sync_data` e só então renomeia
+- Prefira a 0.5.3 ou mais nova para SFTP, em que o upload nunca trunca a 0 bytes e o SETSTAT envia atime e mtime juntos
+- O upload SFTP mascara modos com `SFTP_PERM_MASK` (0o7777) e o download com `SFTP_PERM_MASK_UNTRUSTED` (0o0777), então bits setuid, setgid e sticky enviados pelo servidor nunca chegam a um arquivo local
+- `tunnel` sempre exige `--timeout-ms`, e um prazo vencido depois do bind sai 0 enquanto um timeout antes do bind sai 74
+- `tunnel` parado por SIGINT sai 130 e por SIGTERM sai 143, e o `tunnel_closed` traz `reason: signal`
+- `tunnel` tem quatro modos exclusivos: o forward local padrão, `--socks5`, `--remote-socket <PATH>` e `--reverse`
+- O `mode` do JSON é `local`, `reverse`, `socks5` ou `streamlocal`, e `tunnel_listening` e `tunnel_closed` o carregam
+- Um `--bind` fora do loopback exige `--i-accept-network-exposure`, e sob `--reverse` essa flag protege o bind do servidor
+- Espere `tunnel_listening` antes de usar a porta local, e leia `tunnel_closed` (`reason`, `forwards_served`, `capacity_waits`) para saber por que terminou
+
+### Segredos e configuração
+- Segredos no `config.toml` são cifrados por padrão com ChaCha20-Poly1305 e um `secrets.key` criado sozinho, e a primeira gravação de segredo reporta `secrets_key_auto_created: true` no mesmo documento `vps-added`
+- Configure o produto com flags de CLI (`--allow-plaintext-secrets`, `--secrets-key-file`, `--use-keyring`) e arquivos XDG, nunca com variáveis de ambiente
+- Variáveis `SSH_CLI_SECRETS_*` falham fechado quando presentes, e não existe store de produto em `.env`
+- Nunca imprima nem registre senhas de host, a chave mestra ou segredos decifrados, e o `-vvv` não despeja tráfego de senha do russh
+- `tls acme issue`, `tls acme complete` e `tls acme status` recebem o domínio como `--domain <DOMAIN>`, e um domínio posicional sai 2
+- Um `vps export` redigido grava `password` como string vazia e os demais segredos como `null`, enquanto a máscara de três asteriscos aparece só em `vps list` e `vps show`
+- O lock do config espera `--lock-wait-ms` (padrão 5000, máximo 300000) e depois sai 69 em vez de pendurar
+- A telemetria é sempre false, e o produto nunca roda daemon
+
+
+## Referência de comandos
+- `ssh-cli vps add`: Adiciona um VPS novo ao registro
+- `ssh-cli vps list`: Lista todos os hosts VPS (senhas mascaradas)
+- `ssh-cli vps remove`: Remove um VPS do registro
+- `ssh-cli vps rename`: Renomeia um VPS registrado sem tocar nas credenciais
+- `ssh-cli vps edit`: Edita campos de um VPS existente
+- `ssh-cli vps show`: Mostra os detalhes de um VPS (senhas mascaradas)
+- `ssh-cli vps path`: Mostra o caminho do arquivo de configuração
+- `ssh-cli vps doctor`: Diagnóstico das camadas XDG, do caminho e do schema
+- `ssh-cli vps export`: Exporta hosts (senhas redigidas por padrão)
+- `ssh-cli vps import`: Importa hosts de um arquivo TOML ou de um envelope JSON `vps-export` (chaves EN e PT legadas)
+- `ssh-cli connect`: Define o VPS ativo (grava o arquivo irmão `active` no diretório de configuração)
+- `ssh-cli exec`: Roda um comando no VPS por SSH (stdout e stderr capturados)
+- `ssh-cli sudo-exec`: Roda um comando com `sudo` (empacotamento seguro com `sh -c`)
+- `ssh-cli su-exec`: Roda um comando com elevação `su -` de uso único
+- `ssh-cli scp upload`: Envia um arquivo local ao host remoto (somente arquivos regulares)
+- `ssh-cli scp download`: Baixa um arquivo remoto para o host local (somente arquivos regulares)
+- `ssh-cli sftp upload`: Envia um arquivo ou árvore local ao host remoto por SFTP
+- `ssh-cli sftp download`: Baixa um arquivo ou árvore remota ao host local por SFTP
+- `ssh-cli sftp ls`: Lista um diretório remoto
+- `ssh-cli sftp mkdir`: Cria um diretório remoto
+- `ssh-cli sftp rmdir`: Remove um diretório remoto vazio
+- `ssh-cli sftp rm`: Remove um arquivo remoto
+- `ssh-cli sftp stat`: Mostra os metadados de um caminho remoto
+- `ssh-cli sftp rename`: Renomeia um caminho remoto
+- `ssh-cli tunnel`: Túnel SSH com prazo obrigatório (one-shot limitado)
+- `ssh-cli health-check`: Verifica a conectividade SSH com um VPS (`--all`, `--hosts` ou `--use-active`)
+- `ssh-cli secrets status`: Mostra o estado da cifragem (sem material sensível)
+- `ssh-cli secrets init`: Gera e guarda a chave primária (`secrets.key` ou keyring) e nunca a imprime
+- `ssh-cli secrets reencrypt`: Regrava o `config.toml` recifrando os segredos com a chave atual
+- `ssh-cli completions`: Gera scripts de completion para o shell
+- `ssh-cli commands`: Emite a árvore completa de comandos em JSON (descoberta por agente, regras `mycli commands`)
+- `ssh-cli schema`: Emite o catálogo de JSON Schema embarcado ou o corpo de um schema
+- `ssh-cli doctor`: Alias raiz de `vps doctor` (diagnóstico de XDG e schema)
+- `ssh-cli locale show`: Mostra o idioma resolvido, a camada vencedora e os idiomas disponíveis (padrão)
+- `ssh-cli locale set`: Grava o idioma preferido no diretório de configuração (arquivo `lang`, modo 0600)
+- `ssh-cli locale clear`: Remove a preferência de idioma gravada
+- `ssh-cli tls provider`: Mostra o estado do CryptoProvider do rustls (`aws_lc_rs`)
+- `ssh-cli tls paths`: Imprime os caminhos do layout XDG de TLS
+- `ssh-cli tls mtls list`: Lista os nomes das identidades importadas
+- `ssh-cli tls mtls import`: Importa certificado e chave PEM como identidade nomeada
+- `ssh-cli tls mtls show`: Mostra os caminhos de uma identidade
+- `ssh-cli tls mtls remove`: Remove o diretório de uma identidade
+- `ssh-cli tls acme account create`: Cria uma conta ACME (credenciais em `tls/acme/account.json` no XDG, modo 0600)
+- `ssh-cli tls acme account show`: Mostra se existe conta e o caminho dela
+- `ssh-cli tls acme issue`: Inicia o pedido DNS-01 e imprime o desafio TXT (grava a URL do pedido no XDG)
+- `ssh-cli tls acme complete`: Conclui um pedido pendente depois que o TXT de DNS é publicado
+- `ssh-cli tls acme status`: Mostra o estado do certificado ou do pedido de um domínio ou de todos
+- `ssh-cli tls acme list`: Lista os diretórios de domínios ACME no XDG
+
+
+## Flags globais
+- `--lang <LOCALE>`: Força o idioma da CLI (`en` ou `pt-BR`, e tags BCP47 negociam para eles)
+- `-v, --verbose`: Aumenta a verbosidade dos logs no stderr (`-v` info, `-vv` debug, `-vvv` trace), sempre restrita a este crate
+- `-q, --quiet`: Suprime a saída que não é JSON
+- `--config-dir <DIR>`: Substitui o diretório de configuração, e um caminho terminado em `.toml` faz do pai dele o diretório
+- `--no-color`: Desliga a saída colorida
+- `--output-format <text|json>`: Escolhe `text` ou `json`, e o padrão é JSON quando o stdout não é um TTY
+- `--json`: Força a saída JSON, alias de `--output-format json`
+- `--select <PATHS>`: Mantém só estes caminhos com pontos em cada registro (CSV, alias `--fields`)
+- `--filter <EXPR>`: Mantém registros que casam com `key=value`, `key!=value` ou `key~substring`, repetível com AND
+- `--limit <N>`: Emite no máximo N registros
+- `--sort <PATH>`: Ordena os registros de forma crescente pelo caminho com pontos, comparando números como números
+- `--dedupe-by <PATH>`: Descarta os registros seguintes que repetem o valor deste caminho com pontos
+- `--count-only`: Troca a coleção de registros por `{"count": N}`, contado depois do filtro
+- `--truncate-content <CHARS>`: Encurta strings maiores que N caracteres, nunca em bytes
+- `--max-output-bytes <BYTES>`: Limita o tamanho do envelope descartando registros do fim, nunca cortando o texto JSON
+- `--no-input`: Recusa ler o stdin e falha na hora em vez de bloquear
+- `--dry-run`: Imprime o plano e sai sem executar, aceita só por oito operações e rejeitada com exit 64 nas demais
+- `--lock-wait-ms <MS>`: Limita a espera pelo lock do config (padrão 5000, máximo 300000) antes do exit 69
+- `--disable-sudo`: Desliga `sudo-exec` e `su-exec` nesta invocação (alias `--disableSudo`), e antes de `vps add` ou `vps edit` também grava `disable_sudo` no host
+- `--replace-host-key`: Substitui uma chave de host divergente no `known_hosts` TOFU
+- `--allow-plaintext-secrets`: Permite segredos em texto puro em repouso, só para testes
+- `--secrets-key-file <PATH>`: Lê a chave primária de 64 hex deste arquivo em uma invocação
+- `--use-keyring`: Prefere o keyring do SO para a chave primária
+- `--timeout <MS>`: Define o timeout SSH global em milissegundos, e um `--timeout` local vence, enquanto o `tunnel` ainda exige `--timeout-ms`
+- `--max-concurrency <N>`: Limita as sessões multi-host e os forwards de tunnel concorrentes, de 1 a 64
+- `--fail-fast`: Para de admitir unidades multi-host novas depois da primeira falha
+- `--scp-file-concurrency <N>`: Define as transferências SCP concorrentes em uma sessão SSH (padrão 1)
+
 
 ## Exit codes
-- `0` sucesso
-- `1` erro genérico de runtime
-- `64` erro de uso
-- `65` erro de dados
-- `66` VPS ou arquivo não encontrado
-- `73` não foi possível criar config
-- `74` erro de IO ou conexão SSH
-- `77` autenticação rejeitada
-- `130` SIGINT
-- `143` SIGTERM
+- `0`: sucesso
+- `1`: falha de runtime, falha do comando remoto ou falha parcial multi-host
+- `2`: erro de uso do clap, como flags conflitantes ou valor inválido
+- `64`: erro de uso detectado pelo produto
+- `65`: erro de dados em TOML, JSON, config ou schema
+- `66`: VPS, marcador ativo ou arquivo não encontrado
+- `69`: serviço indisponível, como o lock do config ainda ocupado depois de `--lock-wait-ms` ou keyring travado
+- `70`: erro interno de software
+- `73`: não foi possível criar a saída de config
+- `74`: erro de IO, erro de conexão SSH ou timeout
+- `77`: autenticação rejeitada, chave de host alterada ou política de sudo recusada
+- `130`: SIGINT
+- `141`: pipe quebrado no stdout ou no stderr
+- `143`: SIGTERM
+- `ssh-cli --help` termina com uma seção `Exit status:` que lista estes 14 códigos
+- Todos os 48 comandos folha trazem um bloco `Examples:` no `--help`, e `tests/docs_conformance.rs` roda cada argv publicado com `--help` anexado para provar que ele parseia
+
+
+## Notas de release
+- A 0.5.6 reduz um objeto único com `--select` e `--truncate-content`, relata a redução de array nu em stderr como `{"event":"agent-shape",...}`, nomeia as flags de coleção ignoradas em `agent_shape.ignored` e mostra bloco `Examples:` nas 48 folhas
+- A 0.5.6 traz `vps rename <NAME> <NEW_NAME>` e `vps edit <NAME> --name <NEW>`, que renomeiam nativamente e mantêm toda credencial legível sob o nome novo
+- A 0.5.6 traz oito flags de limpeza no `vps edit`: `--clear-tags`, `--clear-sudo-password`, `--clear-su-password`, `--no-tls-sni`, `--no-tls-client-cert`, `--no-tls-client-key`, `--no-key` e `--no-agent-socket`
+- A 0.5.6 estende o `--dry-run` a `vps edit` e `vps rename`, limita o lock do config com `--lock-wait-ms` até o exit 69, e faz o `commands --json` publicar todo argumento
+- A 0.5.6 fecha os gaps achados pela auditoria ponta a ponta e pelas revisões independentes: nomes de host estritos, saída de terminal escapada, diretórios de configuração privados, troca de autenticação e pacote limpo
+- A 0.5.6 é BREAKING para scripts, porque `vps edit` agora troca o método de autenticação onde antes saía 64, e os scripts de release viraram programas Python
+- A 0.5.6 é BREAKING para quem usa a biblioteca: o módulo `Money` e a dependência `rust_decimal` saíram e `SshCliError::Unavailable` carrega `UnavailableService`
+- A 0.5.5 corrige o GAP-SSH-EXEC-ARGC-001, em que a família exec escolhia o host alvo pela contagem de posicionais, e é BREAKING porque um posicional isolado agora é erro de uso
+- A 0.5.5 traz `--use-active` com `<COMMAND>` mais `target_resolved`, `target_source` e `active_fallback` em todo envelope, e o `doctor` reporta `local.active_vps`
+- A 0.5.4 corrige um DoS remoto pré-auth no caminho do banner SSH (A1), impede bits setuid enviados pelo servidor em downloads (A3) e fecha a janela de leitura pública em chaves privadas ACME e mTLS (A2)
+- A 0.5.4 traz `tunnel --reverse`, `tunnel --socks5`, `tunnel --remote-socket`, o evento `tunnel_closed` e as oito flags de redução de payload
+- A 0.5.4 é BREAKING porque a falha parcial multi-host sai com exit 1 (era 65) e um `--bind` fora do loopback exige `--i-accept-network-exposure`
+
+
+## Optional
+- [CROSS_PLATFORM](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/CROSS_PLATFORM.pt-BR.md): targets, tamanhos de binário e notas de Windows
+- [TESTING](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/TESTING.pt-BR.md): catálogo das suítes de teste
+- [RELEASE_CHECKLIST](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/docs/RELEASE_CHECKLIST.pt-BR.md): gates e passos de release
+- [llms-full](https://github.com/danilo-aguiar-br/ssh-cli/blob/main/llms-full.txt): índice expandido com toda flag de todo comando
+- As releases anteriores estão listadas abaixo
+  - A 0.5.3 fechou G1 a G19: integridade SFTP, verbosidade graduada restrita ao crate e cardinalidade de cancel em lote
+  - A 0.5.2 fechou os itens residuais G-E2E e trouxe o wire schema v3 com leitura dupla
+  - A 0.5.0 renomeou a API para inglês e trouxe o reencrypt de secrets com force-init
+  - A 0.4.2 fechou TUN-003 e IO-010
+  - A 0.4.1 fechou AUD-POST: export honesto de segredo vazio, prazo do tunnel, paridade de auth e o evento `scp-transfer` com `--password-stdin`
+  - O crates.io 0.3.9 trouxe um wire SCP quebrado, então instale sempre a 0.5.3 ou mais nova

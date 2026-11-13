@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/error-envelope.schema.json",
   "title": "Error semantics for agents",
-  "description": "Emitted on stderr when JSON errors mode is active (--json, global --output-format json, or effective JSON on scp/tunnel). Not a success payload. Agents MUST use retryable/error_class before re-invoking (Rules Rust retry/backoff).",
+  "description": "Emitted on stderr when JSON errors mode is active (--json, global --output-format json, or effective JSON on scp/tunnel). Not a success payload. Only execution errors carry it: usage errors (the argument parser's exit 2 and a malformed `--filter`'s exit 64) print plain text on stderr and never match this schema. Agents MUST use retryable/error_class before re-invoking (Rules Rust retry/backoff).",
   "type": "object",
   "additionalProperties": true,
   "properties": {
@@ -29,7 +29,7 @@
     },
     "retryable": {
       "type": "boolean",
-      "description": "True only when the same argv may succeed after backoff (exit 74 transport/timeout). Never true for auth (77), usage (64), or remote command (1)"
+      "description": "True only when the same argv may succeed after backoff (exit 74 transport/timeout, or exit 69 for a transiently unavailable service such as a locked keyring). Never true for auth (77), usage (64), remote command (1) or a partial fan-out"
     },
     "suggestion": {
       "type": "string",
@@ -37,25 +37,25 @@
     },
     "target_resolved": {
       "type": "string",
-      "description": "Canonical name for the host this process had resolved when the failure occurred (Explicit Target Designation). Bind new consumers to this field; `host_resolved` is the 0.5.5 spelling, emitted from the same value as a read alias. Present on the single-host exec family and on every scp/sftp transfer, including sftp filesystem verbs. Absent — not empty — when the failure happened before a target was chosen."
+      "description": "Canonical name for the host this process had resolved when the failure occurred (Explicit Target Designation). Bind new consumers to this field. Present on the single-host exec family, on every scp/sftp transfer (including sftp filesystem verbs) and on a `vps edit` / `vps rename` failure raised after the registry lookup. Absent — not empty — when the failure happened before a target was chosen, and never published by `health-check`, `tunnel` or `vps remove`."
     },
     "target_source": {
       "type": "string",
       "enum": ["argv", "active_marker", "selector"],
-      "description": "Canonical name for how target_resolved was obtained. `argv` means the caller typed it in this invocation; `active_marker` means it was inherited from the file `connect` wrote, under the explicit --use-active opt-in; `selector` means it came from --all/--hosts/--tags. Transfers never reach the marker, so they report `argv` or `selector` only."
+      "description": "Canonical name for how target_resolved was obtained. `argv` means the caller typed it in this invocation; `active_marker` means it was inherited from the file `connect` wrote, under the explicit --use-active opt-in; `selector` means it came from --all/--hosts/--tags. Transfers never reach the marker, so they report `argv` or `selector` only. Absent — not empty — whenever target_resolved is absent."
     },
     "host_resolved": {
       "type": "string",
-      "description": "Compatibility alias of target_resolved (0.5.5 spelling), written from the same value and never an independent source of truth. Host this process had resolved when the failure occurred (GAP-SSH-EXEC-ENVELOPE-002). Absent — not empty — when the failure happened before a target was chosen, which is the case for most usage errors and for vps_not_found. An empty string would assert that a host was chosen and has no name; absence says no host was chosen at all. Present on the single-host exec family; the fleet path names every host in its batch entries instead."
+      "description": "Compatibility alias of target_resolved (0.5.5 spelling), written from the same value and never an independent source of truth. Host this process had resolved when the failure occurred (GAP-SSH-EXEC-ENVELOPE-002). Absent — not empty — when the failure happened before a target was chosen, which is the case for most usage errors and for vps_not_found. An empty string would assert that a host was chosen and has no name; absence says no host was chosen at all. Present wherever target_resolved is present; the fleet path names every host in its batch entries instead."
     },
     "host_source": {
       "type": "string",
       "enum": ["argv", "active_marker", "selector"],
-      "description": "Compatibility alias of target_source (0.5.5 spelling). How host_resolved was obtained. `argv` means the caller typed it in this invocation; `active_marker` means it was inherited from the file `connect` wrote, under the explicit --use-active opt-in; `selector` means it came from --all/--hosts/--tags. Comparing this between two runs is what turns a misdirected execution from an investigation into a string comparison."
+      "description": "Compatibility alias of target_source (0.5.5 spelling). How host_resolved was obtained. `argv` means the caller typed it in this invocation; `active_marker` means it was inherited from the file `connect` wrote, under the explicit --use-active opt-in; `selector` means it came from --all/--hosts/--tags. Comparing this between two runs is what turns a misdirected execution from an investigation into a string comparison. Absent — not empty — whenever host_resolved is absent."
     },
     "active_fallback": {
       "type": "boolean",
-      "description": "True when target_resolved came from the active marker rather than argv, under the explicit --use-active opt-in. Redundant with target_source on purpose: a shell pipeline can branch on a boolean without knowing how the enum is spelled. The 0.5.5 aliases host_resolved and host_source carry the same values."
+      "description": "True when target_resolved came from the active marker rather than argv, under the explicit --use-active opt-in. Redundant with target_source on purpose: a shell pipeline can branch on a boolean without knowing how the enum is spelled. Absent — not empty — whenever target_resolved is absent."
     }
   },
   "required": [

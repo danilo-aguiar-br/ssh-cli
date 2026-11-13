@@ -20,6 +20,10 @@ pub struct MtlsIdentity {
 }
 
 /// Imports PEM cert+key into XDG as identity `name` (overwrites).
+///
+/// # Errors
+/// Returns an error when the identity name is invalid, when either PEM file cannot be read
+/// or parsed, or when the identity directory cannot be created or written.
 pub fn mtls_import(
     config_override: Option<&Path>,
     name: &str,
@@ -54,6 +58,10 @@ pub fn mtls_import(
 }
 
 /// Lists imported mTLS identity names.
+///
+/// # Errors
+/// Returns an error when the TLS root cannot be resolved or its identity directory cannot
+/// be read.
 pub fn mtls_list(config_override: Option<&Path>) -> SshCliResult<Vec<String>> {
     let root =
         super::paths::resolve_tls_root(config_override)?.join(crate::constants::TLS_MTLS_DIR_NAME);
@@ -80,6 +88,10 @@ pub fn mtls_list(config_override: Option<&Path>) -> SshCliResult<Vec<String>> {
 }
 
 /// Shows paths for one identity.
+///
+/// # Errors
+/// Returns `SshCliError::FileNotFound` when the identity lacks a certificate or key file,
+/// and an error when either PEM file fails to parse.
 pub fn mtls_show(config_override: Option<&Path>, name: &str) -> SshCliResult<MtlsIdentity> {
     let dir = mtls_identity_dir(config_override, name)?;
     let cert_path = cert_pem_path(&dir);
@@ -101,6 +113,10 @@ pub fn mtls_show(config_override: Option<&Path>, name: &str) -> SshCliResult<Mtl
 }
 
 /// Removes an identity directory.
+///
+/// # Errors
+/// Returns `SshCliError::FileNotFound` when the identity does not exist, and an error when
+/// the directory cannot be removed.
 pub fn mtls_remove(config_override: Option<&Path>, name: &str) -> SshCliResult<()> {
     let dir = mtls_identity_dir(config_override, name)?;
     if !dir.exists() {
@@ -114,6 +130,10 @@ pub fn mtls_remove(config_override: Option<&Path>, name: &str) -> SshCliResult<(
 }
 
 /// Resolves mTLS paths: either explicit paths or an XDG identity name.
+///
+/// # Errors
+/// Returns the errors of [`mtls_show`] when `identity` names a missing or unreadable
+/// identity.
 pub fn resolve_mtls_paths(
     config_override: Option<&Path>,
     identity: Option<&str>,

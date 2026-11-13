@@ -25,7 +25,7 @@ pub struct TlsClientOptions {
 ///
 /// Uses the process default [`rustls::crypto::CryptoProvider`] (must be
 /// installed by the binary via [`super::install_default_provider`]). Falls back
-/// to installing aws_lc_rs once if missing (tests / embedders).
+/// to installing `aws_lc_rs` once if missing (tests / embedders).
 ///
 /// # Errors
 /// Provider missing after ensure, PEM load failure, or rustls config error.

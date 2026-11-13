@@ -40,11 +40,11 @@
 //!
 //! | Site | Binary | When | Failure mode |
 //! |------|--------|------|--------------|
-//! | `build.rs` | `git` (optional) | embed commit hash | `unknown` / env / `.commit_hash` |
+//! | `build.rs` | `git` (optional) | embed commit hash | env, then git, then `.commit_hash` (`<hash> <version>`, version-checked), else `unknown` |
 //! | integration tests | `ssh-keygen` (optional fixture) | OpenSSH key files | skip / assert |
-//! | integration tests | `ssh-cli` under test | assert_cmd e2e | test failure |
+//! | integration tests | `ssh-cli` under test | `assert_cmd` e2e | test failure |
 //!
-//! Toolchain MSRV **1.85.0** exceeds Rust **1.77.2** (CVE-2024-24576 / BatBadBut);
+//! Toolchain MSRV **1.89** exceeds Rust **1.77.2** (CVE-2024-24576 / `BatBadBut`);
 //! product still never invokes `.bat`/`.cmd` children.
 
 use anyhow::Result;

@@ -7,7 +7,7 @@
 //!
 //! - **Public key file** (`key_path`) is preferred when present.
 //! - **ssh-agent** when `use_agent` is true (socket from CLI/XDG — never env-as-store).
-//! - **Password** is an opt-in fallback: a non-empty `password` SecretString in the
+//! - **Password** is an opt-in fallback: a non-empty `password` `SecretString` in the
 //!   XDG inventory (or CLI override) enables password auth after key/agent failure.
 //!   An empty password does **not** enable password auth.
 
@@ -43,7 +43,7 @@ pub struct ConnectionConfig {
     pub key_passphrase: Option<SecretString>,
     /// Total timeout for connect + handshake + authentication + exec, in ms.
     pub timeout_ms: TimeoutMs,
-    /// Path to known_hosts file (TOFU). `None` = test-only always-trust / product fail-closed.
+    /// Path to `known_hosts` file (TOFU). `None` = test-only always-trust / product fail-closed.
     pub known_hosts_path: Option<PathBuf>,
     /// When true, allow replacing a divergent host key fingerprint.
     pub replace_host_key: bool,
@@ -82,6 +82,10 @@ impl ConnectionConfig {
     /// Validates authentication material only (host/port/user proven by types).
     ///
     /// Accepts password, key path, and/or agent (G-SSH-17).
+    ///
+    /// # Errors
+    /// Returns `SshCliError::InvalidArgument` when no password, key path or agent is configured,
+    /// or when agent use is requested on Unix without an agent socket path.
     pub fn validate(&self) -> SshCliResult<()> {
         let has_password = secret_nonempty(&self.password);
         let has_key = self.key_path.is_some();
@@ -103,6 +107,19 @@ impl ConnectionConfig {
             }
         }
         Ok(())
+    }
+
+    /// True when the platform itself supplies an agent endpoint.
+    ///
+    /// Windows exposes a fixed named pipe, so an empty `agent_socket` still has
+    /// somewhere to connect. Unix has no default: the socket arrives from
+    /// `--agent-socket` or from the stored record, and clearing it while the
+    /// host still authenticates through the agent would leave nothing to dial.
+    /// This predicate lives beside [`Self::resolved_agent_socket`] so the two
+    /// answers cannot drift apart.
+    #[must_use]
+    pub const fn platform_provides_default_agent_endpoint() -> bool {
+        cfg!(windows)
     }
 
     /// Resolved agent endpoint path (CLI/XDG or Windows platform default).

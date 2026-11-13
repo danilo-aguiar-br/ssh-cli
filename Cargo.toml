@@ -1,14 +1,13 @@
 [package]
 name = "ssh-cli"
-version = "0.5.5"
+version = "0.5.6"
 edition = "2021"
-rust-version = "1.85.0"
+rust-version = "1.89"
 default-run = "ssh-cli"
 description = "Native Rust CLI that gives LLMs (Claude Code, Cursor, Windsurf) the ability to operate remote servers via SSH over stdin/stdout"
 authors = ["Danilo Aguiar <daniloaguiarbr@proton.me>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/danilo-aguiar-br/ssh-cli"
-homepage = "https://github.com/danilo-aguiar-br/ssh-cli"
 documentation = "https://docs.rs/ssh-cli"
 readme = "README.md"
 keywords = ["ssh", "cli", "llm", "automation", "devops"]
@@ -25,7 +24,7 @@ exclude = [
     "/AGENTS.md",
     "/MEMORY.md",
     "docs_rules/",
-    "docs_prd/",
+    "docs-prd/",
     "/gaps.md",
     "**/graphrag.sqlite",
     "**/graphrag.sqlite-shm",
@@ -47,6 +46,11 @@ exclude = [
     "*.profdata",
     "coverage/",
     "*.7z",
+    "/json",
+    "*.sh",
+    "__pycache__/",
+    "*.pyc",
+    "*.snap.new",
     "*.log",
     "*.env",
     "*.png",
@@ -111,6 +115,8 @@ exclude = [
     ".archive/**",
     "uploads/**",
     "docs_bugs/**",
+    "docs-prd/**",
+    "docs_prd/**",
 ]
 
 [lib]
@@ -134,7 +140,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # G-SERDE-01: pipeline 4-crates (rules_rust_serde_validacao_robusta)
 validator = { version = "0.20", features = ["derive"] }
-serde_with = { version = "3", features = ["macros"] }
 serde_path_to_error = "0.1"
 serde_ignored = "0.1"
 toml = "1"
@@ -157,6 +162,7 @@ ctrlc = "3.4"
 termcolor = "1.4"
 unicode-normalization = "0.1"
 
+
 # musl allocator (enabled only with musl-allocator feature)
 mimalloc = { version = "0.1", optional = true }
 
@@ -175,7 +181,11 @@ base64 = "0.22"
 # Same story: `getrandom` 0.2 is the tail of the old stack. 0.3 is what the rest of
 # the tree resolves to, so staying on 0.2 kept a third RNG shim alive for no benefit.
 getrandom = "0.3"
-keyring = "3"
+# `v1` is exhaustive on purpose: it enables the Keychain store on macOS, the
+# Credential Manager store on Windows and the zbus Secret Service store on the
+# remaining unix targets, each behind its own `cfg`. Without a store feature the
+# crate has no producer at all and `set_password` reports `NoDefaultStore`.
+keyring = { version = "4.2.0", features = ["v1"] }
 
 # Logging and errors (Rules Rust — tracing; no OTEL / no file rotation for CLI)
 tracing = "0.1"
@@ -197,14 +207,8 @@ anyhow = "1.0"
 
 # Utilities — domain types (G-DOM / rules_rust_tipos_de_dominio)
 # Floor: chrono ≥ 0.4.20 (RUSTSEC-2020-0159). Coordinated serde on chrono+uuid+url.
-# rust_decimal: serde-with-str only (never serde-float) for Money library types.
 chrono = { version = "0.4.45", features = ["serde", "clock"] }
 uuid = { version = "1.24", features = ["v4", "v7", "serde"] }
-rust_decimal = { version = "1.42", default-features = false, features = [
-    "std",
-    "serde-with-str",
-    "macros",
-] }
 url = { version = "2.5", features = ["serde"] }
 
 # Async traits to enable test mocks.
@@ -214,10 +218,12 @@ async-trait = "0.1"
 # `default-features = false` avoids pulling `rsa` 0.9.x (RUSTSEC-2023-0071 Marvin Attack).
 # `aws-lc-rs` only crypto backend (G-TLS: no OpenSSL / no ring dual provider).
 # G-TLS-05: no `flate2` — product prefers SSH compression `none` only (G-TLS-04).
-# Keys in . MSRV 1.85 (russh >= 0.55).
-# Security floor: russh >= 0.60.3 (RUSTSEC-2026-0153/0154 / CVE-2026-46673).
-# Target: 0.62.x (latest patched; no COMPAT RC pins — stable resolve on install).
-russh = { version = "0.62", default-features = false, features = ["aws-lc-rs"], optional = true }
+# MSRV 1.89: russh 0.65 declares `rust-version = "1.89"`; keyring 4 needs 1.88.
+# Security floor: russh >= 0.65.0 closes RUSTSEC-2026-0492 (forged client channel
+# callbacks, fixed in 0.63.1), RUSTSEC-2026-0495 (agent confirm), GHSA-fw5c-8223-6h42
+# (zero max packet stalls channel writes) and GHSA-3hm4-p7h4-rvwp (nested certificate
+# stack exhaustion before auth).
+russh = { version = "0.65", default-features = false, features = ["aws-lc-rs"], optional = true }
 # G-SFTP-01: SFTP v3 client subsystem (trustScore 6.9 — use only docs.rs-confirmed APIs).
 russh-sftp = { version = "2.3", optional = true }
 
@@ -236,7 +242,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = [
     "logging",
     "aws_lc_rs",
 ], optional = true }
-webpki-roots = { version = "1", optional = true }
+webpki-roots = { version = "1.0.10", optional = true }
 # PEM parse via rustls-pki-types (rustls-pemfile is unmaintained — RUSTSEC-2025-0134).
 rustls-pki-types = { version = "1.12", optional = true, features = ["std", "alloc"] }
 # ACME (Let's Encrypt) — aws-lc-rs only (no ring).
@@ -247,6 +253,8 @@ instant-acme = { version = "0.8", default-features = false, features = [
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
+# Safe wrappers over getuid/geteuid for the owner checks (the crate forbids unsafe code).
+rustix = { version = "1", default-features = false, features = ["process", "std"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation"] }
@@ -285,6 +293,9 @@ async-trait = "0.1"
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.5"
 insta = { version = "1.39", features = ["json", "redactions"] }
+# The schema conformance validator enforces `pattern`, and five published schemas
+# carry one. It is test-only: the product never links it.
+regex = "1.13"
 
 [[bench]]
 name = "ssh_operations"

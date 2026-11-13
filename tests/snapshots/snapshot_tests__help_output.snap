@@ -109,11 +109,18 @@ Global options:
           does nothing on half the surface is worse than no flag at all — that is exactly how
           `--no-input` shipped broken on `vps add`.
 
+      --lock-wait-ms <MS>
+          How long a writer may wait for the config lock before failing with exit 69.
+          
+          Default: 5000 ms (`CONFIG_LOCK_WAIT_MS`); max 300000. The wait uses full-jitter backoff
+          and aborts earlier on a signal, so Ctrl-C during contention still exits 130 rather than
+          being reported as unavailable.
+
       --disable-sudo
           Disables sudo-exec/su-exec for this invocation (alias --disableSudo)
 
       --replace-host-key
-          Replaces a diverging host key in TOFU known_hosts
+          Replaces a diverging host key in TOFU `known_hosts`
 
       --allow-plaintext-secrets
           Allow plaintext secrets at rest (no auto `secrets.key`). Prefer for tests only
@@ -129,7 +136,7 @@ Global options:
           `--timeout` on a subcommand wins. Tunnel still requires `--timeout-ms`
 
       --max-concurrency <N>
-          Cap concurrent multi-host SSH sessions / tunnel forwards (1..=MAX_CONCURRENCY).
+          Cap concurrent multi-host SSH sessions / tunnel forwards (1..=`MAX_CONCURRENCY`).
           
           Default: auto from CPUs × I/O oversubscribe vs free RAM (see `concurrency`). Applies to
           `--all` fan-out and tunnel accepts (no env store; G-UNSAFE-14).
@@ -153,3 +160,19 @@ Examples:
   ssh-cli scp upload prod ./a.bin /tmp/a.bin --json
   ssh-cli tunnel prod 8080 127.0.0.1 80 --timeout-ms 60000 --json
   ssh-cli vps export -o /tmp/hosts.toml
+
+Exit status:
+  0    success
+  1    runtime failure, remote command failure or partial multi-host failure
+  2    usage error from the argument parser
+  64   invalid arguments, including invalid host names
+  65   data error in JSON, TOML, schema or config
+  66   VPS or input file not found
+  69   required service unavailable (locked OS keyring, expired config lock wait)
+  70   internal software failure
+  73   cannot create the config or output file
+  74   I/O error, SSH connection failure or timeout
+  77   authentication rejected, host key changed or sudo policy
+  130  interrupted by SIGINT
+  141  broken pipe on stdout or stderr
+  143  terminated by SIGTERM

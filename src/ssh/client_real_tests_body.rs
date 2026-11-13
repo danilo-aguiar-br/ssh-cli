@@ -162,7 +162,7 @@
             assert!(interpret_scp_status(&[]).is_err());
         }
 
-        /// GAP-SSH-IO-010: remote missing → FileNotFound (exit 66).
+        /// GAP-SSH-IO-010: remote missing → `FileNotFound` (exit 66).
         #[test]
         fn interpret_scp_status_no_such_file() {
             let mut payload = vec![1u8];

@@ -4,6 +4,7 @@
 //! Keeps fan-out JSON/text formatting separate from single-record CRUD emitters.
 #![forbid(unsafe_code)]
 
+use super::sanitize::escape_untrusted;
 use super::{is_quiet, report_json_serialize_error};
 use crate::domain::BatchRunId;
 use crate::json_wire::{
@@ -22,6 +23,16 @@ use crate::sftp::batch::HostSftpResult;
 use crate::ssh::sftp_types::{SftpListEntry, SftpStat};
 use crate::vps::{HostExecResult, HostHealthResult};
 use std::io::{self, Write};
+
+/// One failed-host line; name and message are escaped (both can be remote-controlled).
+fn write_host_error(out: &mut impl Write, name: &str, err: &str) -> io::Result<()> {
+    writeln!(
+        out,
+        "  ERR {}  {}",
+        escape_untrusted(name),
+        escape_untrusted(err)
+    )
+}
 
 /// Prints multi-host health-check results (text or single-root JSON batch).
 ///
@@ -69,11 +80,11 @@ pub fn print_health_batch(
     )?;
     for h in results {
         match (h.ok, h.latency_ms) {
-            (true, Some(ms)) => writeln!(out, "  ok  {}  {ms}ms", h.name)?,
-            (true, None) => writeln!(out, "  ok  {}", h.name)?,
+            (true, Some(ms)) => writeln!(out, "  ok  {}  {ms}ms", escape_untrusted(&h.name))?,
+            (true, None) => writeln!(out, "  ok  {}", escape_untrusted(&h.name))?,
             (false, _) => {
                 let err = h.error.as_deref().unwrap_or("error");
-                writeln!(out, "  ERR {}  {err}", h.name)?;
+                write_host_error(&mut out, &h.name, err)?;
             }
         }
     }
@@ -131,7 +142,9 @@ pub fn print_exec_batch(
         writeln!(
             out,
             "  {status}  {}  exit={:?}  {}ms",
-            h.name, h.exit_code, h.duration_ms
+            escape_untrusted(&h.name),
+            h.exit_code,
+            h.duration_ms
         )?;
         if !h.stdout.is_empty() {
             for line in h.stdout.lines() {
@@ -207,11 +220,13 @@ pub fn print_scp_batch(
             writeln!(
                 out,
                 "  ok  {}  bytes={:?}  {:?}ms",
-                h.name, h.bytes, h.duration_ms
+                escape_untrusted(&h.name),
+                h.bytes,
+                h.duration_ms
             )?;
         } else {
             let err = h.error.as_deref().unwrap_or("error");
-            writeln!(out, "  ERR {}  {err}", h.name)?;
+            write_host_error(&mut out, &h.name, err)?;
         }
     }
     out.flush()
@@ -220,7 +235,7 @@ pub fn print_scp_batch(
 /// Prints an SCP transfer result as JSON (GAP-SSH-IO-007 / SCP-021 / IO-009).
 ///
 /// # Errors
-/// Serialization or stdout I/O (including BrokenPipe).
+/// Serialization or stdout I/O (including `BrokenPipe`).
 ///
 /// Takes the resolved [`json_wire::ExecTarget`] rather than a bare name so the
 /// provenance travels with the host instead of as an eighth parameter: this function
@@ -440,11 +455,13 @@ pub fn print_sftp_batch(
             writeln!(
                 out,
                 "  ok  {}  bytes={:?}  ms={:?}",
-                h.name, h.bytes, h.duration_ms
+                escape_untrusted(&h.name),
+                h.bytes,
+                h.duration_ms
             )?;
         } else {
             let err = h.error.as_deref().unwrap_or("error");
-            writeln!(out, "  ERR {}  {err}", h.name)?;
+            write_host_error(&mut out, &h.name, err)?;
         }
     }
     out.flush()
@@ -483,7 +500,7 @@ pub fn build_tunnel_listening(
 /// JSON event when the local tunnel listener comes up (GAP-SSH-IO-008).
 ///
 /// # Errors
-/// Serialization or stdout I/O (including BrokenPipe).
+/// Serialization or stdout I/O (including `BrokenPipe`).
 pub fn print_tunnel_listening_json(
     vps: &str,
     local_port: u16,
@@ -569,7 +586,7 @@ pub struct TunnelClosedInput<'a> {
 /// three endings apart instead of inferring them from a shared exit 0.
 ///
 /// # Errors
-/// Serialization or stdout I/O (including BrokenPipe).
+/// Serialization or stdout I/O (including `BrokenPipe`).
 pub fn print_tunnel_closed_json(event: &TunnelClosedJson) -> io::Result<()> {
     match json_wire::print_json_line(event) {
         Ok(()) => Ok(()),

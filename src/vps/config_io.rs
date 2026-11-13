@@ -3,7 +3,8 @@
 #![forbid(unsafe_code)]
 //! Atomic TOML config I/O under XDG (load/save/flock/0o600).
 
-use super::model::{self, VpsRecord};
+pub(crate) use super::config_load::load;
+use super::model::VpsRecord;
 use crate::errors::{SshCliError, SshCliResult};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -26,13 +27,18 @@ pub struct ConfigFile {
 ///
 /// Takes `Option<&Path>` (not `Option<PathBuf>`) so callers can share one
 /// override without cloning — ownership of the path stays with the caller.
+///
+/// # Errors
+/// Returns the errors of [`default_config_path`] when no override is given.
 pub fn resolve_config_path(override_path: Option<&Path>) -> SshCliResult<PathBuf> {
     match override_path {
         Some(p) => {
             if p.is_dir() {
                 return Ok(p.join(crate::constants::CONFIG_FILE_NAME));
             }
-            if p.extension().and_then(|e| e.to_str()) == Some("toml") {
+            if p.extension().and_then(|e| e.to_str())
+                == Some(crate::constants::CONFIG_FILE_EXTENSION)
+            {
                 return Ok(p.to_path_buf());
             }
             Ok(p.join(crate::constants::CONFIG_FILE_NAME))
@@ -44,6 +50,9 @@ pub fn resolve_config_path(override_path: Option<&Path>) -> SshCliResult<PathBuf
 /// Returns the config file path under XDG (`--config-dir` wins at call sites).
 ///
 /// G-AUD-12: no `SSH_CLI_HOME` env store — use `--config-dir` for overrides.
+///
+/// # Errors
+/// Returns an error when no XDG configuration directory can be determined.
 pub fn default_config_path() -> SshCliResult<PathBuf> {
     Ok(crate::paths::xdg_config_dir()?.join(crate::constants::CONFIG_FILE_NAME))
 }
@@ -58,6 +67,9 @@ pub struct ConfigLayer {
 }
 
 /// Resolves and describes the winning config layer.
+///
+/// # Errors
+/// Returns the errors of [`resolve_config_path`] or [`default_config_path`].
 pub fn winning_layer(override_path: Option<&Path>) -> SshCliResult<ConfigLayer> {
     if override_path.is_some() {
         return Ok(ConfigLayer {
@@ -71,38 +83,16 @@ pub fn winning_layer(override_path: Option<&Path>) -> SshCliResult<ConfigLayer> 
     })
 }
 
-/// Loads the configuration file (returns empty if missing).
-pub fn load(path: &Path) -> SshCliResult<ConfigFile> {
-    if !path.exists() {
-        return Ok(ConfigFile {
-            schema_version: model::CURRENT_SCHEMA_VERSION,
-            hosts: BTreeMap::new(),
-        });
-    }
-    let content = crate::paths::read_text_capped(path, crate::paths::MAX_CONFIG_TOML_BYTES)?;
-    // G-SERDE-02/08: parse → path-aware serde → structure validate (no auth required).
-    let mut file: ConfigFile = crate::validation::from_toml_str(&content)?;
-    // Sequential: in-memory schema normalize per record (CPU µs; no SSH).
-    for (name, reg) in file.hosts.iter_mut() {
-        reg.normalize_schema();
-        reg.validate_structure().map_err(|e| {
-            crate::errors::SshCliError::InvalidArgument(format!(
-                "invalid host {name} in config: {e}"
-            ))
-        })?;
-    }
-    if file.schema_version < model::CURRENT_SCHEMA_VERSION {
-        file.schema_version = model::CURRENT_SCHEMA_VERSION;
-    }
-    Ok(file)
-}
-
 /// Writes bytes to `path` atomically (tempfile + fsync + rename + 0o600).
 ///
-/// Used by `save` and `export -o` (atomwrite rule).
+/// `export -o` may target any user folder: only the levels created here are made `0o700`.
+///
+/// # Errors
+/// Returns an I/O error when the parent directories, the temporary file, the rename or the
+/// permission change fail.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> SshCliResult<()> {
     if let Some(parent_dir) = path.parent() {
-        std::fs::create_dir_all(parent_dir)?;
+        crate::fs_perm::create_missing_private_dirs(parent_dir)?;
     }
     let parent_dir = path
         .parent()
@@ -113,22 +103,33 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> SshCliResult<()> {
     tmp.as_file().sync_data()?;
     tmp.persist(path).map_err(|e| SshCliError::Io(e.error))?;
     apply_permissions_600(path)?;
+    sync_parent_dir(&parent_dir);
+    Ok(())
+}
+
+/// Flushes the directory entry of a file that was just renamed into `parent_dir`.
+///
+/// G-SCP-R02 (same class): the rename is atomic, but the directory entry is not
+/// durable until the parent is flushed. Kept best-effort — several filesystems
+/// reject `sync_all` on a directory handle — yet no longer silent, so a lost
+/// write after a power cut leaves a trace instead of a mystery. Shared by the
+/// registry and the `active` marker; on non-Unix targets it does nothing.
+pub(crate) fn sync_parent_dir(parent_dir: &Path) {
     #[cfg(unix)]
     {
-        // G-SCP-R02 (same class): the registry rename is atomic, but the directory
-        // entry is not durable until the parent is flushed. Kept best-effort — several
-        // filesystems reject `sync_all` on a directory handle — yet no longer silent,
-        // so a lost `vps add` after a power cut leaves a trace instead of a mystery.
-        match std::fs::File::open(&parent_dir).and_then(|dir| dir.sync_all()) {
+        match std::fs::File::open(parent_dir).and_then(|dir| dir.sync_all()) {
             Ok(()) => {}
             Err(e) => tracing::warn!(
                 err = %e,
                 dir = %parent_dir.display(),
-                "config parent dir fsync failed; registry write may not survive a crash"
+                "parent dir fsync failed; write may not survive a crash"
             ),
         }
     }
-    Ok(())
+    #[cfg(not(unix))]
+    {
+        let _ = parent_dir;
+    }
 }
 
 /// Exclusive hold on the config file for a whole read-modify-write cycle.
@@ -166,33 +167,162 @@ impl Drop for ConfigGuard {
 
 /// Takes the exclusive config lock for a read-modify-write cycle.
 ///
+/// Waits up to [`lock_wait_ms`] using full-jitter backoff instead of blocking
+/// forever: a peer holding the lock must not turn a one-shot into a hang.
+///
 /// # Errors
-/// Returns an error if the sibling lock file cannot be created, hardened or locked.
+/// Returns an error if the sibling lock file cannot be created, hardened or
+/// locked; [`SshCliError::Unavailable`] (exit 69, retryable) when the deadline
+/// expires. A received signal wins over the deadline and exits 130/143.
 pub fn lock_config(path: &Path) -> SshCliResult<ConfigGuard> {
     if let Some(parent_dir) = path.parent() {
-        std::fs::create_dir_all(parent_dir)?;
+        crate::fs_perm::ensure_config_dir(parent_dir)?;
     }
     // Sibling lock file to serialize concurrent mutations (N one-shots).
     let lock_path = path.with_extension("toml.lock");
-    let lock_file = std::fs::OpenOptions::new()
+    let mut lock_options = std::fs::OpenOptions::new();
+    lock_options
         .create(true)
         .truncate(false)
         .read(true)
-        .write(true)
-        .open(&lock_path)?;
+        .write(true);
+    // X3: on Unix the lock is born 0o600, so no umask-0644 window exists between
+    // creation and the chmod below (which stays as the second line of defense).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        lock_options.mode(crate::constants::SECRET_FILE_MODE_UNIX);
+    }
+    let lock_file = lock_options.open(&lock_path)?;
     // GAP-SSH-PERM-001: lock with 0o600 (not umask 0644).
     apply_permissions_600(&lock_path)?;
-    fs2::FileExt::lock_exclusive(&lock_file)?;
+    acquire_with_deadline(&lock_file)?;
     Ok(ConfigGuard { lock_file })
+}
+
+/// Wait budget for the config lock, resolved from the `--lock-wait-ms` override.
+#[must_use]
+fn lock_wait_ms() -> u64 {
+    crate::cli::lock_wait_ms()
+}
+
+/// Tries the exclusive lock until the deadline, reporting contention as 69.
+fn acquire_with_deadline(lock_file: &std::fs::File) -> SshCliResult<()> {
+    use std::time::Duration;
+    let outcome = wait_for_lock(
+        || fs2::FileExt::try_lock_exclusive(lock_file),
+        || crate::signals::signal_exit_code().is_some(),
+        Duration::from_millis(lock_wait_ms()),
+        Duration::from_millis(crate::constants::LOCK_WAIT_SLICE_MS),
+    )?;
+    match outcome {
+        LockWait::Acquired => Ok(()),
+        // Ctrl-C during contention must exit 130/143, never 69: the operator
+        // asked to stop, and a retryable code would invite a retry.
+        LockWait::Interrupted => {
+            let code = crate::signals::signal_exit_code().unwrap_or_default();
+            Err(SshCliError::Io(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                format!("config lock wait interrupted (signal exit {code})"),
+            )))
+        }
+        LockWait::DeadlineExpired => Err(SshCliError::unavailable(
+            crate::errors::UnavailableService::ConfigLock,
+        )),
+    }
+}
+
+/// How a bounded wait for the config lock ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LockWait {
+    /// The lock is held.
+    Acquired,
+    /// The wait budget ran out while a peer still held the lock.
+    DeadlineExpired,
+    /// The stop signal fired before the lock was acquired.
+    Interrupted,
+}
+
+/// Retry loop behind [`acquire_with_deadline`], with every effect injected.
+///
+/// Full-jitter backoff decides how long to wait between attempts, but the wait
+/// is spent in slices of at most `slice` and `should_stop` is consulted before
+/// each one, so a signal turns into an exit within one slice instead of one
+/// whole backoff delay. No sleep ever crosses the remaining `budget`, and the
+/// deadline is checked before sleeping. A stop request wins over the deadline.
+///
+/// # Errors
+/// Returns the I/O error from `try_lock` when it is not plain contention.
+fn wait_for_lock(
+    mut try_lock: impl FnMut() -> std::io::Result<()>,
+    should_stop: impl Fn() -> bool,
+    budget: std::time::Duration,
+    slice: std::time::Duration,
+) -> SshCliResult<LockWait> {
+    use std::time::Instant;
+    let start = Instant::now();
+    let mut attempt: u32 = 0;
+    loop {
+        if should_stop() {
+            return Ok(LockWait::Interrupted);
+        }
+        match try_lock() {
+            Ok(()) => return Ok(LockWait::Acquired),
+            Err(e) => {
+                let would_block = e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.raw_os_error() == Some(11)
+                    || e.raw_os_error() == Some(35);
+                if !would_block {
+                    return Err(SshCliError::Io(e));
+                }
+            }
+        }
+        let elapsed = start.elapsed();
+        if elapsed >= budget {
+            // The service id is a stable slug, not a sentence: the wait time is
+            // carried by this log line, so the error code's identity never
+            // depends on a number.
+            tracing::debug!(
+                target: "ssh_cli::vps::config_io",
+                waited_ms = elapsed.as_millis(),
+                "config lock deadline expired"
+            );
+            return Ok(LockWait::DeadlineExpired);
+        }
+        let delay = crate::retry::backoff_full_jitter(
+            crate::constants::AGENT_RETRY_BASE_MS,
+            attempt,
+            crate::constants::AGENT_RETRY_MAX_DELAY_MS,
+        );
+        attempt = attempt.saturating_add(1);
+        let sleep_end = Instant::now() + delay.min(budget.saturating_sub(elapsed));
+        loop {
+            if should_stop() {
+                return Ok(LockWait::Interrupted);
+            }
+            let left = sleep_end.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            std::thread::sleep(left.min(slice));
+        }
+    }
 }
 
 /// Serializes and writes atomically. Caller must already hold the config lock.
 fn save_locked(path: &Path, file: &ConfigFile) -> SshCliResult<()> {
     if let Some(parent_dir) = path.parent() {
-        std::fs::create_dir_all(parent_dir)?;
+        crate::fs_perm::ensure_config_dir(parent_dir)?;
     }
-    let text = toml::to_string_pretty(file)
-        .map_err(|e| SshCliError::Config(format!("failed to serialize TOML: {e}")))?;
+    let text = toml::to_string_pretty(file).map_err(|e| {
+        // serde flattens a typed key-resolution failure into text. Asking the resolver
+        // again recovers its real class (usage, exit 64) instead of reporting it as a
+        // configuration error (exit 65); the success path is untouched.
+        match crate::secrets::load_primary_key() {
+            Err(typed) => typed,
+            Ok(_) => SshCliError::Config(format!("failed to serialize TOML: {e}")),
+        }
+    })?;
     write_atomic(path, text.as_bytes())
 }
 
@@ -277,91 +407,4 @@ fn apply_permissions_600(path: &Path) -> SshCliResult<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use secrecy::{ExposeSecret, SecretString};
-    use tempfile::TempDir;
-
-    fn reg_min() -> VpsRecord {
-        VpsRecord::test_new(
-            "srv",
-            "host.example.com",
-            2222,
-            "admin",
-            SecretString::from("pass".to_string()),
-            None,
-            None,
-            Some(60_000),
-            Some(1_000),
-            Some(50_000),
-            None,
-            None,
-            false,
-        )
-    }
-
-    #[test]
-    fn empty_file_serializes_with_schema() {
-        let cfg_file = ConfigFile {
-            schema_version: model::CURRENT_SCHEMA_VERSION,
-            hosts: BTreeMap::new(),
-        };
-        let text = toml::to_string(&cfg_file).unwrap();
-        assert!(text.contains("schema_version = 3"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn atomic_save_roundtrip() {
-        let tmp = TempDir::new().unwrap();
-        crate::secrets::set_config_dir(Some(tmp.path().to_path_buf()));
-        crate::secrets::set_runtime_flags(true, None, false);
-        let path = tmp.path().join("config.toml");
-        let mut cfg_file = ConfigFile {
-            schema_version: 2,
-            hosts: BTreeMap::new(),
-        };
-        cfg_file.hosts.insert("a".into(), reg_min());
-        save(&path, &cfg_file).unwrap();
-        let loaded = load(&path).unwrap();
-        assert_eq!(loaded.hosts.len(), 1);
-        assert_eq!(loaded.hosts["a"].password.expose_secret(), "pass");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode, 0o600);
-            let lock = path.with_extension("toml.lock");
-            if lock.exists() {
-                let lm = std::fs::metadata(&lock).unwrap().permissions().mode() & 0o777;
-                assert_eq!(lm, 0o600);
-            }
-        }
-        crate::secrets::set_runtime_flags(false, None, false);
-        crate::secrets::set_config_dir(None);
-    }
-
-    #[test]
-    fn resolve_config_path_with_dir_override() {
-        let result = resolve_config_path(Some(Path::new("/tmp/test-dir")));
-        assert_eq!(result.unwrap(), PathBuf::from("/tmp/test-dir/config.toml"));
-    }
-
-    #[test]
-    fn resolve_config_path_toml_file_override_keeps_path() {
-        let p = Path::new("/tmp/custom-hosts.toml");
-        let result = resolve_config_path(Some(p)).unwrap();
-        assert_eq!(result, PathBuf::from("/tmp/custom-hosts.toml"));
-    }
-
-    #[test]
-    fn config_override_shared_without_clone() {
-        let owned = PathBuf::from("/tmp/share-me");
-        let a = resolve_config_path(Some(owned.as_path())).unwrap();
-        let b = winning_layer(Some(owned.as_path())).unwrap();
-        assert_eq!(a, PathBuf::from("/tmp/share-me/config.toml"));
-        assert_eq!(b.name, "--config-dir");
-        assert_eq!(b.path, a);
-        assert_eq!(owned, PathBuf::from("/tmp/share-me"));
-    }
-}
+mod tests;

@@ -414,8 +414,65 @@ fn secrets_init_force_reencrypts_hosts() {
     // Ciphertext must change under new key (nonce+key differ).
     assert_ne!(before, after);
 
-    // Backup of previous primary key is created.
-    assert!(tmp.path().join("secrets.key.bak").is_file());
+    // No backup copy is written: `--force` replaces the key in place, and the
+    // project forbids `.bak` files in any directory.
+    let leftovers: Vec<_> = std::fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains(".bak"))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "rotation must not leave a backup behind: {leftovers:?}"
+    );
+    // The rotated key is the only key file in the config directory.
+    let key_files: Vec<_> = std::fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("secrets.key"))
+        .collect();
+    assert_eq!(
+        key_files,
+        vec!["secrets.key".to_string()],
+        "the rotation must leave exactly one key file"
+    );
+    let key = std::fs::read_to_string(tmp.path().join("secrets.key")).unwrap();
+    assert_eq!(key.trim().len(), 64, "rotated key must be 64 hex chars");
+}
+
+/// A profile has one primary key, and the second `secrets init` on it must not mint one.
+///
+/// Measured before the fix: a profile holding a file key accepted `secrets init --keyring`,
+/// answered `key_source: keyring` and left `secrets.key` untouched. The next `status`
+/// answered `xdg_file`, because the file is read first, so the operator was told the key
+/// had moved when it had not, and a second key existed that nothing would ever use.
+#[test]
+#[serial]
+fn secrets_init_refuses_to_fork_the_primary_key() {
+    let tmp = TempDir::new().unwrap();
+    cmd(&tmp)
+        .args(["secrets", "init", "--json"])
+        .assert()
+        .success();
+    let before = std::fs::read_to_string(tmp.path().join("secrets.key")).unwrap();
+
+    // The other store is asked even when the file already answers, because the profile
+    // — not the destination — owns the key.
+    cmd(&tmp)
+        .args(["secrets", "init", "--keyring", "--json"])
+        .assert()
+        .failure()
+        .code(64)
+        .stderr(predicate::str::contains("already has a primary-key"))
+        .stderr(predicate::str::contains("--force"));
+
+    let after = std::fs::read_to_string(tmp.path().join("secrets.key")).unwrap();
+    assert_eq!(
+        before, after,
+        "a refused init must not touch the key that already exists"
+    );
 }
 
 #[test]

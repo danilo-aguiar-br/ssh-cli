@@ -61,6 +61,10 @@ pub struct HealthCheckRequest {
 /// Workload: **I/O-bound** connect probe. One-shot auth parity (GAP-SSH-CLI-006)
 /// and TOFU (M1). Multi-host saturates sockets/auth — gated by concurrency budget.
 /// Batch JSON when [`HostSelection::is_batch`] (G-PAR-36).
+///
+/// # Errors
+/// Returns an error when a host cannot be resolved, a probe fails, or the result cannot be
+/// written to stdout.
 pub async fn run_health_check(req: HealthCheckRequest) -> Result<()> {
     let HealthCheckRequest {
         selection,
@@ -133,7 +137,7 @@ pub async fn run_health_check(req: HealthCheckRequest) -> Result<()> {
     if use_json(json_local, format) {
         output::print_health_check_json(&resolved_key, latency_ms, host_source)?;
     } else {
-        output::print_health_check(&resolved_key, latency_ms);
+        output::print_health_check(&resolved_key, latency_ms)?;
     }
     Ok(())
 }
@@ -147,7 +151,7 @@ pub(super) async fn collect_health_check_batch(
         .await
 }
 
-/// Parallel health-check fan-out (I/O-bound, map_bounded); returns results + limit.
+/// Parallel health-check fan-out (I/O-bound, `map_bounded`); returns results + limit.
 async fn collect_health_check_batch_with_opts(
     selection: &HostSelection,
     config_override: Option<PathBuf>,
@@ -242,7 +246,7 @@ async fn collect_health_check_batch_with_opts(
     Ok((host_results, limit))
 }
 
-/// Parallel health-check for `--all` / `--hosts` (I/O-bound, map_bounded).
+/// Parallel health-check for `--all` / `--hosts` (I/O-bound, `map_bounded`).
 async fn run_health_check_all(req: HealthCheckRequest) -> Result<()> {
     let HealthCheckRequest {
         selection,

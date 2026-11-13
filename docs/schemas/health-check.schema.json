@@ -23,7 +23,7 @@
     "target_source": {
       "type": "string",
       "enum": ["argv", "active_marker", "selector"],
-      "description": "Canonical name for how the checked host was designated. `argv` is a name typed in this invocation, `active_marker` requires the explicit --use-active opt-in, `selector` comes from --all/--hosts. Since 0.5.5 the target must always be designated: omitting all three is exit 64, not a silent probe of whatever `connect` last wrote. Bind new consumers here; `host_source` is the 0.5.5 read alias."
+      "description": "Canonical name for how the checked host was designated. `argv` is a name typed in this invocation, `active_marker` requires the explicit --use-active opt-in, `selector` comes from --all/--hosts. Since 0.5.5 the target must always be designated: omitting all three is exit 64, not a silent probe of whatever `connect` last wrote. Bind new consumers here."
     },
     "host_resolved": {
       "type": "string",

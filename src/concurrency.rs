@@ -91,7 +91,12 @@ static PROCESS_LIMIT: OnceLock<usize> = OnceLock::new();
 static FAIL_FAST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// G-O4: max concurrent SCP file transfers on one session (default 1 = serial).
-static SCP_FILE_CONCURRENCY: OnceLock<usize> = OnceLock::new();
+///
+/// An atomic rather than a `OnceLock`: the flag is installed once per process either way,
+/// but a one-way lock made the installer untestable, because the first value won forever
+/// and a test could not distinguish "the installer published nothing" from "another test
+/// already installed". The clamp still happens at the boundary that sets it.
+static SCP_FILE_CONCURRENCY: AtomicUsize = AtomicUsize::new(MIN_CONCURRENCY);
 
 /// Peak in-flight tasks observed by [`map_bounded`] (tests / diagnostics).
 static PEAK_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
@@ -127,7 +132,7 @@ pub fn fail_fast_enabled() -> bool {
 /// Install max concurrent SCP files per host session (G-O4). `1` = serial (default).
 pub fn install_scp_file_concurrency(n: usize) {
     let capped = n.clamp(MIN_CONCURRENCY, HARD_CAP);
-    let _ = SCP_FILE_CONCURRENCY.set(capped);
+    SCP_FILE_CONCURRENCY.store(capped, Ordering::Relaxed);
     tracing::debug!(
         scp_file_concurrency = capped,
         "installed scp file concurrency"
@@ -137,10 +142,7 @@ pub fn install_scp_file_concurrency(n: usize) {
 /// Effective SCP per-session file concurrency (default 1).
 #[must_use]
 pub fn scp_file_concurrency() -> usize {
-    SCP_FILE_CONCURRENCY
-        .get()
-        .copied()
-        .unwrap_or(MIN_CONCURRENCY)
+    SCP_FILE_CONCURRENCY.load(Ordering::Relaxed)
 }
 
 /// Effective concurrency for this process.

@@ -3,6 +3,11 @@
 #![forbid(unsafe_code)]
 //! Clap types for `ssh-cli vps …`.
 
+use super::help_text::{
+    VPS_ADD_EXAMPLES, VPS_DOCTOR_EXAMPLES, VPS_EDIT_EXAMPLES, VPS_EXPORT_EXAMPLES,
+    VPS_IMPORT_EXAMPLES, VPS_LIST_EXAMPLES, VPS_PATH_EXAMPLES, VPS_REMOVE_EXAMPLES,
+    VPS_RENAME_EXAMPLES, VPS_SHOW_EXAMPLES,
+};
 use super::parse_cli_char_limit;
 use clap::{ArgAction, Subcommand, ValueHint};
 use std::path::PathBuf;
@@ -11,6 +16,7 @@ use std::path::PathBuf;
 #[derive(Debug, Subcommand)]
 pub enum VpsAction {
     /// Adds a new VPS to the registry.
+    #[command(after_long_help = VPS_ADD_EXAMPLES)]
     Add {
         /// Unique VPS name.
         #[arg(long)]
@@ -42,15 +48,11 @@ pub enum VpsAction {
         key_passphrase: Option<String>,
         /// Reads the key passphrase from stdin.
         ///
-        /// D13: `exec`, `scp`, `health-check` and `tunnel` all accepted
-        /// `--key-passphrase-stdin`, but `vps add` and `vps edit` — the only two
-        /// commands that *persist* the passphrase — did not. The one secret that
-        /// reaches disk was also the one that had to travel through argv, where
-        /// any local process can read it from `ps`. Found by running the E2E
-        /// matrix for real for the first time (D1).
+        /// Preferred over `--key-passphrase`: a value on the command line is
+        /// visible to every local process in `ps`, while stdin is not.
         #[arg(long, action = ArgAction::SetTrue)]
         key_passphrase_stdin: bool,
-        /// Authenticate via SSH agent (mutually exclusive with --password / --key; G-E2E-19).
+        /// Authenticate via SSH agent (mutually exclusive with --password / --key).
         #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["password", "password_stdin", "key"])]
         use_agent: bool,
         /// Optional SSH agent socket path (defaults to platform agent when omitted).
@@ -65,7 +67,7 @@ pub enum VpsAction {
         /// Output character limit. Use `0` or `none` for unlimited.
         #[arg(long, value_name = "N", value_parser = parse_cli_char_limit)]
         max_output_chars: Option<usize>,
-        /// Legacy alias: maps to max_command_chars.
+        /// Legacy alias: maps to `max_command_chars`.
         #[arg(long, alias = "maxChars", value_name = "N", value_parser = parse_cli_char_limit)]
         max_chars: Option<usize>,
         /// Password for `sudo`.
@@ -93,7 +95,7 @@ pub enum VpsAction {
         /// Disables sudo/su on this host.
         #[arg(long, default_value_t = false)]
         disable_sudo: bool,
-        /// Host tags for fleet selection (G-O2). Repeatable: `--tag prod --tag web`.
+        /// Host tags for fleet selection. Repeatable: `--tag prod --tag web`.
         #[arg(long = "tag", value_name = "TAG", action = ArgAction::Append)]
         tags: Vec<String>,
         /// Enable SSH-over-TLS (rustls) for this host.
@@ -114,25 +116,52 @@ pub enum VpsAction {
     },
 
     /// Lists all VPS hosts (passwords masked).
+    #[command(after_long_help = VPS_LIST_EXAMPLES)]
     List {
         /// JSON output (from global `--json`).
         #[arg(from_global)]
         json: bool,
-        /// Filter hosts that have **any** of these tags (OR, G-O2).
+        /// Filter hosts that have **any** of these tags (OR).
         #[arg(long = "tag", value_name = "TAG", action = ArgAction::Append)]
         tags: Vec<String>,
     },
 
     /// Removes a VPS from the registry.
+    #[command(after_long_help = VPS_REMOVE_EXAMPLES)]
     Remove {
         /// VPS name to remove.
         name: String,
     },
 
+    /// Renames a registered VPS without touching credentials.
+    ///
+    /// Both positionals are required, so arity never carries meaning: a call with
+    /// one or three positionals is a usage error, never a guess. The target always
+    /// comes from argv and this verb never reads the `active` marker.
+    ///
+    /// Stored credentials stay readable under the new name, because record
+    /// serialization seals them without associated data, so opening a blob never
+    /// needs the name it was stored under. The ciphertext token itself is resealed
+    /// with a fresh nonce on every save, which is ordinary AEAD behavior.
+    ///
+    /// Exit codes: **64** for an invalid or identical name and for a name already
+    /// taken; **66** when the source host does not exist.
+    #[command(after_long_help = VPS_RENAME_EXAMPLES)]
+    Rename {
+        /// Current VPS name (the host this invocation acts on).
+        name: String,
+        /// New VPS name.
+        new_name: String,
+    },
+
     /// Edits fields of an existing VPS.
+    #[command(after_long_help = VPS_EDIT_EXAMPLES)]
     Edit {
         /// VPS name to edit.
         name: String,
+        /// New VPS name (rename without leaving this verb).
+        #[arg(long = "name", value_name = "NEW")]
+        new_name: Option<String>,
         /// New hostname/IP.
         #[arg(long)]
         host: Option<String>,
@@ -142,26 +171,61 @@ pub enum VpsAction {
         /// New username.
         #[arg(long)]
         user: Option<String>,
-        /// New password.
-        #[arg(long, conflicts_with = "password_stdin")]
+        /// New password; switches this host to password auth.
+        ///
+        /// Clears the key, its passphrase, the agent flag and the agent socket.
+        #[arg(long, conflicts_with_all = ["password_stdin", "key"])]
         password: Option<String>,
-        /// Reads the password from stdin.
-        #[arg(long)]
+        /// Reads the password from stdin; switches this host to password auth.
+        ///
+        /// Clears the key, its passphrase, the agent flag and the agent socket.
+        #[arg(long, conflicts_with = "key")]
         password_stdin: bool,
-        /// New private key path.
-        #[arg(long, value_name = "PATH", value_hint = ValueHint::FilePath)]
+        /// New private key path; switches this host to key auth.
+        ///
+        /// Clears the password, the agent flag and the agent socket. A path different
+        /// from the stored one also drops the stored passphrase, unless the same call
+        /// passes a new one.
+        #[arg(
+            long,
+            value_name = "PATH",
+            value_hint = ValueHint::FilePath,
+            conflicts_with_all = ["password", "password_stdin"]
+        )]
         key: Option<PathBuf>,
-        /// New key passphrase.
-        #[arg(long, conflicts_with = "key_passphrase_stdin")]
+        /// New key passphrase; needs a key already on the host or `--key`.
+        #[arg(
+            long,
+            conflicts_with_all = [
+                "key_passphrase_stdin",
+                "use_agent",
+                "agent_socket",
+                "password",
+                "password_stdin"
+            ]
+        )]
         key_passphrase: Option<String>,
-        /// Reads the new key passphrase from stdin (D13 — see `VpsAction::Add`).
-        #[arg(long, action = ArgAction::SetTrue)]
+        /// Reads the new key passphrase from stdin; preferred over `--key-passphrase`,
+        /// whose value is visible in `ps`.
+        #[arg(
+            long,
+            action = ArgAction::SetTrue,
+            conflicts_with_all = ["use_agent", "agent_socket", "password", "password_stdin"]
+        )]
         key_passphrase_stdin: bool,
-        /// Switch primary auth to SSH agent (clears password/key when set; G-E2E-19).
+        /// Switch this host to SSH agent auth.
+        ///
+        /// Clears the password, the key and its passphrase.
         #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["password", "password_stdin", "key"])]
         use_agent: bool,
-        /// Optional SSH agent socket path.
-        #[arg(long, value_name = "PATH", value_hint = ValueHint::AnyPath)]
+        /// SSH agent socket path; implies `--use-agent` (clears the password, the key
+        /// and its passphrase).
+        #[arg(
+            long,
+            value_name = "PATH",
+            value_hint = ValueHint::AnyPath,
+            conflicts_with_all = ["key", "password", "password_stdin"]
+        )]
         agent_socket: Option<PathBuf>,
         /// New timeout.
         #[arg(long, value_name = "MS")]
@@ -218,9 +282,69 @@ pub enum VpsAction {
         /// mTLS client private key PEM path.
         #[arg(long, value_name = "PATH", value_hint = ValueHint::FilePath)]
         tls_client_key: Option<PathBuf>,
+        /// Host tags for fleet selection; appended with dedupe, preserving order.
+        #[arg(long = "tag", value_name = "TAG", action = ArgAction::Append)]
+        tags: Vec<String>,
+        /// Clears every tag before applying `--tag` values.
+        ///
+        /// Deliberately **not** conflicting with `--tag`: `--clear-tags --tag a`
+        /// must end with the list `[a]`, which is the only way to replace a tag
+        /// set in one invocation. Refusing the pair would force two commands and
+        /// leave a window where the host has no tags at all.
+        #[arg(long = "clear-tags", action = ArgAction::SetTrue)]
+        clear_tags: bool,
+        /// Removes the private key path **and** its passphrase.
+        ///
+        /// Refused with exit 64 when it would leave the host with no primary
+        /// authentication method at all.
+        #[arg(long = "no-key", action = ArgAction::SetTrue, conflicts_with = "key")]
+        no_key: bool,
+        /// Removes the explicit agent socket, falling back to the platform endpoint.
+        ///
+        /// Refused with exit 64 when the host authenticates through the agent and
+        /// the platform has no default endpoint, because that host would stop
+        /// authenticating.
+        #[arg(
+            long = "no-agent-socket",
+            action = ArgAction::SetTrue,
+            conflicts_with = "agent_socket"
+        )]
+        no_agent_socket: bool,
+        /// Removes the stored sudo password.
+        #[arg(
+            long = "clear-sudo-password",
+            action = ArgAction::SetTrue,
+            conflicts_with_all = ["sudo_password", "sudo_password_stdin"]
+        )]
+        clear_sudo_password: bool,
+        /// Removes the stored su password.
+        #[arg(
+            long = "clear-su-password",
+            action = ArgAction::SetTrue,
+            conflicts_with_all = ["su_password", "su_password_stdin"]
+        )]
+        clear_su_password: bool,
+        /// Removes the TLS SNI override, leaving the host name as SNI.
+        #[arg(long = "no-tls-sni", action = ArgAction::SetTrue, conflicts_with = "tls_sni")]
+        no_tls_sni: bool,
+        /// Removes the mTLS client certificate path.
+        #[arg(
+            long = "no-tls-client-cert",
+            action = ArgAction::SetTrue,
+            conflicts_with = "tls_client_cert"
+        )]
+        no_tls_client_cert: bool,
+        /// Removes the mTLS client key path.
+        #[arg(
+            long = "no-tls-client-key",
+            action = ArgAction::SetTrue,
+            conflicts_with = "tls_client_key"
+        )]
+        no_tls_client_key: bool,
     },
 
     /// Shows VPS details (passwords masked).
+    #[command(after_long_help = VPS_SHOW_EXAMPLES)]
     Show {
         /// VPS name.
         name: String,
@@ -230,15 +354,17 @@ pub enum VpsAction {
     },
 
     /// Shows the configuration file path.
+    #[command(after_long_help = VPS_PATH_EXAMPLES)]
     Path,
 
     /// Diagnostics for XDG layers / path / schema.
+    #[command(after_long_help = VPS_DOCTOR_EXAMPLES)]
     Doctor {
         /// JSON output (from global `--json`).
         #[arg(from_global)]
         json: bool,
-        /// After local diagnostics, probe hosts over SSH (bounded fan-out, G-PAR-29).
-        /// Default scope is every registered host; use `--hosts` for a subset (G-PAR-38).
+        /// After local diagnostics, probe hosts over SSH (bounded fan-out).
+        /// Default scope is every registered host; use `--hosts` for a subset.
         #[arg(long, action = ArgAction::SetTrue)]
         probe_ssh: bool,
         /// Comma-separated host subset for `--probe-ssh` only (ignored without probe).
@@ -247,6 +373,7 @@ pub enum VpsAction {
     },
 
     /// Exports hosts (passwords redacted by default).
+    #[command(after_long_help = VPS_EXPORT_EXAMPLES)]
     Export {
         /// Include secrets in the export.
         #[arg(long)]
@@ -255,7 +382,7 @@ pub enum VpsAction {
         #[arg(long, short, value_name = "PATH", value_hint = ValueHint::FilePath)]
         output: Option<PathBuf>,
         /// Agent-first JSON envelope (`event: vps-export`; from global `--json`).
-        /// Default body is **TOML** on text; JSON when format/json (G-AUD-03).
+        /// Default body is **TOML** on text; JSON when format/json.
         #[arg(from_global)]
         json: bool,
         /// Acknowledge writing plaintext secrets to stdout (pipe/non-TTY). Prefer `--output`.
@@ -264,11 +391,12 @@ pub enum VpsAction {
     },
 
     /// Imports hosts from a TOML file or JSON `vps-export` envelope (EN + legacy PT keys).
+    #[command(after_long_help = VPS_IMPORT_EXAMPLES)]
     Import {
         /// Source file (TOML wire or JSON export envelope).
         #[arg(long, value_name = "PATH", value_hint = ValueHint::FilePath)]
         file: PathBuf,
-        /// Allow hosts without full auth (redacted export / skeleton) — GAP-SSH-IMP-001.
+        /// Allow hosts without full auth (redacted export / skeleton).
         #[arg(long)]
         allow_incomplete: bool,
     },

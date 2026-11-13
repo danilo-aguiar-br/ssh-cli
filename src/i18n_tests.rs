@@ -344,3 +344,30 @@ fn current_language_returns_valid_value() {
     let language = current_language();
     assert!(language == Language::English || language == Language::Portuguese);
 }
+
+#[test]
+fn vps_edited_has_en_pt_parity() {
+    let msg = Message::VpsEdited {
+        name: "web-01".to_string(),
+    };
+    let en = msg.text(Language::English);
+    let pt = msg.text(Language::Portuguese);
+    assert!(en.contains("web-01"), "{en}");
+    assert!(pt.contains("web-01"), "{pt}");
+    assert_ne!(en, pt, "EN and pt-BR prose must differ");
+}
+
+#[test]
+fn vps_renamed_has_en_pt_parity() {
+    let msg = Message::VpsRenamed {
+        from: "old-01".to_string(),
+        to: "new-01".to_string(),
+    };
+    let en = msg.text(Language::English);
+    let pt = msg.text(Language::Portuguese);
+    for text in [&en, &pt] {
+        assert!(text.contains("old-01"), "{text}");
+        assert!(text.contains("new-01"), "{text}");
+    }
+    assert_ne!(en, pt, "EN and pt-BR prose must differ");
+}

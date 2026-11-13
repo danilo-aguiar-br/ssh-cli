@@ -2,15 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/danilo-aguiar-br/ssh-cli/docs/schemas/vps-export.schema.json",
   "title": "vps export JSON",
-  "description": "Structured stdout payload for `ssh-cli vps export --json` (or global --output-format json). Redacted by default (GAP-SSH-UX-001). Never emits sshcli-enc ciphertext for empty secrets (EXP-001 parity).",
+  "description": "Structured stdout payload for `ssh-cli vps export --json` (or global --output-format json), and the body written by `--output` in JSON mode. Two shapes, exactly one per run: the body (`schema_version` and `hosts`) when stdout receives the export, or the summary (`path` and `format`) when `-o`/`--output` wrote it to a file. Redacted by default (GAP-SSH-UX-001): the export clears `password` to an empty string and sets `sudo_password`, `su_password` and `key_passphrase` to null, and the fixed mask appears only in `vps list` and `vps show`. Never emits sshcli-enc ciphertext for empty secrets (EXP-001 parity). Each host carries `use_agent` and `agent_socket` when the host authenticates through the SSH agent, so an export of an agent host imports back as an agent host.",
   "type": "object",
   "additionalProperties": true,
-  "required": [
-    "ok",
-    "event",
-    "schema_version",
-    "include_secrets",
-    "hosts"
+  "required": ["ok", "event", "include_secrets"],
+  "oneOf": [
+    { "required": ["schema_version", "hosts"] },
+    { "required": ["path", "format"] }
   ],
   "properties": {
     "ok": {
@@ -29,11 +27,141 @@
       "type": "boolean",
       "description": "True only when --include-secrets was passed"
     },
+    "path": {
+      "type": "string",
+      "description": "Only in the summary printed when `-o`/`--output` wrote the export to a file: the path that was written. The summary has no `hosts` and no `schema_version`."
+    },
+    "format": {
+      "type": "string",
+      "enum": ["json", "toml"],
+      "description": "Only in the `-o`/`--output` summary: the format of the file that was written, which follows the resolved output format"
+    },
     "hosts": {
       "type": "object",
       "description": "Map of host name → host object (redacted or with secrets)",
       "additionalProperties": {
-        "type": "object"
+        "type": "object",
+        "description": "One exported host. Seven fields are conditional and vanish when unset rather than appearing empty: tags, tls, tls_sni, tls_client_cert, tls_client_key, use_agent, agent_socket. The remaining fields are always present, with `null` for an unset optional secret or path.",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "host",
+          "port",
+          "user",
+          "password",
+          "key_path",
+          "key_passphrase",
+          "sudo_password",
+          "su_password",
+          "timeout_ms",
+          "max_command_chars",
+          "max_output_chars",
+          "disable_sudo",
+          "schema_version",
+          "added_at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "user": {
+            "type": "string",
+            "description": "Wire key `user`, the same as `vps show` and `vps list`"
+          },
+          "password": {
+            "type": "string",
+            "description": "Plaintext with --include-secrets. Empty string when redacted, because the export clears the value instead of masking it, and also empty when the host has no password. Use `vps show` to tell a key-only host apart."
+          },
+          "key_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Path of the private key, or null when the host has none"
+          },
+          "key_passphrase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Plaintext with --include-secrets, null when redacted or unset"
+          },
+          "sudo_password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Plaintext with --include-secrets, null when redacted or unset"
+          },
+          "su_password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Plaintext with --include-secrets, null when redacted or unset"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_command_chars": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_output_chars": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "disable_sudo": {
+            "type": "boolean"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "added_at": {
+            "type": "string",
+            "description": "RFC 3339 UTC timestamp"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Host tags. Omitted when empty, never emitted as `[]`."
+          },
+          "tls": {
+            "type": "boolean",
+            "description": "True when SSH runs inside a rustls TLS tunnel. Omitted when false."
+          },
+          "tls_sni": {
+            "type": "string",
+            "description": "SNI presented on the TLS handshake. Omitted when unset."
+          },
+          "tls_client_cert": {
+            "type": "string",
+            "description": "Path of the mTLS client certificate. Omitted when unset."
+          },
+          "tls_client_key": {
+            "type": "string",
+            "description": "Path of the mTLS client key, never key material. Omitted when unset."
+          },
+          "use_agent": {
+            "type": "boolean",
+            "description": "True when the host authenticates through the SSH agent. Omitted when false, so absence means password or key auth."
+          },
+          "agent_socket": {
+            "type": "string",
+            "description": "Explicit agent socket or Windows named pipe path. Omitted when unset, meaning the platform default endpoint."
+          }
+        }
       }
     }
   }
